@@ -106,7 +106,7 @@ func goldenCases() []goldenCase {
 	return []goldenCase{
 		{
 			name:    "shapes_bounds_gap_catalog",
-			fixture: "formas_limites_gap_catalogo",
+			fixture: "shapes_bounds_gap_catalog",
 			config: Config{
 				Width: 24, Height: 18, Seed: 0xF011,
 				MinDistance: 2, MaxAttempts: 30, MaxRooms: 5,
@@ -122,7 +122,7 @@ func goldenCases() []goldenCase {
 		},
 		{
 			name:    "prim_tie_break_and_weights",
-			fixture: "desempate_prim_e_pesos",
+			fixture: "prim_tie_break_and_weights",
 			config: Config{
 				Width: 11, Height: 11, Seed: 0xF012,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
@@ -137,7 +137,7 @@ func goldenCases() []goldenCase {
 		},
 		{
 			name:    "winding_bfs",
-			fixture: "bfs_serpenteante",
+			fixture: "winding_bfs",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF013,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
@@ -162,7 +162,7 @@ func goldenCases() []goldenCase {
 		},
 		{
 			name:    "corridors_share_cell",
-			fixture: "corridors_compartilham_cell",
+			fixture: "corridors_share_cell",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF014,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 4,
@@ -185,7 +185,7 @@ func goldenCases() []goldenCase {
 		},
 		{
 			name:    "poisson_rejection_and_density",
-			fixture: "poisson_rejeicao_e_densidade",
+			fixture: "poisson_rejection_and_density",
 			config: Config{
 				Width: 20, Height: 20, Seed: 123,
 				MinDistance: 2, MaxAttempts: 12, MaxRooms: 20,
