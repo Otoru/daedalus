@@ -335,9 +335,9 @@ RoomRoleRequest {
   RequiredTags: []string
 }
 
-DensityRegion {
-  Min: Cell
-  Max: Cell
+DensityRegion {                 // retângulo semiaberto: Min inclusivo, Max exclusivo
+  Min: Cell                     // incluso; cobre X em [Min.X, Max.X) e Y em [Min.Y, Max.Y)
+  Max: Cell                     // exclusivo; pode igualar a dimensão do Grid; estritamente maior é inválido; uma Cell é Max = Min + (1,1)
   MinDistance: float64
 }
 
@@ -371,7 +371,7 @@ CorridorPlant {
 | CorridorOrder | padrão XThenY | enum | cotovelo preferido quando a geometria permitir rota L. |
 | ExtraEdgeCount | padrão 0 | 0..MaxRooms×(MaxRooms-1)/2 | atalhos determinísticos. |
 | RoomRoleRequests | padrão [] | conforme regra existente | no máximo uma entrada por RoomRole. |
-| DensityRegions | padrão [] | retângulos não vazios e sem sobreposição | substituem MinDistance local entre âncoras. |
+| DensityRegions | padrão [] | retângulos não vazios e sem sobreposição, semiabertos: Min inclusivo e Max exclusivo, X em [Min.X, Max.X) e Y em [Min.Y, Max.Y); Max pode igualar a dimensão do Grid, Max estritamente maior é inválido, e uma região de uma Cell escreve-se Max = Min + (1,1) | substituem MinDistance local entre âncoras. |
 | RoomGeometry | padrão dinâmico | dimensões/área em Cells; MinRoomGap 0..256 | ausência aplica o perfil dinâmico padrão descrito abaixo. |
 | PlantCatalog | ausente | opcional | se presente, ambas listas não vazias; IDs únicos, Weight ≥1. |
 
@@ -454,9 +454,9 @@ aceite âncoras somente se squaredDistance(a,b) >= requiredDistance(a,b)^2
 requiredDistance(a,b) = max(LocalMinDistance(a), LocalMinDistance(b))
 ```
 
-Sem DensityRegions, o Grid de aceleração Bridson temporário tem lado MinDistance/sqrt(2); a inspeção 5×5 é suficiente. Com DensityRegions, LocalMinDistance é MinDistance fora de todas as regiões ou a distância da região que contém a âncora. A célula de aceleração usa minLocalDistance/sqrt(2), e o alcance de busca é `ceil(maxLocalDistance/(minLocalDistance/sqrt(2)))+1` em cada eixo. Regiões não se sobrepõem. O teste de footprints é adicional e não substitui a distância Poisson entre âncoras.
+Sem DensityRegions, o Grid de aceleração Bridson temporário tem lado MinDistance/sqrt(2); a inspeção 5×5 é suficiente. Com DensityRegions, LocalMinDistance é MinDistance fora de todas as regiões ou a distância da região que contém a âncora. A pertinência da âncora segue o retângulo semiaberto da seção 5.3: Min inclusivo e Max exclusivo. A célula de aceleração usa minLocalDistance/sqrt(2), e o alcance de busca é `ceil(maxLocalDistance/(minLocalDistance/sqrt(2)))+1` em cada eixo. Regiões não se sobrepõem. O teste de footprints é adicional e não substitui a distância Poisson entre âncoras.
 
-Para cada ponto ativo, as tentativas Poisson mantêm a amostragem uniforme por rejeição no quadrado do anel: dois draws uniformes offsetX/offsetY por tentativa geométrica; aceite apenas quando `r² ≤ offsetX²+offsetY² < 4r²`, quantize por `floor`, rejeite fora do Grid. Não se usa sin/cos ou trigonometria libm. Ordem de vizinhos, quantização, append/remoção de ativos e limites são determinísticos.
+Para cada ponto ativo, as tentativas Poisson mantêm a amostragem uniforme por rejeição no quadrado do anel: dois draws uniformes offsetX/offsetY por tentativa geométrica. Cada eixo é `uniform01()*4r - 2r`, porque o quadrado que circunscreve o anel externo é `[-2r, 2r]`. Como `offset = r*(4u-2)`, o teste `r² ≤ offsetX²+offsetY² < 4r²` divide-se por `r²` e torna-se independente de `r`: por isso DensityRegions alteram a distância aceita sem deslocar um único draw. `SampleUniformAnnulusByRejection` reamostra internamente até o par cair no anel; um par rejeitado não consome uma de `MaxAttempts`. Aceite apenas quando `r² ≤ offsetX²+offsetY² < 4r²`, quantize por `floor`, rejeite fora do Grid. Não se usa sin/cos ou trigonometria libm. Ordem de vizinhos, quantização, append/remoção de ativos e limites são determinísticos.
 
 ```
 função PlaceRooms(request, placementRNG, geometryRNG):
@@ -497,11 +497,11 @@ função PlaceRooms(request, placementRNG, geometryRNG):
 
 Para quaisquer Cells `a` e `b` de footprints diferentes, gap válido significa `max(abs(a.X-b.X), abs(a.Y-b.Y)) > MinRoomGap`. Assim, gap=0 impede sobreposição; gap=1 exige uma camada vazia inclusive na diagonal. Um placement é aceito somente quando, nesta ordem: é máscara válida; bounds dentro do Grid; área ≤ MaxFootprintCells; âncora respeita MinDistance/LocalMinDistance contra todas as âncoras; não há sobreposição; e todas as Cells dos footprints respeitam MinRoomGap. A aceitação é atômica.
 
-`MaxAttempts` conta propostas completas por ponto ativo, inclusive as rejeitadas por distância, forma, bounds ou colisão. Cada iteração aceita um placement ou remove o ponto ativo após MaxAttempts finito; há no máximo Width×Height âncoras únicas. Portanto o algoritmo termina. `MaxRooms` é teto, não meta. Grid 1×1 normaliza para Rectangle 1×1. Nenhum footprint é truncado. [PREMISSAS P4-P7, P22, P39, P42 revisadas]
+`MaxAttempts` conta propostas completas por ponto ativo, inclusive as rejeitadas por distância, forma, bounds ou colisão. O anel não entra nessa lista de propósito: a rejeição fica dentro do sampler e não encerra a tentativa. Se contasse, seria o motivo mais frequente, pois o anel cobre `3πr²` de um quadrado de `16r²` e cerca de 41% dos pares caem fora. Cada iteração aceita um placement ou remove o ponto ativo após MaxAttempts finito; há no máximo Width×Height âncoras únicas. Portanto o algoritmo termina. `MaxRooms` é teto, não meta. Grid 1×1 normaliza para Rectangle 1×1. Nenhum footprint é truncado. [PREMISSAS P4-P7, P22, P39, P42 revisadas]
 
 ## 8. Conexão embutida: Prim MST
 
-O grafo candidato é completo sobre Rooms. Peso é distância euclidiana entre centros geométricos das bounding boxes mesmo que as rotas sejam ortogonais; empate segue IDs e coordenadas canônicas. [PREMISSA P8] **prim_rooms_v1** começa em RoomID 0. Pesos iguais são desempatados por FromRoomID, ToRoomID e depois Cell de destino em ordem canônica. [PREMISSA P9]
+O grafo candidato é completo sobre Rooms. Peso é distância euclidiana entre centros geométricos das bounding boxes mesmo que as rotas sejam ortogonais. O centro é o centroide das Cells ocupadas pela bounding box, `Origin + (dimensão-1)/2`, não o centro da área `Origin + dimensão/2`. Para Rooms 1×1 o peso coincide com a distância entre âncoras, o que só é verdade quando o deslocamento se anula na dimensão 1; com dimensão maior as duas fórmulas divergem e produzem árvores diferentes. Empate segue IDs e coordenadas canônicas. [PREMISSA P8] **prim_rooms_v1** começa em RoomID 0. Pesos iguais são desempatados por FromRoomID, ToRoomID e depois Cell de destino em ordem canônica. [PREMISSA P9]
 
 ```
 função BuildMST(rooms):
@@ -827,6 +827,10 @@ A transcrição não define dados públicos, amostragem discreta, arquitetura de
 | P46 | HTTP de debug é loopback, opt-in, sem CORS/auth externa, sem persistência e sem dependências no pacote raiz. |
 | P47 | Handler HTTP reutiliza Generate, Context, validação e admissão; não cria algoritmo separado. |
 | P48 | HTTP e gRPC compartilham o ciclo de vida e a cota de concorrência do subprocesso. |
+| P49 | DensityRegion é semiaberto: Min inclusivo e Max exclusivo, X em [Min.X, Max.X) e Y em [Min.Y, Max.Y); Max pode igualar a dimensão do Grid. |
+| P50 | Cada eixo do quadrado do anel é uniform01()*4r-2r em [-2r, 2r]; o teste do anel independe de r, então DensityRegions não deslocam draws. |
+| P51 | Par fora do anel é reamostrado dentro do sampler e não consome MaxAttempts. |
+| P52 | Centro da bounding box no peso de Prim é o centroide das Cells, Origin+(dimensão-1)/2, não Origin+dimensão/2. |
 
 ## Apêndice A — exemplos mínimos
 

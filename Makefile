@@ -36,7 +36,7 @@ PLATFORMS := linux/amd64 darwin/arm64 windows/amd64
 CMD_DIR := ./cmd/daedalus
 HAS_CMD := $(wildcard cmd/daedalus)
 
-.PHONY: generate lint test golden-update bench build build-all
+.PHONY: generate lint test bench build build-all
 
 generate:
 	@test -n "$(BUF)" || { echo "buf not found; install with: $(GO) install github.com/bufbuild/buf/cmd/buf@latest (or pass BUF=/path/to/buf)" >&2; exit 1; }
@@ -58,10 +58,11 @@ lint:
 test:
 	$(GO) test ./...
 
-# Rewrites the normative Layouts only on an explicit action. Review the
-# readable diff in testdata/golden before accepting a compatibility change.
-golden-update:
-	$(GO) test ./ -run '^TestFrozenGoldenLayouts$$' -update -count=1
+# The fixtures in testdata/golden are the v1 compatibility contract.
+# Regenerating them is a deliberate act reserved for a major version
+# change; there is no golden-update shortcut. Whoever genuinely needs
+# to rewrite them runs:
+#   go test ./ -run '^TestFrozenGoldenLayouts$' -update -count=1
 
 # Generation benchmarks live in the root package (specification section 13);
 # -benchmem records the allocations of the three normative loads.

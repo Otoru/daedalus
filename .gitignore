@@ -21,10 +21,16 @@ vendor/
 go.work
 go.work.sum
 
-# Sonar
+# Local analysis tooling
 .scannerwork/
 .sonarlint/
+.golangci-lint-cache/
+# Local scanner configuration, deliberately not published.
 sonar-project.properties
+
+# Local environment
+.envrc
+.env.local
 
 # Editor / OS
 .DS_Store
