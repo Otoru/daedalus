@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    # Somente branches. Tag é um snapshot de uma main já verificada e o
+    # workflow de release reroda os testes com -race antes de publicar,
+    # então rodar CI em tag duplica trabalho. Builds de tag também não têm
+    # o contexto de branch que este workflow assume (HEAD destacado, sem
+    # refs locais de branch) — foi o que quebrou o CI do Geppetto em push
+    # de tag.
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          # Fonte única da versão da toolchain Go: go.mod.
+          go-version-file: go.mod
+      - uses: bufbuild/buf-setup-action@v1
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          # Fixada na mesma versão que o Makefile exige como piso
+          # (GOLANGCI_LINT_MIN), para que local e CI reprovem o mesmo
+          # conjunto de achados.
+          version: v2.14.0
+          install-mode: binary
+      - name: Verify generated bindings
+        # O pathspec aponta para internal/gen, onde os bindings gerados
+        # estão commitados. Um pathspec sem match sai 0 em silêncio (foi o
+        # falso verde do Geppetto); aqui o diretório existe e tem arquivos
+        # rastreados, então o diff realmente verifica algo.
+        run: |
+          make generate
+          git diff --exit-code -- internal/gen
+      - name: Buf lint and breaking checks
+        run: |
+          buf lint
+          # Compara contra a ref remote-tracking da branch padrão, nunca
+          # uma branch local: checkouts destacados (tags, alguns contextos
+          # de pull_request) podem não tê-la. O fetch explícito cria a ref
+          # em vez de assumir que o checkout o fez.
+          git fetch --no-tags origin "+refs/heads/${{ github.event.repository.default_branch }}:refs/remotes/origin/${{ github.event.repository.default_branch }}"
+          buf breaking --against ".git#ref=refs/remotes/origin/${{ github.event.repository.default_branch }}"
+      - name: Test with race detector
+        # A suite da raiz inclui pureza de imports e, quando a frente do
+        # núcleo publicá-los, os goldens congelados (spec seção 13).
+        run: go test -race ./...
+      - name: Lint
+        run: golangci-lint run ./...
+      - name: Build
+        run: go build ./...
+      - name: Record benchmarks
+        # Spec seção 13: o CI registra benchmark. Enquanto a frente do
+        # núcleo não publica benchmarks, make bench roda os testes da raiz
+        # sem nenhum benchmark e o artefato registra isso.
+        run: make bench | tee bench.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.sha }}
+          path: bench.txt
+          retention-days: 30
+
+  determinism:
+    # AC-18 / P45: a mesma suite — incluindo os goldens, com o MESMO
+    # arquivo esperado commitado — passa em runners NATIVOS amd64 e arm64.
+    # Emulação (QEMU) não prova determinismo de arquitetura, por isso a
+    # matriz usa ubuntu-24.04-arm, runner arm64 nativo que o GitHub
+    # oferece para repositório público. Qualquer divergência de Layout
+    # derruba o job na arquitetura que divergir.
+    #
+    # A spec não fixa um padrão de nome para os testes golden, então o
+    # seletor é a suite inteira (go test ./...): os goldens vivem nos
+    # testes da raiz (spec seção 2) e são cobertos sem inventar nome.
+    # DEPENDÊNCIA: a frente do núcleo está escrevendo a suite golden
+    # agora; enquanto ela não existir, este job passa verificando o resto
+    # da suite e se torna o gate do AC-18 assim que os goldens forem
+    # commitados — sem mudança neste arquivo.
+    #
+    # NÃO EXERCITADO localmente: a disponibilidade do runner
+    # ubuntu-24.04-arm só pode ser confirmada com o repositório no GitHub.
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest é amd64; ubuntu-24.04-arm é arm64 nativo.
+        runs-on: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run full suite (golden determinism gate)
+        # -count=1 desativa o cache de testes: o gate precisa executar o
+        # golden de verdade em cada arquitetura, nunca herdar resultado.
+        run: go test -count=1 ./...

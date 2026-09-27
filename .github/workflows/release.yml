@@ -1,0 +1,96 @@
+name: release
+
+on:
+  push:
+    tags:
+      # Filtros de tag do GitHub são globs, não expressões regulares. O
+      # primeiro job abaixo impõe a forma exata vX.Y.Z antes de qualquer
+      # trabalho de release; tags v* inválidas são ignoradas (spec seção 13).
+      - 'v*'
+
+# Permissões mínimas por padrão; contents: write só no job que publica.
+permissions: {}
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      valid: ${{ steps.tag.outputs.valid }}
+    steps:
+      - id: tag
+        name: Validate release tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'valid=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'valid=false' >> "$GITHUB_OUTPUT"
+            echo "Skipping release: ${GITHUB_REF_NAME} is not a vX.Y.Z tag."
+          fi
+
+  release:
+    needs: validate-tag
+    if: needs.validate-tag.outputs.valid == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          # Alinhado com o CI: o go.mod é o dono da toolchain exigida.
+          go-version-file: go.mod
+      - name: Test
+        # Os testes com -race rodam ANTES de qualquer artefato ser gerado
+        # ou publicado; release nunca publica código que não passou.
+        run: go test -race ./...
+      - name: Build release artifacts
+        # VERSION na linha de comando sobrescreve o carimbo do Makefile e
+        # injeta a tag exata via -ldflags, com -trimpath.
+        run: make build-all VERSION="${GITHUB_REF_NAME}"
+      - name: Verify artifacts exist
+        # Falha alto com mensagem clara se cmd/daedalus ainda não existir
+        # (frente do núcleo) e build-all tiver degradado para verificação
+        # de compilação sem produzir binários.
+        shell: bash
+        run: |
+          if ! compgen -G "bin/daedalus-*" > /dev/null; then
+            echo "Nenhum artefato bin/daedalus-* gerado; cmd/daedalus existe e build-all empacotou o comando?" >&2
+            exit 1
+          fi
+      - name: Generate checksums
+        # Nomes RELATIVOS ao diretório dos artefatos: quem baixa os
+        # arquivos numa pasta plana consegue rodar `sha256sum -c
+        # CHECKSUMS.txt` ali dentro. Gravar caminhos com prefixo (bin/...)
+        # quebrou essa verificação no Geppetto.
+        shell: bash
+        run: (cd bin && sha256sum daedalus-* > CHECKSUMS.txt)
+      - name: Verify checksums from a flat directory
+        # Simula o consumidor: artefatos + checksums copiados para um
+        # diretório plano, verificação roda lá dentro.
+        shell: bash
+        run: |
+          tmp="$(mktemp -d)"
+          cp bin/daedalus-* bin/CHECKSUMS.txt "$tmp/"
+          (cd "$tmp" && sha256sum -c CHECKSUMS.txt)
+      - name: Publish GitHub release
+        # NÃO EXERCITADO: este passo só pode ser validado com o
+        # repositório no GitHub. Runners hospedados pelo GitHub fornecem
+        # gh; GH_TOKEN é o token com escopo do workflow (contents: write
+        # neste job). Idempotente entre criar e atualizar: se o release da
+        # tag já existe, os artefatos são substituídos (--clobber); senão
+        # o release é criado com notas geradas.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" bin/daedalus-* bin/CHECKSUMS.txt --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" bin/daedalus-* bin/CHECKSUMS.txt \
+              --verify-tag \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi
