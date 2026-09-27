@@ -9,10 +9,11 @@ import "errors"
 // returns a partial Layout.
 //
 // In the gRPC service, the mapping is: ErrInvalidConfig → InvalidArgument,
-// ErrLimitExceeded → ResourceExhausted, deadline expiration → DeadlineExceeded,
-// and caller cancellation → Canceled. Cancellation and deadlines use
-// context.Canceled and context.DeadlineExceeded directly, without dedicated
-// sentinels.
+// ErrLimitExceeded → ResourceExhausted, ErrNoCompatiblePlant,
+// ErrUnroutableEdge and ErrInvalidPlugin → FailedPrecondition, deadline
+// expiration → DeadlineExceeded, and caller cancellation → Canceled.
+// Cancellation and deadlines use context.Canceled and
+// context.DeadlineExceeded directly, without dedicated sentinels.
 var (
 	// ErrInvalidConfig marks a Config that violates ranges, numeric finiteness,
 	// catalog format, density regions, or role requests. Validation occurs
@@ -33,4 +34,15 @@ var (
 	// for which the deterministic breadth-first search finds no orthogonal path
 	// between the endpoints.
 	ErrUnroutableEdge = errors.New("daedalus: edge has no orthogonal route")
+
+	// ErrInvalidPlugin marks a caller-supplied Placer or Connector whose return
+	// value the Generator cannot accept: a mask that does not match its Shape,
+	// duplicated or disconnected offsets, a placement outside the Grid or
+	// otherwise rejected, the wrong number of edges, a self-edge, a duplicate
+	// edge, an unknown RoomID, or a disconnected graph. The name is
+	// ErrInvalidPlugin because the built-in algorithms already report their
+	// own failures through the other sentinels; Placer and Connector output
+	// share this one category, and the wrapped message says which one failed
+	// and why.
+	ErrInvalidPlugin = errors.New("daedalus: invalid plugin output")
 )

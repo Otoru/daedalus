@@ -224,6 +224,88 @@ func TestGeneratorRejectsInvalidPluginConnections(t *testing.T) {
 	}
 }
 
+func TestGeneratorClassifiesInvalidPluginOutput(t *testing.T) {
+	t.Run("lying Placer", func(t *testing.T) {
+		valid := rectanglePlacementForTest(Cell{X: 1, Y: 1}, 2, 2)
+		generator := Generator{
+			Placer: fixedPlacer{placements: []RoomPlacement{{
+				Shape:  RoomShapeL,
+				Origin: valid.Origin,
+				Width:  valid.Width,
+				Height: valid.Height,
+				Cells:  valid.Cells,
+			}}},
+			Connector: fixedConnector{},
+		}
+		config := Config{
+			Width: 8, Height: 8, MinDistance: 1, MaxRooms: 1,
+			RoomGeometry: &RoomGeometry{
+				MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
+				MaxFootprintCells: 4,
+				Shapes: []RoomShapeWeight{
+					{Shape: RoomShapeRectangle, Weight: 1},
+					{Shape: RoomShapeL, Weight: 1},
+				},
+			},
+		}
+
+		layout, err := generator.Generate(config)
+
+		assert.ErrorIs(t, err, ErrInvalidPlugin)
+		assert.ErrorContains(t, err, "invalid placement 0")
+		assert.Equal(t, Layout{}, layout)
+	})
+
+	t.Run("lying Connector", func(t *testing.T) {
+		generator := Generator{
+			Placer: fixedPlacer{placements: []RoomPlacement{
+				rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
+				rectanglePlacementForTest(Cell{X: 4, Y: 1}, 1, 1),
+				rectanglePlacementForTest(Cell{X: 7, Y: 1}, 1, 1),
+			}},
+			// Three Rooms need exactly two edges when ExtraEdgeCount is zero.
+			// A short count would fail before the self-edge rule.
+			Connector: fixedConnector{connections: []Connection{
+				{FromRoomID: 0, ToRoomID: 0},
+				{FromRoomID: 1, ToRoomID: 2},
+			}},
+		}
+
+		layout, err := generator.Generate(fixedGeometryConfigForTest(9, 3, 3))
+
+		assert.ErrorIs(t, err, ErrInvalidPlugin)
+		assert.ErrorContains(t, err, "edge 0 is a self-edge")
+		assert.Equal(t, Layout{}, layout)
+	})
+
+	t.Run("empty Placer", func(t *testing.T) {
+		generator := Generator{Placer: fixedPlacer{}, Connector: fixedConnector{}}
+
+		layout, err := generator.Generate(fixedGeometryConfigForTest(8, 1, 1))
+
+		assert.ErrorIs(t, err, ErrInvalidPlugin)
+		assert.ErrorContains(t, err, "generator received no valid Room")
+		assert.Equal(t, Layout{}, layout)
+	})
+
+	t.Run("Connector edge count", func(t *testing.T) {
+		generator := Generator{
+			Placer: fixedPlacer{placements: []RoomPlacement{
+				rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
+				rectanglePlacementForTest(Cell{X: 4, Y: 1}, 1, 1),
+				rectanglePlacementForTest(Cell{X: 7, Y: 1}, 1, 1),
+			}},
+			Connector: fixedConnector{connections: []Connection{{FromRoomID: 0, ToRoomID: 1}}},
+		}
+
+		layout, err := generator.Generate(fixedGeometryConfigForTest(9, 3, 3))
+
+		assert.ErrorIs(t, err, ErrInvalidPlugin)
+		assert.ErrorContains(t, err, "Connector must return between")
+		assert.Equal(t, Layout{}, layout)
+	})
+}
+
 func TestGeneratorRejectsConnectorThatReturnsNoBackboneTree(t *testing.T) {
 	generator := Generator{
 		Placer: fixedPlacer{placements: []RoomPlacement{
@@ -308,6 +390,7 @@ func TestPluginErrorsDoNotPublishLayout(t *testing.T) {
 	for _, generator := range tests {
 		layout, err := generator.Generate(fixedGeometryConfigForTest(1, 1, 1))
 		assert.ErrorIs(t, err, pluginErr)
+		assert.NotErrorIs(t, err, ErrInvalidPlugin)
 		assert.Equal(t, Layout{}, layout)
 	}
 }

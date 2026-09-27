@@ -87,7 +87,7 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 		return Layout{}, err
 	}
 	if err := validateConnections(rooms, backbone, effective.extraEdgeCount); err != nil {
-		return Layout{}, err
+		return Layout{}, fmt.Errorf("%w: %w", ErrInvalidPlugin, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return Layout{}, err
@@ -124,10 +124,12 @@ func validateAndMaterializePlacements(
 	effective effectiveConfig,
 ) ([]PlacedRoom, *placementOccupancy, error) {
 	if len(placements) == 0 {
-		return nil, nil, errGeneratorNoRooms
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalidPlugin, errGeneratorNoRooms)
 	}
 	if uint64(len(placements)) > uint64(effective.maxRooms) {
-		return nil, nil, fmt.Errorf("%w: Room count exceeds MaxRooms", errGeneratorInvariant)
+		return nil, nil, fmt.Errorf(
+			"%w: %w: Room count exceeds MaxRooms", ErrInvalidPlugin, errGeneratorInvariant,
+		)
 	}
 
 	occupancy := newPlacementOccupancy(effective.width, effective.height)
@@ -149,7 +151,7 @@ func validateAndMaterializePlacements(
 		acceptance.accepted = accepted
 		footprint, err := validatePlacementAndMaterialize(placement, acceptance)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid placement %d: %w", index, err)
+			return nil, nil, fmt.Errorf("%w: invalid placement %d: %w", ErrInvalidPlugin, index, err)
 		}
 		roomID := RoomID(index)
 		roomCells := footprint

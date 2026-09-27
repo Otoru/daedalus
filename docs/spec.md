@@ -831,6 +831,7 @@ A transcrição não define dados públicos, amostragem discreta, arquitetura de
 | P50 | Cada eixo do quadrado do anel é uniform01()*4r-2r em [-2r, 2r]; o teste do anel independe de r, então DensityRegions não deslocam draws. |
 | P51 | Par fora do anel é reamostrado dentro do sampler e não consome MaxAttempts. |
 | P52 | Centro da bounding box no peso de Prim é o centroide das Cells, Origin+(dimensão-1)/2, não Origin+dimensão/2. |
+| P53 | Saída inaceitável de Placer ou Connector injetado é uma única categoria de erro; a mensagem embrulhada distingue qual algoritmo e o motivo. |
 
 ## Apêndice A — exemplos mínimos
 
@@ -843,3 +844,5 @@ Exemplo de roteamento: Room A é Rectangle 2×2 em Origin=(1,1), com Door em At=
 Antes dos streams, SDK valida faixas/finitude numérica, produto Grid, dimensões/área/Shape de RoomGeometry, regiões de densidade, solicitações de papel e formato de catálogo. O adaptador HTTP valida também ProtoJSON, Content-Type e limite de corpo antes de chamar a mesma Generate. Erro de validação não é Layout degenerado. Erro de rota, catálogo ou cancelamento após início descarta trabalho privado. [PREMISSA P14]
 
 Erros nomeados definem categorias, não representação Go. Serviço mapeia Config inválida a InvalidArgument, limite de admissão a ResourceExhausted, expiração a DeadlineExceeded e cancelamento do chamador a Canceled. SDK possui erros correspondentes sem dependência grpc.
+
+ErrInvalidPlugin classifica a saída que um Placer ou Connector injetado devolve quando o Generator não pode aceitá-la: máscara incompatível com a Shape declarada, offsets duplicados ou desconexos, placement fora do Grid, colisão, área ou distância inválida, contagem de arestas fora do intervalo, aresta própria, aresta duplicada, RoomID desconhecido ou grafo desconexo. As duas falhas são a mesma categoria para o chamador; a mensagem embrulhada indica qual algoritmo e o motivo. O serviço mapeia ErrInvalidPlugin a FailedPrecondition, junto de ErrNoCompatiblePlant e ErrUnroutableEdge.

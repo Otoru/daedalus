@@ -126,6 +126,11 @@ func StatusError(err error) error {
 	case errors.Is(err, daedalus.ErrUnroutableEdge):
 		// Same conservative reading as ErrNoCompatiblePlant.
 		return status.Error(codes.FailedPrecondition, "edge has no orthogonal route")
+	case errors.Is(err, daedalus.ErrInvalidPlugin):
+		// Unreachable over gRPC, which only ever runs the built-in algorithms;
+		// the mapping exists so the transport agrees with Appendix B rather
+		// than falling through to Internal if that ever changes.
+		return status.Error(codes.FailedPrecondition, "invalid plugin output")
 	default:
 		return status.Error(codes.Internal, "internal failure while generating layout")
 	}
