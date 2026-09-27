@@ -89,6 +89,16 @@ func (occupancy *placementOccupancy) footprintOverlaps(footprint []Cell) bool {
 	return false
 }
 
+// gapWindow is one footprint Cell's Chebyshev neighbourhood, clipped to the
+// occupancy grid. Inclusive bounds match the pairwise oracle in
+// footprintsRespectGap.
+type gapWindow struct {
+	minX int64
+	maxX int64
+	minY int64
+	maxY int64
+}
+
 func (occupancy *placementOccupancy) footprintRespectsGap(
 	footprint []Cell,
 	minRoomGap uint32,
@@ -96,39 +106,52 @@ func (occupancy *placementOccupancy) footprintRespectsGap(
 ) bool {
 	radius := int64(minRoomGap)
 	for _, cell := range footprint {
-		minimumX := int64(cell.X) - radius
-		if minimumX < 0 {
-			minimumX = 0
-		}
-		maximumX := int64(cell.X) + radius
-		if maximumX >= occupancy.width {
-			maximumX = occupancy.width - 1
-		}
-		minimumY := int64(cell.Y) - radius
-		if minimumY < 0 {
-			minimumY = 0
-		}
-		maximumY := int64(cell.Y) + radius
-		if maximumY >= occupancy.height {
-			maximumY = occupancy.height - 1
-		}
-
-		for y := minimumY; y <= maximumY; y++ {
-			rowStart := y * occupancy.width
-			for x := minimumX; x <= maximumX; x++ {
-				index := rowStart + x
-				encodedOwner := occupancy.owners[int(index)]
-				if encodedOwner == 0 {
-					continue
-				}
-				owner := encodedOwner - placementOwnerEncodingOffset
-				if owner != candidateOwner {
-					return false
-				}
-			}
+		window := occupancy.clampedGapWindow(cell, radius)
+		if occupancy.gapWindowHasForeignOwner(window, candidateOwner) {
+			return false
 		}
 	}
 	return true
+}
+
+func (occupancy *placementOccupancy) clampedGapWindow(cell Cell, radius int64) gapWindow {
+	window := gapWindow{
+		minX: int64(cell.X) - radius,
+		maxX: int64(cell.X) + radius,
+		minY: int64(cell.Y) - radius,
+		maxY: int64(cell.Y) + radius,
+	}
+	if window.minX < 0 {
+		window.minX = 0
+	}
+	if window.maxX >= occupancy.width {
+		window.maxX = occupancy.width - 1
+	}
+	if window.minY < 0 {
+		window.minY = 0
+	}
+	if window.maxY >= occupancy.height {
+		window.maxY = occupancy.height - 1
+	}
+	return window
+}
+
+func (occupancy *placementOccupancy) gapWindowHasForeignOwner(window gapWindow, candidateOwner uint32) bool {
+	for y := window.minY; y <= window.maxY; y++ {
+		rowStart := y * occupancy.width
+		for x := window.minX; x <= window.maxX; x++ {
+			index := rowStart + x
+			encodedOwner := occupancy.owners[int(index)]
+			if encodedOwner == 0 {
+				continue
+			}
+			owner := encodedOwner - placementOwnerEncodingOffset
+			if owner != candidateOwner {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // buildPlacementFromAt derives the bounding box and local mask from the first
@@ -300,54 +323,34 @@ func anchorsRespectDistance(first, second Cell, defaultDistance float64, regions
 	return float64(squaredDistance) >= requiredSquared
 }
 
+// placementAcceptance carries the request-scoped inputs of the section 7
+// acceptance checks. Build it once per request and pass it by value; only the
+// accepted slice header changes between attempts, so the hot loop does not
+// allocate a fresh value.
+type placementAcceptance struct {
+	gridWidth         uint32
+	gridHeight        uint32
+	maxFootprintCells uint32
+	minRoomGap        uint32
+	minDistance       float64
+	densityRegions    []DensityRegion
+	accepted          []acceptedPlacement
+	occupancy         *placementOccupancy
+}
+
 // validatePlacementForAcceptance centralizes the normative section 7 order. It
-// only reads accepted; the caller appends after nil, keeping every rejected
-// attempt atomic.
-func validatePlacementForAcceptance(
-	candidate RoomPlacement,
-	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
-	minDistance float64,
-	densityRegions []DensityRegion,
-	accepted []acceptedPlacement,
-	occupancy *placementOccupancy,
-) error {
-	_, err := validatePlacementAndMaterialize(
-		candidate,
-		gridWidth,
-		gridHeight,
-		maxFootprintCells,
-		minRoomGap,
-		minDistance,
-		densityRegions,
-		accepted,
-		occupancy,
-	)
+// only reads rules.accepted; the caller appends after nil, keeping every
+// rejected attempt atomic.
+func validatePlacementForAcceptance(candidate RoomPlacement, rules placementAcceptance) error {
+	_, err := validatePlacementAndMaterialize(candidate, rules)
 	return err
 }
 
 // validatePlacementAndMaterialize returns the absolute footprint to store in
 // acceptedPlacement when validation succeeds. This keeps the acceptance path
 // from rebuilding an already validated Room.
-func validatePlacementAndMaterialize(
-	candidate RoomPlacement,
-	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
-	minDistance float64,
-	densityRegions []DensityRegion,
-	accepted []acceptedPlacement,
-	occupancy *placementOccupancy,
-) ([]Cell, error) {
-	footprint, err := validatePlacementAndMaterializeInto(
-		candidate,
-		gridWidth,
-		gridHeight,
-		maxFootprintCells,
-		minRoomGap,
-		minDistance,
-		densityRegions,
-		accepted,
-		occupancy,
-		nil,
-	)
+func validatePlacementAndMaterialize(candidate RoomPlacement, rules placementAcceptance) ([]Cell, error) {
+	footprint, err := validatePlacementAndMaterializeInto(candidate, rules, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -359,20 +362,16 @@ func validatePlacementAndMaterialize(
 // materialization, it returns the scratch so the Poisson loop can reuse it.
 func validatePlacementAndMaterializeInto(
 	candidate RoomPlacement,
-	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
-	minDistance float64,
-	densityRegions []DensityRegion,
-	accepted []acceptedPlacement,
-	occupancy *placementOccupancy,
+	rules placementAcceptance,
 	scratch []Cell,
 ) ([]Cell, error) {
 	if !placementHasCanonicalMask(candidate) {
 		return scratch[:0], errPlacementInvalidMask
 	}
-	if !placementWithinBounds(candidate, gridWidth, gridHeight) {
+	if !placementWithinBounds(candidate, rules.gridWidth, rules.gridHeight) {
 		return scratch[:0], errPlacementOutOfBounds
 	}
-	if !placementWithinArea(candidate, maxFootprintCells) {
+	if !placementWithinArea(candidate, rules.maxFootprintCells) {
 		return scratch[:0], errPlacementAreaExceeded
 	}
 
@@ -383,23 +382,23 @@ func validatePlacementAndMaterializeInto(
 	// Without the grid, overlap and gap could not be checked and the normative
 	// sequence would be silently incomplete. Calling with accepted Rooms and no
 	// grid is a programming error, not user input.
-	if len(accepted) > 0 && occupancy == nil {
+	if len(rules.accepted) > 0 && rules.occupancy == nil {
 		panic("occupancy grid is missing with already accepted placements")
 	}
 
 	candidateAt := candidateFootprint[0]
-	for _, placement := range accepted {
-		if !anchorsRespectDistance(candidateAt, placement.anchor, minDistance, densityRegions) {
+	for _, placement := range rules.accepted {
+		if !anchorsRespectDistance(candidateAt, placement.anchor, rules.minDistance, rules.densityRegions) {
 			return candidateFootprint, errPlacementDistance
 		}
 	}
 
-	if occupancy != nil && occupancy.footprintOverlaps(candidateFootprint) {
+	if rules.occupancy != nil && rules.occupancy.footprintOverlaps(candidateFootprint) {
 		return candidateFootprint, errPlacementOverlap
 	}
 	// The candidate has no owner yet. The sentinel prevents confusing it with
 	// any Room, including when accepted contains only Bridson neighbours.
-	if occupancy != nil && !occupancy.footprintRespectsGap(candidateFootprint, minRoomGap, unownedPlacementOwner) {
+	if rules.occupancy != nil && !rules.occupancy.footprintRespectsGap(candidateFootprint, rules.minRoomGap, unownedPlacementOwner) {
 		return candidateFootprint, errPlacementGap
 	}
 	return candidateFootprint, nil

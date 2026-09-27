@@ -82,21 +82,8 @@ func assignRoomRoles(
 		return roles, nil
 	}
 
-	hasStart := false
-	hasBoss := false
-	needsDistances := false
-	for _, request := range requests {
-		switch request.Role {
-		case RoomRoleStart:
-			hasStart = true
-		case RoomRoleBoss:
-			hasBoss = true
-			needsDistances = true
-		case RoomRoleTreasure:
-			needsDistances = true
-		}
-	}
-	if hasBoss && !hasStart {
+	summary := summarizeRoleRequests(requests)
+	if summary.hasBoss && !summary.hasStart {
 		return nil, errBossRoleWithoutStart
 	}
 
@@ -104,7 +91,7 @@ func assignRoomRoles(
 	if rooms[startIndex].ID != RoomID(topologyFirstRoomIndex) {
 		return nil, errTopologyUnknownRoom
 	}
-	if hasStart {
+	if summary.hasStart {
 		roles[startIndex] = roomRolePointer(RoomRoleStart)
 	}
 
@@ -115,7 +102,7 @@ func assignRoomRoles(
 	// it, "farthest from Start" would have no reference and assignment would be
 	// undefined.
 	var distances []float64
-	if needsDistances {
+	if summary.needsDistances {
 		var err error
 		distances, err = weightedTreeDistances(ctx, rooms, backbone, startIndex)
 		if err != nil {
@@ -123,9 +110,52 @@ func assignRoomRoles(
 		}
 	}
 
+	if err := assignNonStartRoles(ctx, rooms, roles, distances, requests); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// roleRequestSummary records which thematic roles a request list asks for.
+// Distances are required for Boss and for Treasure; Start is optional for
+// Treasure and mandatory for Boss.
+type roleRequestSummary struct {
+	hasStart       bool
+	hasBoss        bool
+	needsDistances bool
+}
+
+func summarizeRoleRequests(requests []RoomRoleRequest) roleRequestSummary {
+	var summary roleRequestSummary
+	for _, request := range requests {
+		switch request.Role {
+		case RoomRoleStart:
+			summary.hasStart = true
+		case RoomRoleBoss:
+			summary.hasBoss = true
+			summary.needsDistances = true
+		case RoomRoleTreasure:
+			summary.needsDistances = true
+		}
+	}
+	return summary
+}
+
+// assignNonStartRoles walks requests in caller order. Start was reserved on
+// RoomID 0 before this walk, so Boss and Treasure can never occupy it.
+func assignNonStartRoles(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	roles []*RoomRole,
+	distances []float64,
+	requests []RoomRoleRequest,
+) error {
 	for _, request := range requests {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		switch request.Role {
 		case RoomRoleStart:
@@ -140,10 +170,7 @@ func assignRoomRoles(
 			}
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return roles, nil
+	return nil
 }
 
 func weightedTreeDistances(
@@ -157,17 +184,9 @@ func weightedTreeDistances(
 		centers[roomIndex] = boundingBoxCenter(room)
 	}
 
-	adjacency := make([][]weightedRoomNeighbor, len(rooms))
-	for _, connection := range backbone {
-		fromIndex := roomIndexByID(rooms, connection.FromRoomID)
-		toIndex := roomIndexByID(rooms, connection.ToRoomID)
-		if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
-			return nil, errTopologyUnknownRoom
-		}
-		squaredWeight := squaredCenterDistance(centers[fromIndex], centers[toIndex])
-		weight := math.Sqrt(float64(squaredWeight))
-		adjacency[fromIndex] = append(adjacency[fromIndex], weightedRoomNeighbor{roomIndex: toIndex, weight: weight})
-		adjacency[toIndex] = append(adjacency[toIndex], weightedRoomNeighbor{roomIndex: fromIndex, weight: weight})
+	adjacency, err := weightedRoomAdjacency(rooms, backbone, centers)
+	if err != nil {
+		return nil, err
 	}
 
 	distances := make([]float64, len(rooms))
@@ -197,6 +216,28 @@ func weightedTreeDistances(
 		}
 	}
 	return distances, nil
+}
+
+// weightedRoomAdjacency builds the undirected tree used to measure thematic
+// distance. Edge weight is the Euclidean distance between bounding-box centers.
+func weightedRoomAdjacency(
+	rooms []PlacedRoom,
+	backbone []Connection,
+	centers []roomCenter,
+) ([][]weightedRoomNeighbor, error) {
+	adjacency := make([][]weightedRoomNeighbor, len(rooms))
+	for _, connection := range backbone {
+		fromIndex := roomIndexByID(rooms, connection.FromRoomID)
+		toIndex := roomIndexByID(rooms, connection.ToRoomID)
+		if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
+			return nil, errTopologyUnknownRoom
+		}
+		squaredWeight := squaredCenterDistance(centers[fromIndex], centers[toIndex])
+		weight := math.Sqrt(float64(squaredWeight))
+		adjacency[fromIndex] = append(adjacency[fromIndex], weightedRoomNeighbor{roomIndex: toIndex, weight: weight})
+		adjacency[toIndex] = append(adjacency[toIndex], weightedRoomNeighbor{roomIndex: fromIndex, weight: weight})
+	}
+	return adjacency, nil
 }
 
 func assignFarthestRole(
@@ -245,22 +286,65 @@ func addExtraConnections(
 		return backbone, nil
 	}
 
+	backbonePairs, err := backbonePairFlags(rooms, backbone)
+	if err != nil {
+		return nil, err
+	}
+
+	centers := make([]roomCenter, len(rooms))
+	for roomIndex, room := range rooms {
+		centers[roomIndex] = boundingBoxCenter(room)
+	}
+	candidates, err := nonBackboneEdgeCandidates(ctx, rooms, centers, backbonePairs)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(candidates, func(first, second int) bool {
+		return primEdgeLess(candidates[first], candidates[second])
+	})
+
+	selectedCount := len(candidates)
+	if uint64(selectedCount) > uint64(extraEdgeCount) {
+		selectedCount = int(extraEdgeCount)
+	}
+	connections := make([]Connection, 0, len(backbone)+selectedCount)
+	connections = append(connections, backbone...)
+	for candidateIndex := topologyFirstRoomIndex; candidateIndex < selectedCount; candidateIndex++ {
+		connections = append(connections, candidates[candidateIndex].connection)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return connections, nil
+}
+
+// backbonePairFlags records both orientations of every backbone edge so the
+// shortcut scan can skip them without a second search.
+func backbonePairFlags(rooms []PlacedRoom, backbone []Connection) ([]bool, error) {
 	roomCount := len(rooms)
-	backbonePairs := make([]bool, roomCount*roomCount)
+	pairs := make([]bool, roomCount*roomCount)
 	for _, connection := range backbone {
 		fromIndex := roomIndexByID(rooms, connection.FromRoomID)
 		toIndex := roomIndexByID(rooms, connection.ToRoomID)
 		if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
 			return nil, errTopologyUnknownRoom
 		}
-		backbonePairs[fromIndex*roomCount+toIndex] = true
-		backbonePairs[toIndex*roomCount+fromIndex] = true
+		pairs[fromIndex*roomCount+toIndex] = true
+		pairs[toIndex*roomCount+fromIndex] = true
 	}
+	return pairs, nil
+}
 
-	centers := make([]roomCenter, roomCount)
-	for roomIndex, room := range rooms {
-		centers[roomIndex] = boundingBoxCenter(room)
-	}
+// nonBackboneEdgeCandidates lists complete-graph edges absent from the
+// backbone, oriented from the lower RoomID to the higher one. Section 8.1
+// selects the shortest of these after roles have been assigned.
+func nonBackboneEdgeCandidates(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	centers []roomCenter,
+	backbonePairs []bool,
+) ([]primEdgeCandidate, error) {
+	roomCount := len(rooms)
 	maximumCandidateCount := roomCount * (roomCount - topologyNextRoomOffset) / topologyUndirectedEdgeDivisor
 	candidates := make([]primEdgeCandidate, 0, maximumCandidateCount)
 	for firstIndex := topologyFirstRoomIndex; firstIndex < roomCount; firstIndex++ {
@@ -290,23 +374,7 @@ func addExtraConnections(
 			})
 		}
 	}
-	sort.Slice(candidates, func(first, second int) bool {
-		return primEdgeLess(candidates[first], candidates[second])
-	})
-
-	selectedCount := len(candidates)
-	if uint64(selectedCount) > uint64(extraEdgeCount) {
-		selectedCount = int(extraEdgeCount)
-	}
-	connections := make([]Connection, 0, len(backbone)+selectedCount)
-	connections = append(connections, backbone...)
-	for candidateIndex := topologyFirstRoomIndex; candidateIndex < selectedCount; candidateIndex++ {
-		connections = append(connections, candidates[candidateIndex].connection)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return connections, nil
+	return candidates, nil
 }
 
 func roomIndexByID(rooms []PlacedRoom, id RoomID) int {

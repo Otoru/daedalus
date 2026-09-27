@@ -61,14 +61,14 @@ func TestBoundaryAnchorMayProduceNegativeOrigin(t *testing.T) {
 
 	assert.Equal(t, Cell{X: -2, Y: 0}, placement.Origin)
 	assert.False(t, placementWithinBounds(placement, 8, 8))
-	assert.ErrorIs(t, validatePlacementForAcceptance(placement, 8, 8, 25, 0, 1, nil, nil, nil), errPlacementOutOfBounds)
+	assert.ErrorIs(t, validatePlacementForAcceptance(placement, acceptanceRules(8, 8, 25, 0, 1, nil, nil)), errPlacementOutOfBounds)
 }
 
 func TestBoundsAcceptsBoundingBoxAtExactGridLimit(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 2, Y: 2}, RoomShapeRectangle, 3, 3)
 
 	assert.True(t, placementWithinBounds(placement, 5, 5))
-	assert.NoError(t, validatePlacementForAcceptance(placement, 5, 5, 9, 0, 1, nil, nil, nil))
+	assert.NoError(t, validatePlacementForAcceptance(placement, acceptanceRules(5, 5, 9, 0, 1, nil, nil)))
 }
 
 func TestGapZeroAcceptsTouchingFootprintsAndRejectsOverlap(t *testing.T) {
@@ -77,8 +77,8 @@ func TestGapZeroAcceptsTouchingFootprintsAndRejectsOverlap(t *testing.T) {
 	overlapping := buildPlacementFromAt(Cell{X: 1, Y: 1}, RoomShapeRectangle, 2, 2)
 	acceptedPlacements, occupancy := mustAcceptedState(t, 8, 8, accepted)
 
-	assert.NoError(t, validatePlacementForAcceptance(touching, 8, 8, 4, 0, 1, nil, acceptedPlacements, occupancy))
-	assert.ErrorIs(t, validatePlacementForAcceptance(overlapping, 8, 8, 4, 0, 1, nil, acceptedPlacements, occupancy), errPlacementOverlap)
+	assert.NoError(t, validatePlacementForAcceptance(touching, acceptanceRules(8, 8, 4, 0, 1, acceptedPlacements, occupancy)))
+	assert.ErrorIs(t, validatePlacementForAcceptance(overlapping, acceptanceRules(8, 8, 4, 0, 1, acceptedPlacements, occupancy)), errPlacementOverlap)
 }
 
 func TestGapOneRejectsDiagonalContact(t *testing.T) {
@@ -87,7 +87,7 @@ func TestGapOneRejectsDiagonalContact(t *testing.T) {
 	acceptedPlacements, occupancy := mustAcceptedState(t, 4, 4, accepted)
 
 	assert.False(t, footprintsRespectGap(mustFootprint(t, diagonal), mustFootprint(t, accepted), 1))
-	assert.ErrorIs(t, validatePlacementForAcceptance(diagonal, 4, 4, 1, 1, 1, nil, acceptedPlacements, occupancy), errPlacementGap)
+	assert.ErrorIs(t, validatePlacementForAcceptance(diagonal, acceptanceRules(4, 4, 1, 1, 1, acceptedPlacements, occupancy)), errPlacementGap)
 }
 
 func TestAnchorDistanceUsesGreaterLocalDistance(t *testing.T) {
@@ -136,7 +136,7 @@ func TestPlacementValidationStopsAtFirstViolatedRule(t *testing.T) {
 		Cells:  []Cell{{X: 0, Y: 0}},
 	}
 
-	err := validatePlacementForAcceptance(placement, 1, 1, 1, 0, 1, nil, nil, nil)
+	err := validatePlacementForAcceptance(placement, acceptanceRules(1, 1, 1, 0, 1, nil, nil))
 	assert.ErrorIs(t, err, errPlacementInvalidMask)
 }
 
@@ -144,7 +144,7 @@ func TestPlacementAreaRespectsEffectiveLimit(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeRectangle, 2, 2)
 
 	assert.False(t, placementWithinArea(placement, 3))
-	assert.ErrorIs(t, validatePlacementForAcceptance(placement, 4, 4, 3, 0, 1, nil, nil, nil), errPlacementAreaExceeded)
+	assert.ErrorIs(t, validatePlacementForAcceptance(placement, acceptanceRules(4, 4, 3, 0, 1, nil, nil)), errPlacementAreaExceeded)
 }
 
 func TestOverlapDetectsSharedCell(t *testing.T) {
@@ -247,21 +247,29 @@ func BenchmarkAcceptance256(b *testing.B) {
 	accepted, occupancy := mustAcceptedState(b, gridSize, gridSize, placements...)
 	candidate := buildPlacementFromAt(Cell{X: 240, Y: 240}, RoomShapeRectangle, roomSize, roomSize)
 
+	rules := acceptanceRules(gridSize, gridSize, roomSize*roomSize, 1, 0, accepted, occupancy)
+
 	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		if err := validatePlacementForAcceptance(
-			candidate,
-			gridSize,
-			gridSize,
-			roomSize*roomSize,
-			1,
-			0,
-			nil,
-			accepted,
-			occupancy,
-		); err != nil {
+	for b.Loop() {
+		if err := validatePlacementForAcceptance(candidate, rules); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func acceptanceRules(
+	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
+	minDistance float64,
+	accepted []acceptedPlacement,
+	occupancy *placementOccupancy,
+) placementAcceptance {
+	return placementAcceptance{
+		gridWidth:         gridWidth,
+		gridHeight:        gridHeight,
+		maxFootprintCells: maxFootprintCells,
+		minRoomGap:        minRoomGap,
+		minDistance:       minDistance,
+		accepted:          accepted,
+		occupancy:         occupancy,
 	}
 }
