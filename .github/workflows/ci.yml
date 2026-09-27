@@ -48,17 +48,17 @@ jobs:
           git fetch --no-tags origin "+refs/heads/${{ github.event.repository.default_branch }}:refs/remotes/origin/${{ github.event.repository.default_branch }}"
           buf breaking --against ".git#ref=refs/remotes/origin/${{ github.event.repository.default_branch }}"
       - name: Test with race detector
-        # A suite da raiz inclui pureza de imports e, quando a frente do
-        # núcleo publicá-los, os goldens congelados (spec seção 13).
+        # A suite da raiz inclui pureza de imports e os goldens congelados
+        # (spec seção 13).
         run: go test -race ./...
       - name: Lint
         run: golangci-lint run ./...
       - name: Build
         run: go build ./...
       - name: Record benchmarks
-        # Spec seção 13: o CI registra benchmark. Enquanto a frente do
-        # núcleo não publica benchmarks, make bench roda os testes da raiz
-        # sem nenhum benchmark e o artefato registra isso.
+        # Spec seções 11 e 13: registra tempos e alocações das três cargas
+        # sem transformar o orçamento de SLA em asserção de runner
+        # compartilhado.
         run: make bench | tee bench.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -77,10 +77,6 @@ jobs:
     # A spec não fixa um padrão de nome para os testes golden, então o
     # seletor é a suite inteira (go test ./...): os goldens vivem nos
     # testes da raiz (spec seção 2) e são cobertos sem inventar nome.
-    # DEPENDÊNCIA: a frente do núcleo está escrevendo a suite golden
-    # agora; enquanto ela não existir, este job passa verificando o resto
-    # da suite e se torna o gate do AC-18 assim que os goldens forem
-    # commitados — sem mudança neste arquivo.
     #
     # NÃO EXERCITADO localmente: a disponibilidade do runner
     # ubuntu-24.04-arm só pode ser confirmada com o repositório no GitHub.
