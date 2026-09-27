@@ -38,6 +38,50 @@ var _ Placer = poissonDiskRoomsPlacer{}
 
 // Place proposes Rooms according to section 7 of the specification.
 func (poissonDiskRoomsPlacer) Place(req PlacementRequest) ([]RoomPlacement, error) {
+	run, err := preparePoissonRun(req)
+	if err != nil {
+		return nil, err
+	}
+	for len(run.active) > 0 && uint32(len(run.accepted)) < run.req.MaxRooms {
+		if err := run.ctx.Err(); err != nil {
+			return nil, err
+		}
+		// One placement-stream draw per outer iteration. Attempts below must
+		// not draw another active index.
+		activeIndex := int(run.streams.placement.uniformInt(0, uint64(len(run.active)-1)))
+		if err := run.attemptFromActive(activeIndex); err != nil {
+			return nil, err
+		}
+	}
+	if err := run.ctx.Err(); err != nil {
+		return nil, err
+	}
+	return run.placements, nil
+}
+
+// poissonRun is the mutable state of one poisson_disk_rooms_v1 Place call.
+// Draw order is frozen: one active-index draw per outer iteration, then
+// offsetX and offsetY on each attempt, and a geometry draw only after that
+// anchor lands inside the Grid.
+type poissonRun struct {
+	req                 PlacementRequest
+	ctx                 context.Context
+	streams             rngStreams
+	geometrySampler     roomGeometrySampler
+	accepted            []acceptedPlacement
+	placements          []RoomPlacement
+	active              []Cell
+	nearbyBuffer        []acceptedPlacement
+	localOffsetsScratch []Cell
+	footprintScratch    []Cell
+	occupancy           *placementOccupancy
+	acceleration        *anchorAccelerationGrid
+	acceptance          placementAcceptance
+	hasDensityRegions   bool
+	candidateAttempts   uint64
+}
+
+func preparePoissonRun(req PlacementRequest) (*poissonRun, error) {
 	ctx := req.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -73,97 +117,117 @@ func (poissonDiskRoomsPlacer) Place(req PlacementRequest) ([]RoomPlacement, erro
 	placements = append(placements, first)
 	active := make([]Cell, 0, req.MaxRooms)
 	active = append(active, firstFootprint[0])
-	nearbyBuffer := make([]acceptedPlacement, 0, req.MaxRooms)
-	localOffsetsScratch := make([]Cell, 0, req.RoomGeometry.MaxFootprintCells)
-	footprintScratch := make([]Cell, 0, req.RoomGeometry.MaxFootprintCells)
 	occupancy := newPlacementOccupancy(req.Width, req.Height)
 	occupancy.mark(0, firstFootprint)
 	acceleration := newAnchorAccelerationGrid(req)
 	acceleration.insert(firstFootprint[0], 0)
-	hasDensityRegions := len(req.DensityRegions) > 0
-	var candidateAttempts uint64
+	return &poissonRun{
+		req:                 req,
+		ctx:                 ctx,
+		streams:             streams,
+		geometrySampler:     geometrySampler,
+		accepted:            accepted,
+		placements:          placements,
+		active:              active,
+		nearbyBuffer:        make([]acceptedPlacement, 0, req.MaxRooms),
+		localOffsetsScratch: make([]Cell, 0, req.RoomGeometry.MaxFootprintCells),
+		footprintScratch:    make([]Cell, 0, req.RoomGeometry.MaxFootprintCells),
+		occupancy:           occupancy,
+		acceleration:        acceleration,
+		acceptance: placementAcceptance{
+			gridWidth:         req.Width,
+			gridHeight:        req.Height,
+			maxFootprintCells: req.RoomGeometry.MaxFootprintCells,
+			minRoomGap:        req.RoomGeometry.MinRoomGap,
+			minDistance:       req.MinDistance,
+			densityRegions:    req.DensityRegions,
+			occupancy:         occupancy,
+		},
+		hasDensityRegions: len(req.DensityRegions) > 0,
+	}, nil
+}
 
-	for len(active) > 0 && uint32(len(accepted)) < req.MaxRooms {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+func (run *poissonRun) attemptFromActive(activeIndex int) error {
+	base := run.active[activeIndex]
+	for attempt := uint32(0); attempt < run.req.MaxAttempts; attempt++ {
+		if run.candidateAttempts%cancellationCandidateInterval == 0 {
+			if err := run.ctx.Err(); err != nil {
+				return err
+			}
 		}
-		activeIndex := int(streams.placement.uniformInt(0, uint64(len(active)-1)))
-		base := active[activeIndex]
-		acceptedOne := false
-		for attempt := uint32(0); attempt < req.MaxAttempts; attempt++ {
-			if candidateAttempts%cancellationCandidateInterval == 0 {
-				if err := ctx.Err(); err != nil {
-					return nil, err
-				}
-			}
-			candidateAttempts++
-
-			radius := req.MinDistance
-			if hasDensityRegions {
-				radius = localMinDistance(base, req.MinDistance, req.DensityRegions)
-			}
-			offsetX, offsetY := sampleUniformAnnulusByRejection(&streams.placement, radius)
-			baseX := float64(base.X)
-			baseY := float64(base.Y)
-			continuousX := baseX + offsetX
-			continuousY := baseY + offsetY
-			anchorX := math.Floor(continuousX)
-			anchorY := math.Floor(continuousY)
-			if anchorX < 0 || anchorX >= float64(req.Width) || anchorY < 0 || anchorY >= float64(req.Height) {
-				continue
-			}
-			anchor := Cell{X: int32(anchorX), Y: int32(anchorY)}
-
-			geometry, sampled := geometrySampler.sample(&streams.roomGeometry)
-			if !sampled {
-				return nil, errPlacementRequestNotNormalized
-			}
-			candidate := buildPlacementFromAtInto(
-				anchor,
-				geometry.shape,
-				geometry.width,
-				geometry.height,
-				localOffsetsScratch[:0],
-			)
-			localOffsetsScratch = candidate.Cells
-			nearby := acceleration.nearbyInto(anchor, accepted, nearbyBuffer[:0])
-			var validationErr error
-			footprintScratch, validationErr = validatePlacementAndMaterializeInto(
-				candidate,
-				req.Width,
-				req.Height,
-				req.RoomGeometry.MaxFootprintCells,
-				req.RoomGeometry.MinRoomGap,
-				req.MinDistance,
-				req.DensityRegions,
-				nearby,
-				occupancy,
-				footprintScratch[:0],
-			)
-			if validationErr != nil {
-				continue
-			}
-
-			owner := uint32(len(accepted))
-			acceptedFootprint := append([]Cell(nil), footprintScratch...)
-			accepted = append(accepted, acceptedPlacement{anchor: anchor, footprint: acceptedFootprint})
-			acceptedCandidate := candidate
-			acceptedCandidate.Cells = append([]Cell(nil), candidate.Cells...)
-			placements = append(placements, acceptedCandidate)
-			occupancy.mark(owner, footprintScratch)
-			acceleration.insert(anchor, int(owner))
-			active = append(active, anchor)
-			acceptedOne = true
-			break
+		run.candidateAttempts++
+		anchor, inside := run.proposeAnchor(base)
+		if !inside {
+			continue
 		}
-		if !acceptedOne {
-			active = append(active[:activeIndex], active[activeIndex+1:]...)
+		accepted, err := run.acceptAnchor(anchor)
+		if err != nil {
+			return err
+		}
+		if accepted {
+			return nil
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	run.active = append(run.active[:activeIndex], run.active[activeIndex+1:]...)
+	return nil
+}
+
+// proposeAnchor draws offsetX and offsetY for this attempt and quantizes the
+// candidate. Geometry is intentionally not drawn here: an anchor outside the
+// Grid rejects the attempt without touching the geometry stream.
+func (run *poissonRun) proposeAnchor(base Cell) (Cell, bool) {
+	radius := run.req.MinDistance
+	if run.hasDensityRegions {
+		radius = localMinDistance(base, run.req.MinDistance, run.req.DensityRegions)
 	}
-	return placements, nil
+	offsetX, offsetY := sampleUniformAnnulusByRejection(&run.streams.placement, radius)
+	baseX := float64(base.X)
+	baseY := float64(base.Y)
+	continuousX := baseX + offsetX
+	continuousY := baseY + offsetY
+	anchorX := math.Floor(continuousX)
+	anchorY := math.Floor(continuousY)
+	if anchorX < 0 || anchorX >= float64(run.req.Width) || anchorY < 0 || anchorY >= float64(run.req.Height) {
+		return Cell{}, false
+	}
+	return Cell{X: int32(anchorX), Y: int32(anchorY)}, true
+}
+
+func (run *poissonRun) acceptAnchor(anchor Cell) (bool, error) {
+	geometry, sampled := run.geometrySampler.sample(&run.streams.roomGeometry)
+	if !sampled {
+		return false, errPlacementRequestNotNormalized
+	}
+	candidate := buildPlacementFromAtInto(
+		anchor,
+		geometry.shape,
+		geometry.width,
+		geometry.height,
+		run.localOffsetsScratch[:0],
+	)
+	run.localOffsetsScratch = candidate.Cells
+	nearby := run.acceleration.nearbyInto(anchor, run.accepted, run.nearbyBuffer[:0])
+	var validationErr error
+	run.acceptance.accepted = nearby
+	run.footprintScratch, validationErr = validatePlacementAndMaterializeInto(
+		candidate,
+		run.acceptance,
+		run.footprintScratch[:0],
+	)
+	if validationErr != nil {
+		return false, nil
+	}
+
+	owner := uint32(len(run.accepted))
+	acceptedFootprint := append([]Cell(nil), run.footprintScratch...)
+	run.accepted = append(run.accepted, acceptedPlacement{anchor: anchor, footprint: acceptedFootprint})
+	acceptedCandidate := candidate
+	acceptedCandidate.Cells = append([]Cell(nil), candidate.Cells...)
+	run.placements = append(run.placements, acceptedCandidate)
+	run.occupancy.mark(owner, run.footprintScratch)
+	run.acceleration.insert(anchor, int(owner))
+	run.active = append(run.active, anchor)
+	return true, nil
 }
 
 type roomGeometrySampler struct {
@@ -263,47 +327,56 @@ type anchorAccelerationGrid struct {
 }
 
 func newAnchorAccelerationGrid(req PlacementRequest) *anchorAccelerationGrid {
-	minimumDistance := req.MinDistance
-	maximumDistance := req.MinDistance
-	if len(req.DensityRegions) > 0 {
-		for _, region := range req.DensityRegions {
-			if region.MinDistance < minimumDistance {
-				minimumDistance = region.MinDistance
-			}
-			if region.MinDistance > maximumDistance {
-				maximumDistance = region.MinDistance
-			}
-		}
-	}
+	minimumDistance, maximumDistance := extremalRegionDistances(req.MinDistance, req.DensityRegions)
 	side := minimumDistance / math.Sqrt(bridsonDimensions)
-	columns := int64(math.Ceil(float64(req.Width) / side))
-	rows := int64(math.Ceil(float64(req.Height) / side))
-	if columns < 1 {
-		columns = 1
-	}
-	if rows < 1 {
-		rows = 1
-	}
-	neighborRange := int64(uniformAccelerationRange)
-	if len(req.DensityRegions) > 0 {
-		maximumUsefulRange := columns
-		if rows > maximumUsefulRange {
-			maximumUsefulRange = rows
-		}
-		ratio := maximumDistance / side
-		if ratio >= float64(maximumUsefulRange) {
-			neighborRange = maximumUsefulRange
-		} else {
-			neighborRange = int64(math.Ceil(ratio)) + int64(densityAccelerationMargin)
-			if neighborRange > maximumUsefulRange {
-				neighborRange = maximumUsefulRange
-			}
-		}
-	}
+	columns := accelerationAxisCount(req.Width, side)
+	rows := accelerationAxisCount(req.Height, side)
+	neighborRange := bridsonNeighborRange(columns, rows, maximumDistance, side, len(req.DensityRegions) > 0)
 	return &anchorAccelerationGrid{
 		side: side, columns: columns, rows: rows, neighborRange: neighborRange,
 		buckets: make([][]int, int(columns*rows)),
 	}
+}
+
+func extremalRegionDistances(fallback float64, regions []DensityRegion) (float64, float64) {
+	minimum := fallback
+	maximum := fallback
+	for _, region := range regions {
+		if region.MinDistance < minimum {
+			minimum = region.MinDistance
+		}
+		if region.MinDistance > maximum {
+			maximum = region.MinDistance
+		}
+	}
+	return minimum, maximum
+}
+
+func accelerationAxisCount(span uint32, side float64) int64 {
+	count := int64(math.Ceil(float64(span) / side))
+	if count < 1 {
+		return 1
+	}
+	return count
+}
+
+func bridsonNeighborRange(columns, rows int64, maximumDistance, side float64, hasDensityRegions bool) int64 {
+	if !hasDensityRegions {
+		return int64(uniformAccelerationRange)
+	}
+	maximumUsefulRange := columns
+	if rows > maximumUsefulRange {
+		maximumUsefulRange = rows
+	}
+	ratio := maximumDistance / side
+	if ratio >= float64(maximumUsefulRange) {
+		return maximumUsefulRange
+	}
+	neighborRange := int64(math.Ceil(ratio)) + int64(densityAccelerationMargin)
+	if neighborRange > maximumUsefulRange {
+		return maximumUsefulRange
+	}
+	return neighborRange
 }
 
 func (grid *anchorAccelerationGrid) insert(anchor Cell, acceptedIndex int) {

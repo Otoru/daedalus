@@ -250,33 +250,38 @@ func referencePrim(rooms []PlacedRoom) []Connection {
 	visited[0] = true
 	edges := make([]Connection, 0, len(rooms)-1)
 	for len(edges) < len(rooms)-1 {
-		var best referenceEdge
-		hasBest := false
-		for fromIndex, from := range rooms {
-			if !visited[fromIndex] {
-				continue
-			}
-			for toIndex, to := range rooms {
-				if visited[toIndex] {
-					continue
-				}
-				candidate := referenceEdge{
-					connection:  Connection{FromRoomID: from.ID, ToRoomID: to.ID},
-					fromIndex:   fromIndex,
-					toIndex:     toIndex,
-					weight:      referenceWeight(from, to),
-					destination: to.At,
-				}
-				if !hasBest || referenceEdgeLess(candidate, best) {
-					best = candidate
-					hasBest = true
-				}
-			}
-		}
+		best := nextReferencePrimEdge(rooms, visited)
 		edges = append(edges, best.connection)
 		visited[best.toIndex] = true
 	}
 	return edges
+}
+
+func nextReferencePrimEdge(rooms []PlacedRoom, visited []bool) referenceEdge {
+	var best referenceEdge
+	hasBest := false
+	for fromIndex, from := range rooms {
+		if !visited[fromIndex] {
+			continue
+		}
+		for toIndex, to := range rooms {
+			if visited[toIndex] {
+				continue
+			}
+			candidate := referenceEdge{
+				connection:  Connection{FromRoomID: from.ID, ToRoomID: to.ID},
+				fromIndex:   fromIndex,
+				toIndex:     toIndex,
+				weight:      referenceWeight(from, to),
+				destination: to.At,
+			}
+			if !hasBest || referenceEdgeLess(candidate, best) {
+				best = candidate
+				hasBest = true
+			}
+		}
+	}
+	return best
 }
 
 func referenceEdgeLess(first, second referenceEdge) bool {

@@ -278,18 +278,18 @@ func assertPlacementInvariants(t testing.TB, req PlacementRequest, placements []
 	t.Helper()
 	accepted := make([]acceptedPlacement, 0, len(placements))
 	occupancy := newPlacementOccupancy(req.Width, req.Height)
+	acceptance := placementAcceptance{
+		gridWidth:         req.Width,
+		gridHeight:        req.Height,
+		maxFootprintCells: req.RoomGeometry.MaxFootprintCells,
+		minRoomGap:        req.RoomGeometry.MinRoomGap,
+		minDistance:       req.MinDistance,
+		densityRegions:    req.DensityRegions,
+		occupancy:         occupancy,
+	}
 	for index, placement := range placements {
-		err := validatePlacementForAcceptance(
-			placement,
-			req.Width,
-			req.Height,
-			req.RoomGeometry.MaxFootprintCells,
-			req.RoomGeometry.MinRoomGap,
-			req.MinDistance,
-			req.DensityRegions,
-			accepted,
-			occupancy,
-		)
+		acceptance.accepted = accepted
+		err := validatePlacementForAcceptance(placement, acceptance)
 		assert.NoError(t, err, "placement %d", index)
 		footprint, ok := absoluteFootprint(placement)
 		require.True(t, ok)

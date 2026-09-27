@@ -57,74 +57,19 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 		return nil, err
 	}
 
-	centers := make([]roomCenter, roomCount)
-	for index, room := range req.Rooms {
-		centers[index] = boundingBoxCenter(room)
-	}
-	visited := make([]bool, roomCount)
-	bestKeys := make([]primEdgeCandidate, roomCount)
-	hasKey := make([]bool, roomCount)
-	visited[primStartingRoomIndex] = true
-	var keyUpdates uint64
-
-	updateKeys := func(fromIndex int) error {
-		from := req.Rooms[fromIndex]
-		for toIndex, to := range req.Rooms {
-			if visited[toIndex] {
-				continue
-			}
-			if keyUpdates%primCancellationUpdateInterval == 0 {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-			}
-			keyUpdates++
-
-			candidate := primEdgeCandidate{
-				connection: Connection{
-					FromRoomID: from.ID,
-					ToRoomID:   to.ID,
-				},
-				toIndex:       toIndex,
-				squaredWeight: squaredCenterDistance(centers[fromIndex], centers[toIndex]),
-				// Section 8's "destination Cell" is interpreted as the destination
-				// Room's At anchor, the Cell supplied by the PlacedRoom contract for
-				// canonical tie-breaks.
-				destination: to.At,
-			}
-			if !hasKey[toIndex] || primEdgeLess(candidate, bestKeys[toIndex]) {
-				bestKeys[toIndex] = candidate
-				hasKey[toIndex] = true
-			}
-		}
-		return nil
-	}
-
-	if err := updateKeys(primStartingRoomIndex); err != nil {
+	search := newPrimSearch(req, ctx)
+	if err := search.updateKeys(primStartingRoomIndex); err != nil {
 		return nil, err
 	}
 	for len(edges) < edgeCapacity {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-
-		var selected primEdgeCandidate
-		hasSelected := false
-		for roomIndex := range req.Rooms {
-			if visited[roomIndex] || !hasKey[roomIndex] {
-				continue
-			}
-			candidate := bestKeys[roomIndex]
-			if !hasSelected || primEdgeLess(candidate, selected) {
-				selected = candidate
-				hasSelected = true
-			}
-		}
-
+		selected := search.selectNextEdge()
 		edges = append(edges, selected.connection)
-		visited[selected.toIndex] = true
-		hasKey[selected.toIndex] = false
-		if err := updateKeys(selected.toIndex); err != nil {
+		search.visited[selected.toIndex] = true
+		search.hasKey[selected.toIndex] = false
+		if err := search.updateKeys(selected.toIndex); err != nil {
 			return nil, err
 		}
 	}
@@ -132,6 +77,84 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 		return nil, err
 	}
 	return edges, nil
+}
+
+// primSearch holds the growing tree of one prim_rooms_v1 Connect call.
+type primSearch struct {
+	req        ConnectionRequest
+	ctx        context.Context
+	centers    []roomCenter
+	visited    []bool
+	bestKeys   []primEdgeCandidate
+	hasKey     []bool
+	keyUpdates uint64
+}
+
+func newPrimSearch(req ConnectionRequest, ctx context.Context) *primSearch {
+	roomCount := len(req.Rooms)
+	centers := make([]roomCenter, roomCount)
+	for index, room := range req.Rooms {
+		centers[index] = boundingBoxCenter(room)
+	}
+	visited := make([]bool, roomCount)
+	visited[primStartingRoomIndex] = true
+	return &primSearch{
+		req:      req,
+		ctx:      ctx,
+		centers:  centers,
+		visited:  visited,
+		bestKeys: make([]primEdgeCandidate, roomCount),
+		hasKey:   make([]bool, roomCount),
+	}
+}
+
+func (search *primSearch) updateKeys(fromIndex int) error {
+	from := search.req.Rooms[fromIndex]
+	for toIndex, to := range search.req.Rooms {
+		if search.visited[toIndex] {
+			continue
+		}
+		if search.keyUpdates%primCancellationUpdateInterval == 0 {
+			if err := search.ctx.Err(); err != nil {
+				return err
+			}
+		}
+		search.keyUpdates++
+
+		candidate := primEdgeCandidate{
+			connection: Connection{
+				FromRoomID: from.ID,
+				ToRoomID:   to.ID,
+			},
+			toIndex:       toIndex,
+			squaredWeight: squaredCenterDistance(search.centers[fromIndex], search.centers[toIndex]),
+			// Section 8's "destination Cell" is interpreted as the destination
+			// Room's At anchor, the Cell supplied by the PlacedRoom contract for
+			// canonical tie-breaks.
+			destination: to.At,
+		}
+		if !search.hasKey[toIndex] || primEdgeLess(candidate, search.bestKeys[toIndex]) {
+			search.bestKeys[toIndex] = candidate
+			search.hasKey[toIndex] = true
+		}
+	}
+	return nil
+}
+
+func (search *primSearch) selectNextEdge() primEdgeCandidate {
+	var selected primEdgeCandidate
+	hasSelected := false
+	for roomIndex := range search.req.Rooms {
+		if search.visited[roomIndex] || !search.hasKey[roomIndex] {
+			continue
+		}
+		candidate := search.bestKeys[roomIndex]
+		if !hasSelected || primEdgeLess(candidate, selected) {
+			selected = candidate
+			hasSelected = true
+		}
+	}
+	return selected
 }
 
 // boundingBoxCenter returns the bounding-box center as the centroid of its
