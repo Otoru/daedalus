@@ -19,6 +19,20 @@ type Placer interface {
 	Place(req PlacementRequest) ([]RoomPlacement, error)
 }
 
+// PlacerFunc adapts an ordinary function to Placer, so a closure can be
+// injected wherever the interface is expected, without declaring a type:
+//
+//	generator := daedalus.Generator{Placer: daedalus.PlacerFunc(placeInAGrid)}
+//
+// The obligations of Placer are the function's: bounds, determinism,
+// cancellation through req.Context, and safety under concurrent calls.
+type PlacerFunc func(req PlacementRequest) ([]RoomPlacement, error)
+
+// Place calls the adapted function.
+func (place PlacerFunc) Place(req PlacementRequest) ([]RoomPlacement, error) {
+	return place(req)
+}
+
 // RoomPlacement describes a proposed Room, with local Cells relative to Origin
 // and ordered by the canonical mask.
 type RoomPlacement struct {
@@ -86,6 +100,21 @@ type Connector interface {
 	// Connect chooses the request's Room-to-Room edges, or returns an error. It
 	// must observe req.Context and abandon work when canceled.
 	Connect(req ConnectionRequest) ([]Connection, error)
+}
+
+// ConnectorFunc adapts an ordinary function to Connector, so a closure can be
+// injected wherever the interface is expected, without declaring a type:
+//
+//	generator := daedalus.Generator{Connector: daedalus.ConnectorFunc(connectInOrder)}
+//
+// The obligations of Connector are the function's: a valid edge set,
+// determinism, cancellation through req.Context, and safety under concurrent
+// calls.
+type ConnectorFunc func(req ConnectionRequest) ([]Connection, error)
+
+// Connect calls the adapted function.
+func (connect ConnectorFunc) Connect(req ConnectionRequest) ([]Connection, error) {
+	return connect(req)
 }
 
 // PlacedRoom describes an already positioned Room, including anchor, mask,

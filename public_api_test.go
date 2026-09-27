@@ -164,6 +164,58 @@ func TestExternalPlacerAndConnectorAreAccepted(t *testing.T) {
 	assert.Equal(t, daedalus.RoomID(1), layout.Corridors[0].ToRoomID)
 }
 
+// TestFunctionAdaptersMatchTheirInterfaces checks that PlacerFunc and
+// ConnectorFunc forward the request untouched: wrapping the very strategies
+// used by TestExternalPlacerAndConnectorAreAccepted in closures must produce
+// the same Layout the interface values produce. An adapter that dropped or
+// rewrote the request would move a Room or an edge and fail here.
+func TestFunctionAdaptersMatchTheirInterfaces(t *testing.T) {
+	var _ daedalus.Placer = daedalus.PlacerFunc(nil)
+	var _ daedalus.Connector = daedalus.ConnectorFunc(nil)
+
+	config := daedalus.Config{
+		Width: 8, Height: 4, Seed: 9, MinDistance: 1, MaxRooms: 2,
+		RoomGeometry: &daedalus.RoomGeometry{
+			MinWidth: 3, MaxWidth: 3, MinHeight: 3, MaxHeight: 3,
+			MaxFootprintCells: 9, MinRoomGap: 1,
+			Shapes: []daedalus.RoomShapeWeight{{
+				Shape: daedalus.RoomShapeRectangle, Weight: 1,
+			}},
+		},
+	}
+
+	fromInterfaces, err := daedalus.Generator{
+		Placer:    twoRoomPlacer{},
+		Connector: treeConnector{},
+	}.Generate(config)
+	require.NoError(t, err)
+
+	fromClosures, err := daedalus.Generator{
+		Placer: daedalus.PlacerFunc(func(request daedalus.PlacementRequest) ([]daedalus.RoomPlacement, error) {
+			return twoRoomPlacer{}.Place(request)
+		}),
+		Connector: daedalus.ConnectorFunc(func(request daedalus.ConnectionRequest) ([]daedalus.Connection, error) {
+			return treeConnector{}.Connect(request)
+		}),
+	}.Generate(config)
+	require.NoError(t, err)
+
+	assert.Equal(t, fromInterfaces, fromClosures)
+}
+
+// TestFunctionAdaptersPropagateErrors checks that an error returned by the
+// adapted function reaches the caller instead of being swallowed.
+func TestFunctionAdaptersPropagateErrors(t *testing.T) {
+	layout, err := daedalus.Generator{
+		Placer: daedalus.PlacerFunc(func(daedalus.PlacementRequest) ([]daedalus.RoomPlacement, error) {
+			return lyingPlacer{}.Place(daedalus.PlacementRequest{})
+		}),
+	}.Generate(daedalus.Config{Width: 8, Height: 8, Seed: 1})
+
+	assert.ErrorIs(t, err, daedalus.ErrInvalidPlugin)
+	assert.Equal(t, daedalus.Layout{}, layout)
+}
+
 // TestMutatingALayoutDoesNotAffectAnotherCall checks that writing into a
 // returned Layout leaves a Layout from another call unchanged.
 func TestMutatingALayoutDoesNotAffectAnotherCall(t *testing.T) {

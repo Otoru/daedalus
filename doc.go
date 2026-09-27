@@ -233,8 +233,10 @@
 //
 // # Placer and Connector
 //
-// Placer and Connector are the only two Strategy interfaces in v1. A function
-// or a closure satisfies either one. Placer returns RoomPlacements and nothing
+// Placer and Connector are the only two Strategy interfaces in v1. Each has a
+// function adapter, PlacerFunc and ConnectorFunc, so a plain function or a
+// closure is injectable without declaring a type. Placer returns
+// RoomPlacements and nothing
 // else: no Plants, no Doors, no IDs, and no mutation of a Layout. Connector
 // returns edges and nothing else: it does not route Cells. Generator checks
 // every placement against the normalized geometry and the Grid, and it rejects
