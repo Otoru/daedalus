@@ -1,0 +1,235 @@
+syntax = "proto3";
+
+package daedalus.v1;
+
+option go_package = "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1;daedalusv1";
+
+// DaedalusService é o subprocesso de geração de dungeons. Ele não tem estado
+// entre solicitações: cada Generate recebe uma Config completa, cria um
+// Layout, devolve-o e não retém Layout, Seed nem stream aleatório. O
+// transporte usa somente os algoritmos embutidos (poisson_disk_v1 e
+// prim_v1); algoritmos injetados pelo jogo existem apenas no SDK.
+service DaedalusService {
+  // Generate cria um Layout completo a partir de uma Config. Falhas de
+  // validação retornam InvalidArgument, limites de produto excedidos
+  // retornam ResourceExhausted, expiração retorna DeadlineExceeded e
+  // cancelamento do chamador retorna Canceled. Nunca devolve Layout
+  // parcial.
+  rpc Generate(GenerateRequest) returns (GenerateResponse);
+}
+
+// GenerateRequest carrega todos os dados de Config, inclusive
+// extra_edge_count, room_role_requests e density_regions.
+message GenerateRequest {
+  Config config = 1;
+}
+
+// GenerateResponse carrega o Layout completo gerado com sucesso.
+message GenerateResponse {
+  Layout layout = 1;
+}
+
+// CorridorOrder escolhe o cotovelo preferido do traçado ortogonal em L.
+// UNSPECIFIED é lido como o padrão X_THEN_Y.
+enum CorridorOrder {
+  CORRIDOR_ORDER_UNSPECIFIED = 0;
+  CORRIDOR_ORDER_X_THEN_Y = 1;
+  CORRIDOR_ORDER_Y_THEN_X = 2;
+}
+
+// RoomRole é o papel temático opcional de uma Room.
+enum RoomRole {
+  ROOM_ROLE_UNSPECIFIED = 0;
+  ROOM_ROLE_START = 1;
+  ROOM_ROLE_BOSS = 2;
+  ROOM_ROLE_TREASURE = 3;
+}
+
+// Direction é uma das quatro direções cardinais do Grid. Diagonais são
+// inválidas. A ordem canônica é NORTH, EAST, SOUTH, WEST.
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_NORTH = 1;
+  DIRECTION_EAST = 2;
+  DIRECTION_SOUTH = 3;
+  DIRECTION_WEST = 4;
+}
+
+// CellKind é o estado físico de uma Cell do Grid.
+enum CellKind {
+  CELL_KIND_UNSPECIFIED = 0;
+  CELL_KIND_EMPTY = 1;
+  CELL_KIND_ROOM = 2;
+  CELL_KIND_CORRIDOR = 3;
+}
+
+// Cell é uma coordenada inteira (x, y) do Grid, nunca posição em pixel.
+// Válida somente dentro de Grid: 0 ≤ x < width e 0 ≤ y < height.
+message Cell {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+// Config é a entrada completa de uma solicitação de geração. width, height
+// e seed são obrigatórios e não têm defaults seguros; os demais campos
+// ausentes recebem os defaults do SDK (cell_size 1.0, min_distance 6.0,
+// max_attempts 30, max_rooms 256, corridor_order X_THEN_Y). Limites v1 de
+// produto: width e height em 1..256, width × height ≤ 65.536 e
+// max_rooms ≤ 256; excedê-los falha com ResourceExhausted, sem truncamento.
+message Config {
+  uint32 width = 1;
+  uint32 height = 2;
+  // cell_size é o tamanho de uma Cell em unidades opacas do chamador,
+  // copiado para o Layout somente; finito e > 0.
+  double cell_size = 3;
+  // seed é a fonte dos streams aleatórios da solicitação; zero é válido e
+  // não significa aleatório.
+  uint64 seed = 4;
+  // min_distance é a distância euclidiana mínima, em Cells, entre centros
+  // de Rooms; finita e ≥ 1.0.
+  double min_distance = 5;
+  // max_attempts é o máximo de candidatos Poisson por ponto ativo: 1..1024.
+  uint32 max_attempts = 6;
+  // max_rooms é o máximo de Rooms aceitas: 1..256.
+  uint32 max_rooms = 7;
+  CorridorOrder corridor_order = 8;
+  // extra_edge_count é a quantidade máxima de arestas curtas descartadas
+  // reintroduzidas após o backbone; 0 desliga ciclos e garante árvore.
+  uint32 extra_edge_count = 9;
+  // room_role_requests lista no máximo uma entrada por RoomRole; vazio
+  // desliga Rooms temáticas.
+  repeated RoomRoleRequest room_role_requests = 10;
+  // density_regions lista retângulos não vazios, internos ao Grid e sem
+  // sobreposição; vazio usa min_distance uniforme e desliga biomas.
+  repeated DensityRegion density_regions = 11;
+  // plant_catalog é opcional; ausente, plant_id e tags ficam vazios no
+  // Layout.
+  PlantCatalog plant_catalog = 12;
+}
+
+// RoomRoleRequest é um pedido declarativo de atribuição de um RoomRole e
+// das tags de Plant exigidas.
+message RoomRoleRequest {
+  RoomRole role = 1;
+  // count é 1 para START e BOSS, e 0..max_rooms para TREASURE. BOSS exige
+  // uma solicitação START na mesma Config.
+  uint32 count = 2;
+  // required_tags lista tags UTF-8 não vazias e sem duplicatas.
+  repeated string required_tags = 3;
+}
+
+// DensityRegion é um retângulo de Grid que substitui min_distance por uma
+// distância local.
+message DensityRegion {
+  // min é o canto mínimo do retângulo, em Cells, inclusivo.
+  Cell min = 1;
+  // max é o canto máximo do retângulo, em Cells, exclusivo.
+  Cell max = 2;
+  // min_distance é a distância euclidiana mínima local, em Cells: finita e
+  // ≥ 1.0.
+  double min_distance = 3;
+}
+
+// PlantCatalog é o catálogo engine-agnóstico de metadados de assets. Quando
+// presente, ambas as listas são não vazias, com IDs únicos.
+message PlantCatalog {
+  repeated RoomPlant rooms = 1;
+  repeated CorridorPlant corridors = 2;
+}
+
+// RoomPlant descreve os metadados de uma Plant de Room do catálogo.
+message RoomPlant {
+  // id é o identificador opaco do asset: UTF-8 não vazio.
+  string id = 1;
+  repeated string tags = 2;
+  // weight é o peso relativo de seleção ponderada: 1..2^32-1.
+  uint32 weight = 3;
+  // door_directions declara as Directions de abertura suportadas: não
+  // vazio e sem duplicatas.
+  repeated Direction door_directions = 4;
+}
+
+// CorridorPlant descreve os metadados de uma Plant de Corridor do catálogo.
+// Não declara geometria local porque ela deriva de Corridor.cells.
+message CorridorPlant {
+  string id = 1;
+  repeated string tags = 2;
+  uint32 weight = 3;
+}
+
+// CellState é o estado físico de uma Cell do Grid gerado.
+message CellState {
+  Cell at = 1;
+  CellKind kind = 2;
+  // room_id está presente se e somente se kind == CELL_KIND_ROOM.
+  optional uint32 room_id = 3;
+  // corridor_ids lista em ordem crescente todos os Corridors que contêm
+  // esta Cell; não vazio se e somente se kind == CELL_KIND_CORRIDOR.
+  repeated uint32 corridor_ids = 4;
+}
+
+// Grid é o espaço retangular de width × height Cells do Layout.
+message Grid {
+  uint32 width = 1;
+  uint32 height = 2;
+  // cell_size é o tamanho de uma Cell em unidades opacas do chamador.
+  double cell_size = 3;
+  // cells contém exatamente width × height estados, em ordem canônica
+  // (Y e depois X): o estado de (x, y) está em cells[y * width + x].
+  repeated CellState cells = 4;
+}
+
+// Room é um vértice topológico do Layout; em v1 ocupa exatamente uma Cell.
+message Room {
+  uint32 id = 1;
+  Cell at = 2;
+  // role está ausente quando a Config não pediu papéis temáticos ou quando
+  // nenhum papel foi atribuído a esta Room.
+  optional RoomRole role = 3;
+  // plant_id é o metadado de asset selecionado, ou vazio sem catálogo.
+  string plant_id = 4;
+  // tags é a cópia canônica das tags da Plant selecionada.
+  repeated string tags = 5;
+  // door_ids lista as aberturas da Room em ordem cardinal; pode ser vazio.
+  repeated uint32 door_ids = 6;
+}
+
+// Corridor é uma aresta topológica entre duas Rooms e suas Cells ortogonais
+// internas ordenadas.
+message Corridor {
+  uint32 id = 1;
+  uint32 from_room_id = 2;
+  uint32 to_room_id = 3;
+  uint32 from_door_id = 4;
+  uint32 to_door_id = 5;
+  // cells são as Cells internas do traçado, do lado From até o lado To;
+  // vazio quando as Rooms são adjacentes.
+  repeated Cell cells = 6;
+  string plant_id = 7;
+  repeated string tags = 8;
+}
+
+// Door é a abertura lógica de uma Room identificada por Direction cardinal;
+// única por (room_id, direction).
+message Door {
+  uint32 id = 1;
+  uint32 room_id = 2;
+  // at é sempre igual ao at da Room dona em v1.
+  Cell at = 3;
+  Direction direction = 4;
+  // corridor_ids lista em ordem crescente uma ou mais arestas que usam
+  // esta abertura.
+  repeated uint32 corridor_ids = 5;
+}
+
+// Layout é o resultado completo, imutável e gerado com sucesso de uma
+// solicitação. O payload é array-of-structs (AoS): mensagens aninhadas
+// repetidas espelham Room, Corridor, Door e CellState, porque um Layout
+// moderado por solicitação não justifica a validação de offsets de SoA.
+message Layout {
+  uint64 seed = 1;
+  Grid grid = 2;
+  repeated Room rooms = 3;
+  repeated Corridor corridors = 4;
+  repeated Door doors = 5;
+}

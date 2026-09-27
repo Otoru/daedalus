@@ -1,0 +1,13 @@
+version: v2
+clean: true
+plugins:
+  # Acrescente plugins de C# ou C++ aqui quando um cliente precisar; este
+  # serviço distribui somente Go.
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: internal/gen/go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.5.1
+    out: internal/gen/go
+    opt: paths=source_relative
+inputs:
+  - directory: proto
