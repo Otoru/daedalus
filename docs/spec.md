@@ -118,7 +118,7 @@ A página `/debug/` oferece editor de JSON da solicitação, exemplo carregável
 
 - `Content-Type` deve ser `application/json`; corpo limitado a `MaxHTTPDebugBodyBytes=1 MiB`. Tamanho excedido retorna `413`. A resposta bem-sucedida é `200 application/json` com Layout inteiro e Content-Length limitado pela serialização do Grid/Layout dentro de MaxCells/MaxRooms.
 
-- Status: `400` JSON/Config inválidos; `413` corpo ou limite de recursos excedido; `422` ErrNoCompatiblePlant ou ErrUnroutableEdge; `504` deadline excedido; `500` falha interna sem stack trace ou dados sensíveis. Erros são JSON estruturado com `code`, `message` em português e `request_id` opaco.
+- Status: `400` JSON/Config inválidos; `413` corpo ou limite de recursos excedido; `422` ErrNoCompatiblePlant ou ErrUnroutableEdge; `504` deadline excedido; `500` falha interna sem stack trace ou dados sensíveis. Erros são JSON estruturado com `code`, `message` em inglês e `request_id` opaco.
 
 - Cada POST respeita Context/timeout da conexão e usa a mesma admissão `MaxConcurrentGenerations` do serviço; RPCs e pedidos HTTP competem pelo mesmo limite, sem fila HTTP ilimitada. Cliente que desconecta cancela a geração HTTP correspondente.
 
@@ -748,7 +748,7 @@ Mecânica de Makefile e workflows segue forma operacional do Geppetto, com targe
 | AC-31 | `--http-debug-enabled=true` com addr padrão | Listener responde apenas em 127.0.0.1:8090; `GET /healthz` e `GET /debug/` funcionam; sem CDN/recursos externos. |
 | AC-32 | POST ProtoJSON válida | Layout corresponde a Generate do SDK para a mesma Config/Seed, incluindo RoomGeometry, footprints, Doors e Cells. |
 | AC-33 | UI gera Layout válido | Pedido pode ser editado/enviado; Grid, Rooms, Shapes, Doors e Corridors são visualizados; copiar request/response preserva ProtoJSON. |
-| AC-34 | JSON, Content-Type ou Config inválidos | Resposta 400 estruturada em português, sem panic, stack trace ou Layout parcial. |
+| AC-34 | JSON, Content-Type ou Config inválidos | Resposta 400 estruturada em inglês, sem panic, stack trace ou Layout parcial. |
 | AC-35 | Corpo excede 1 MiB ou limite de Grid/Rooms | Resposta 413; rejeição ocorre antes de alocação proporcional/geração. |
 | AC-36 | Cliente cancela POST ou deadline expira | Geração observa cancelamento; não publica nem persiste Layout parcial; outra solicitação não é afetada. |
 | AC-37 | HTTP e gRPC simultâneos | Ambos compartilham MaxConcurrentGenerations; race detector limpo e cada resposta determinística. |
