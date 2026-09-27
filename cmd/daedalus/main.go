@@ -122,7 +122,13 @@ func newApp(processConfig config.Config, stdout, stderr io.Writer) *fx.App {
 			},
 			newGRPCRuntime,
 		),
-		fx.Invoke(func(*grpcRuntime) {}),
+		fx.Invoke(func(*grpcRuntime) {
+			// fx calls a Provide constructor only when another component
+			// requests its result. This invoke is that request: newGRPCRuntime
+			// must run so it can append the gRPC and HTTP OnStart/OnStop hooks
+			// to the lifecycle. The body is empty because those hooks, not this
+			// function, start and stop the servers.
+		}),
 	)
 }
 

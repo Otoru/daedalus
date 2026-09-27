@@ -35,6 +35,10 @@ const (
 	debugIndexPath = "assets/index.html"
 	debugCSSPath   = "assets/styles.css"
 	debugJSPath    = "assets/app.js"
+	// contentTypeHeader and jsonMediaType are the header and media type
+	// section 2.3 requires on debug JSON requests and responses.
+	contentTypeHeader = "Content-Type"
+	jsonMediaType     = "application/json"
 	// The specification does not define the status of a request whose client
 	// canceled the connection. The conservative reading uses the conventional
 	// code 499, without turning it into an internal 500 failure.
@@ -110,7 +114,7 @@ func (server *Server) observeAndRestrict(next http.Handler) http.Handler {
 }
 
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
-	writer.Header().Set("Content-Type", "application/json")
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
 	statusText := "ok"
 	statusCode := http.StatusOK
 	if !server.service.Serving() {
@@ -156,15 +160,15 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "debug asset unavailable", http.StatusInternalServerError)
 		return
 	}
-	writer.Header().Set("Content-Type", contentType)
+	writer.Header().Set(contentTypeHeader, contentType)
 	_, _ = writer.Write(content)
 }
 
 func (server *Server) generate(writer http.ResponseWriter, request *http.Request) {
 	// Optional MIME parameters, such as charset, do not change the media type
 	// application/json required by section 2.3.
-	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get(contentTypeHeader))
+	if err != nil || mediaType != jsonMediaType {
 		writeError(
 			writer, request, http.StatusBadRequest,
 			"invalid_content_type", "Content-Type must be application/json",
@@ -218,7 +222,7 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing layout")
 		return
 	}
-	writer.Header().Set("Content-Type", "application/json")
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(encoded)
 }
@@ -246,35 +250,60 @@ func validateCanonicalMessage(
 		}
 	}
 	for name, value := range object {
-		field := descriptor.Fields().ByName(protoreflect.Name(name))
-		if field == nil {
-			return fmt.Errorf("non-canonical or unknown field %s", name)
+		if err := validateCanonicalField(name, value, descriptor, required); err != nil {
+			return err
 		}
-		if isProtoJSONQuotedInteger(field.Kind()) {
-			var text string
-			if err := json.Unmarshal(value, &text); err != nil {
-				return fmt.Errorf("64-bit integer %s must be a decimal string", name)
-			}
-			if _, err := strconv.ParseUint(text, 10, 64); err != nil {
-				return fmt.Errorf("invalid 64-bit integer %s", name)
-			}
+	}
+	return nil
+}
+
+func validateCanonicalField(
+	name string,
+	value json.RawMessage,
+	descriptor protoreflect.MessageDescriptor,
+	required map[protoreflect.FullName][]protoreflect.Name,
+) error {
+	field := descriptor.Fields().ByName(protoreflect.Name(name))
+	if field == nil {
+		return fmt.Errorf("non-canonical or unknown field %s", name)
+	}
+	if isProtoJSONQuotedInteger(field.Kind()) {
+		if err := validateQuotedProtoInteger(name, value); err != nil {
+			return err
 		}
-		if field.Kind() != protoreflect.MessageKind || string(value) == "null" {
-			continue
-		}
-		if field.IsList() {
-			var items []json.RawMessage
-			if err := json.Unmarshal(value, &items); err != nil {
-				return fmt.Errorf("invalid list %s", name)
-			}
-			for _, item := range items {
-				if err := validateCanonicalMessage(item, field.Message(), required); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if err := validateCanonicalMessage(value, field.Message(), required); err != nil {
+	}
+	if field.Kind() != protoreflect.MessageKind || string(value) == "null" {
+		return nil
+	}
+	if field.IsList() {
+		return validateCanonicalList(name, value, field.Message(), required)
+	}
+	return validateCanonicalMessage(value, field.Message(), required)
+}
+
+func validateQuotedProtoInteger(name string, value json.RawMessage) error {
+	var text string
+	if err := json.Unmarshal(value, &text); err != nil {
+		return fmt.Errorf("64-bit integer %s must be a decimal string", name)
+	}
+	if _, err := strconv.ParseUint(text, 10, 64); err != nil {
+		return fmt.Errorf("invalid 64-bit integer %s", name)
+	}
+	return nil
+}
+
+func validateCanonicalList(
+	name string,
+	value json.RawMessage,
+	message protoreflect.MessageDescriptor,
+	required map[protoreflect.FullName][]protoreflect.Name,
+) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(value, &items); err != nil {
+		return fmt.Errorf("invalid list %s", name)
+	}
+	for _, item := range items {
+		if err := validateCanonicalMessage(item, message, required); err != nil {
 			return err
 		}
 	}
@@ -350,7 +379,7 @@ func writeError(
 	code string,
 	message string,
 ) {
-	writer.Header().Set("Content-Type", "application/json")
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
 	writer.WriteHeader(statusCode)
 	_ = json.NewEncoder(writer).Encode(struct {
 		Code      string `json:"code"`
