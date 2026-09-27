@@ -6,10 +6,10 @@ import (
 	"sync"
 )
 
-var errAdmissionStopped = errors.New("admissão de gerações interrompida")
+var errAdmissionStopped = errors.New("generation admission stopped")
 
-// Admission limita gerações simultâneas e pode ser compartilhada pelos
-// transportes gRPC e HTTP. Cada processo deve criar exatamente uma instância.
+// Admission limits concurrent generations and may be shared by the
+// gRPC and HTTP transports. Each process must create exactly one instance.
 type Admission struct {
 	tokens    chan struct{}
 	stopped   chan struct{}
@@ -19,10 +19,10 @@ type Admission struct {
 	active    sync.WaitGroup
 }
 
-// NewAdmission cria um limitador com a concorrência positiva informada.
+// NewAdmission creates a limiter with the given positive concurrency.
 func NewAdmission(limit int) *Admission {
 	if limit < 1 {
-		panic("limite de admissão deve ser maior que zero")
+		panic("admission limit must be greater than zero")
 	}
 	return &Admission{
 		tokens:    make(chan struct{}, limit),
@@ -49,8 +49,8 @@ func (admission *Admission) acquire(ctx context.Context) error {
 			<-admission.tokens
 			return errAdmissionStopped
 		}
-		// Add ocorre sob o mesmo mutex de Stop; depois que Stop retorna,
-		// Wait nunca disputa com um Add tardio sobre contador zero.
+		// Add runs under the same mutex as Stop; after Stop returns,
+		// Wait never races with a late Add on a zero counter.
 		admission.active.Add(1)
 		admission.mutex.Unlock()
 		return nil
@@ -66,8 +66,8 @@ func (admission *Admission) release() {
 	admission.active.Done()
 }
 
-// Stop interrompe novas admissões e desperta chamadas que aguardam vaga.
-// Chamadas já admitidas continuam até que seus Contexts sejam cancelados.
+// Stop stops new admissions and wakes calls waiting for a slot.
+// Calls already admitted continue until their Contexts are canceled.
 func (admission *Admission) Stop() {
 	admission.stopOnce.Do(func() {
 		admission.mutex.Lock()
@@ -77,7 +77,7 @@ func (admission *Admission) Stop() {
 	})
 }
 
-// Wait aguarda todas as gerações admitidas terminarem ou o Context expirar.
+// Wait waits for every admitted generation to finish or for the Context to expire.
 func (admission *Admission) Wait(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {

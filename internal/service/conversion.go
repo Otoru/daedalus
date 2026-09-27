@@ -14,10 +14,10 @@ const (
 	invalidRoomShape     daedalus.RoomShape     = -1
 )
 
-// ConfigFromProto converte uma mensagem de fio em valor independente do SDK.
+// ConfigFromProto converts a wire message into a value independent of the SDK.
 func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 	if source == nil {
-		return daedalus.Config{}, fmt.Errorf("%w: config ausente", daedalus.ErrInvalidConfig)
+		return daedalus.Config{}, fmt.Errorf("%w: missing config", daedalus.ErrInvalidConfig)
 	}
 	target := daedalus.Config{
 		Width: source.Width, Height: source.Height, CellSize: source.CellSize,
@@ -31,7 +31,7 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 	for index, request := range source.RoomRoleRequests {
 		if request == nil {
 			return daedalus.Config{}, fmt.Errorf(
-				"%w: room_role_requests[%d] ausente", daedalus.ErrInvalidConfig, index,
+				"%w: room_role_requests[%d] missing", daedalus.ErrInvalidConfig, index,
 			)
 		}
 		target.RoomRoleRequests[index] = daedalus.RoomRoleRequest{
@@ -44,7 +44,7 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 	for index, region := range source.DensityRegions {
 		if region == nil || region.Min == nil || region.Max == nil {
 			return daedalus.Config{}, fmt.Errorf(
-				"%w: density_regions[%d] incompleta", daedalus.ErrInvalidConfig, index,
+				"%w: density_regions[%d] incomplete", daedalus.ErrInvalidConfig, index,
 			)
 		}
 		target.DensityRegions[index] = daedalus.DensityRegion{
@@ -65,7 +65,7 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 		for index, weight := range geometry.Shapes {
 			if weight == nil {
 				return daedalus.Config{}, fmt.Errorf(
-					"%w: room_geometry.shapes[%d] ausente", daedalus.ErrInvalidConfig, index,
+					"%w: room_geometry.shapes[%d] missing", daedalus.ErrInvalidConfig, index,
 				)
 			}
 			target.RoomGeometry.Shapes[index] = daedalus.RoomShapeWeight{
@@ -91,7 +91,7 @@ func plantCatalogFromProto(source *daedalusv1.PlantCatalog) (*daedalus.PlantCata
 	}
 	for index, plant := range source.Rooms {
 		if plant == nil {
-			return nil, fmt.Errorf("%w: plant_catalog.rooms[%d] ausente", daedalus.ErrInvalidConfig, index)
+			return nil, fmt.Errorf("%w: plant_catalog.rooms[%d] missing", daedalus.ErrInvalidConfig, index)
 		}
 		target.Rooms[index] = daedalus.RoomPlant{
 			ID: daedalus.PlantID(plant.Id), Tags: append([]string(nil), plant.Tags...),
@@ -104,7 +104,7 @@ func plantCatalogFromProto(source *daedalusv1.PlantCatalog) (*daedalus.PlantCata
 	for index, plant := range source.Corridors {
 		if plant == nil {
 			return nil, fmt.Errorf(
-				"%w: plant_catalog.corridors[%d] ausente", daedalus.ErrInvalidConfig, index,
+				"%w: plant_catalog.corridors[%d] missing", daedalus.ErrInvalidConfig, index,
 			)
 		}
 		target.Corridors[index] = daedalus.CorridorPlant{
@@ -115,8 +115,8 @@ func plantCatalogFromProto(source *daedalusv1.PlantCatalog) (*daedalus.PlantCata
 	return target, nil
 }
 
-// LayoutToProto converte o resultado completo em uma mensagem própria da
-// solicitação, preservando campos opcionais.
+// LayoutToProto converts the complete result into a message owned by the
+// request, preserving optional fields.
 func LayoutToProto(source daedalus.Layout) *daedalusv1.Layout {
 	target := &daedalusv1.Layout{
 		Seed: uint64(source.Seed),

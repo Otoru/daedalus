@@ -1,4 +1,4 @@
-// Package service adapta o SDK puro ao serviço gRPC v1.
+// Package service adapts the pure SDK to the gRPC v1 service.
 package service
 
 import (
@@ -15,11 +15,11 @@ import (
 
 const maximumGridDimension uint32 = 256
 
-// GenerateFunc é a fronteira compartilhável de geração usada pelos
-// adaptadores gRPC e HTTP.
+// GenerateFunc is the shareable generation boundary used by the
+// gRPC and HTTP adapters.
 type GenerateFunc func(context.Context, daedalus.Config) (daedalus.Layout, error)
 
-// Server implementa DaedalusService sem reter estado entre gerações.
+// Server implements DaedalusService without retaining state between generations.
 type Server struct {
 	daedalusv1.UnimplementedDaedalusServiceServer
 
@@ -30,15 +30,15 @@ type Server struct {
 	serving   atomic.Bool
 }
 
-// New cria o serviço com o gerador e o limitador compartilhado informados.
-// Um generate nil seleciona exclusivamente os algoritmos embutidos do SDK.
+// New creates the service with the given generator and shared limiter.
+// A nil generate selects only the SDK's built-in algorithms.
 func New(generate GenerateFunc, admission *Admission) *Server {
 	if generate == nil {
 		generator := daedalus.Generator{}
 		generate = generator.GenerateContext
 	}
 	if admission == nil {
-		panic("admission não pode ser nil")
+		panic("admission cannot be nil")
 	}
 	serviceContext, cancel := context.WithCancel(context.Background())
 	server := &Server{
@@ -49,13 +49,13 @@ func New(generate GenerateFunc, admission *Admission) *Server {
 	return server
 }
 
-// Generate valida, admite e executa uma geração completa.
+// Generate validates, admits, and runs a complete generation.
 func (server *Server) Generate(
 	ctx context.Context,
 	request *daedalusv1.GenerateRequest,
 ) (*daedalusv1.GenerateResponse, error) {
 	if request == nil || request.Config == nil {
-		return nil, status.Error(codes.InvalidArgument, "solicitação deve conter config")
+		return nil, status.Error(codes.InvalidArgument, "request must contain config")
 	}
 	if err := checkHardLimits(request.Config); err != nil {
 		return nil, StatusError(err)
@@ -66,7 +66,7 @@ func (server *Server) Generate(
 	}
 	if err := server.admission.acquire(ctx); err != nil {
 		if errors.Is(err, errAdmissionStopped) {
-			return nil, status.Error(codes.Unavailable, "serviço em desligamento")
+			return nil, status.Error(codes.Unavailable, "service is shutting down")
 		}
 		return nil, StatusError(err)
 	}
@@ -86,8 +86,8 @@ func (server *Server) Generate(
 	return &daedalusv1.GenerateResponse{Layout: LayoutToProto(layout)}, nil
 }
 
-// BeginShutdown marca o serviço como não atendendo, interrompe admissões e
-// cancela o trabalho em curso. É idempotente.
+// BeginShutdown marks the service as not serving, stops admissions, and
+// cancels in-flight work. It is idempotent.
 func (server *Server) BeginShutdown() {
 	if server.serving.Swap(false) {
 		server.admission.Stop()
@@ -95,56 +95,56 @@ func (server *Server) BeginShutdown() {
 	}
 }
 
-// Serving informa se o serviço ainda aceita novas solicitações.
+// Serving reports whether the service still accepts new requests.
 func (server *Server) Serving() bool {
 	return server.serving.Load()
 }
 
-// Wait aguarda as gerações já admitidas terminarem.
+// Wait waits for generations already admitted to finish.
 func (server *Server) Wait(ctx context.Context) error {
 	return server.admission.Wait(ctx)
 }
 
-// StatusError converte categorias do SDK e Context em status gRPC sem
-// revelar detalhes internos.
+// StatusError converts SDK and Context categories into gRPC status
+// without revealing internal details.
 func StatusError(err error) error {
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, context.DeadlineExceeded):
-		return status.Error(codes.DeadlineExceeded, "prazo da geração excedido")
+		return status.Error(codes.DeadlineExceeded, "generation deadline exceeded")
 	case errors.Is(err, context.Canceled):
-		return status.Error(codes.Canceled, "geração cancelada")
+		return status.Error(codes.Canceled, "generation canceled")
 	case errors.Is(err, daedalus.ErrInvalidConfig):
-		return status.Error(codes.InvalidArgument, "configuração inválida")
+		return status.Error(codes.InvalidArgument, "invalid configuration")
 	case errors.Is(err, daedalus.ErrLimitExceeded):
-		return status.Error(codes.ResourceExhausted, "limite de recursos excedido")
+		return status.Error(codes.ResourceExhausted, "resource limit exceeded")
 	case errors.Is(err, daedalus.ErrNoCompatiblePlant):
-		// A especificação fixa HTTP 422, mas não o status gRPC. A leitura
-		// conservadora usa FailedPrecondition, seu análogo mais próximo.
-		return status.Error(codes.FailedPrecondition, "nenhuma plant compatível")
+		// The specification fixes HTTP 422, but not the gRPC status. The
+		// conservative reading uses FailedPrecondition, its closest analogue.
+		return status.Error(codes.FailedPrecondition, "no compatible plant")
 	case errors.Is(err, daedalus.ErrUnroutableEdge):
-		// Mesma interpretação conservadora de ErrNoCompatiblePlant.
-		return status.Error(codes.FailedPrecondition, "aresta sem rota ortogonal")
+		// Same conservative reading as ErrNoCompatiblePlant.
+		return status.Error(codes.FailedPrecondition, "edge has no orthogonal route")
 	default:
-		return status.Error(codes.Internal, "falha interna ao gerar layout")
+		return status.Error(codes.Internal, "internal failure while generating layout")
 	}
 }
 
 func checkHardLimits(config *daedalusv1.Config) error {
 	if config.Width > maximumGridDimension || config.Height > maximumGridDimension {
-		return fmt.Errorf("%w: dimensão do grid excede o máximo v1", daedalus.ErrLimitExceeded)
+		return fmt.Errorf("%w: grid dimension exceeds the v1 maximum", daedalus.ErrLimitExceeded)
 	}
 	cellCount := uint64(config.Width) * uint64(config.Height)
 	if cellCount > uint64(daedalus.MaxCells) {
-		return fmt.Errorf("%w: quantidade de cells excede o máximo v1", daedalus.ErrLimitExceeded)
+		return fmt.Errorf("%w: cell count exceeds the v1 maximum", daedalus.ErrLimitExceeded)
 	}
 	if config.MaxRooms > daedalus.MaxRooms {
-		return fmt.Errorf("%w: max_rooms excede o máximo v1", daedalus.ErrLimitExceeded)
+		return fmt.Errorf("%w: max_rooms exceeds the v1 maximum", daedalus.ErrLimitExceeded)
 	}
 	if config.RoomGeometry != nil &&
 		config.RoomGeometry.MaxFootprintCells > daedalus.MaxFootprintCells {
-		return fmt.Errorf("%w: max_footprint_cells excede o máximo v1", daedalus.ErrLimitExceeded)
+		return fmt.Errorf("%w: max_footprint_cells exceeds the v1 maximum", daedalus.ErrLimitExceeded)
 	}
 	return nil
 }

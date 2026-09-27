@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestStatusErrorMapeiaCategoriasDoSDK(t *testing.T) {
+func TestStatusErrorMapsSDKCategories(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -23,13 +23,13 @@ func TestStatusErrorMapeiaCategoriasDoSDK(t *testing.T) {
 		err  error
 		code codes.Code
 	}{
-		{name: "configuração inválida", err: daedalus.ErrInvalidConfig, code: codes.InvalidArgument},
-		{name: "limite excedido", err: daedalus.ErrLimitExceeded, code: codes.ResourceExhausted},
-		{name: "plant incompatível", err: daedalus.ErrNoCompatiblePlant, code: codes.FailedPrecondition},
-		{name: "aresta sem rota", err: daedalus.ErrUnroutableEdge, code: codes.FailedPrecondition},
+		{name: "invalid configuration", err: daedalus.ErrInvalidConfig, code: codes.InvalidArgument},
+		{name: "limit exceeded", err: daedalus.ErrLimitExceeded, code: codes.ResourceExhausted},
+		{name: "incompatible plant", err: daedalus.ErrNoCompatiblePlant, code: codes.FailedPrecondition},
+		{name: "edge without route", err: daedalus.ErrUnroutableEdge, code: codes.FailedPrecondition},
 		{name: "deadline", err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
-		{name: "cancelamento", err: context.Canceled, code: codes.Canceled},
-		{name: "falha interna", err: errors.New("segredo interno"), code: codes.Internal},
+		{name: "cancellation", err: context.Canceled, code: codes.Canceled},
+		{name: "internal failure", err: errors.New("internal secret"), code: codes.Internal},
 	}
 	for _, testCase := range cases {
 		testCase := testCase
@@ -40,13 +40,13 @@ func TestStatusErrorMapeiaCategoriasDoSDK(t *testing.T) {
 
 			assert.Equal(t, testCase.code, status.Code(got))
 			if testCase.code == codes.Internal {
-				assert.NotContains(t, got.Error(), "segredo interno")
+				assert.NotContains(t, got.Error(), "internal secret")
 			}
 		})
 	}
 }
 
-func TestGenerateRejeitaLimitesAntesDeInvocarGerador(t *testing.T) {
+func TestGenerateRejectsLimitsBeforeInvokingTheGenerator(t *testing.T) {
 	t.Parallel()
 
 	var called atomic.Bool
@@ -62,7 +62,7 @@ func TestGenerateRejeitaLimitesAntesDeInvocarGerador(t *testing.T) {
 		name   string
 		config *daedalusv1.Config
 	}{
-		{name: "largura", config: &daedalusv1.Config{Width: 257, Height: 1}},
+		{name: "width", config: &daedalusv1.Config{Width: 257, Height: 1}},
 		{name: "cells", config: &daedalusv1.Config{Width: 256, Height: 257}},
 		{name: "rooms", config: &daedalusv1.Config{Width: 1, Height: 1, MaxRooms: 257}},
 		{
@@ -88,7 +88,7 @@ func TestGenerateRejeitaLimitesAntesDeInvocarGerador(t *testing.T) {
 	assert.False(t, called.Load())
 }
 
-func TestConfigFromProtoConverteSolicitacaoCompleta(t *testing.T) {
+func TestConfigFromProtoConvertsACompleteRequest(t *testing.T) {
 	t.Parallel()
 
 	got, err := ConfigFromProto(&daedalusv1.Config{
@@ -98,7 +98,7 @@ func TestConfigFromProtoConverteSolicitacaoCompleta(t *testing.T) {
 		ExtraEdgeCount: 6,
 		RoomRoleRequests: []*daedalusv1.RoomRoleRequest{{
 			Role: daedalusv1.RoomRole_ROOM_ROLE_START, Count: 1,
-			RequiredTags: []string{"inicio"},
+			RequiredTags: []string{"start"},
 		}},
 		DensityRegions: []*daedalusv1.DensityRegion{{
 			Min: &daedalusv1.Cell{X: 1, Y: 2},
@@ -113,13 +113,13 @@ func TestConfigFromProtoConverteSolicitacaoCompleta(t *testing.T) {
 		},
 		PlantCatalog: &daedalusv1.PlantCatalog{
 			Rooms: []*daedalusv1.RoomPlant{{
-				Id: "room", Tags: []string{"inicio"}, Weight: 3,
+				Id: "room", Tags: []string{"start"}, Weight: 3,
 				DoorDirections: []daedalusv1.Direction{
 					daedalusv1.Direction_DIRECTION_NORTH,
 				},
 			}},
 			Corridors: []*daedalusv1.CorridorPlant{{
-				Id: "corridor", Tags: []string{"pedra"}, Weight: 4,
+				Id: "corridor", Tags: []string{"stone"}, Weight: 4,
 			}},
 		},
 	})
@@ -138,7 +138,7 @@ func TestConfigFromProtoConverteSolicitacaoCompleta(t *testing.T) {
 	assert.Equal(t, daedalus.PlantID("corridor"), got.PlantCatalog.Corridors[0].ID)
 }
 
-func TestConfigFromProtoRejeitaMensagensAninhadasAusentes(t *testing.T) {
+func TestConfigFromProtoRejectsMissingNestedMessages(t *testing.T) {
 	t.Parallel()
 
 	cases := []*daedalusv1.Config{
@@ -156,7 +156,7 @@ func TestConfigFromProtoRejeitaMensagensAninhadasAusentes(t *testing.T) {
 	}
 }
 
-func TestLayoutToProtoPreservaPresencaEFootprints(t *testing.T) {
+func TestLayoutToProtoPreservesPresenceAndFootprints(t *testing.T) {
 	t.Parallel()
 
 	roomID := daedalus.RoomID(0)
@@ -172,8 +172,8 @@ func TestLayoutToProtoPreservaPresencaEFootprints(t *testing.T) {
 		Rooms: []daedalus.Room{{
 			ID: 0, At: daedalus.Cell{}, Shape: daedalus.RoomShapeRectangle,
 			Origin: daedalus.Cell{}, Width: 1, Height: 1,
-			Cells: []daedalus.Cell{{}}, Role: &role, PlantID: "sala",
-			Tags: []string{"inicio"},
+			Cells: []daedalus.Cell{{}}, Role: &role, PlantID: "hall",
+			Tags: []string{"start"},
 		}},
 	})
 
@@ -189,7 +189,7 @@ func TestLayoutToProtoPreservaPresencaEFootprints(t *testing.T) {
 	require.Len(t, got.Rooms[0].Cells, 1)
 }
 
-func TestAdmissionSerializaGeracoesExcedentes(t *testing.T) {
+func TestAdmissionSerializesExcessGenerations(t *testing.T) {
 	t.Parallel()
 
 	entered := make(chan struct{}, 2)
@@ -228,7 +228,7 @@ func TestAdmissionSerializaGeracoesExcedentes(t *testing.T) {
 	}()
 	select {
 	case <-entered:
-		t.Fatal("segunda geração entrou antes da liberação da primeira")
+		t.Fatal("second generation entered before the first was released")
 	case <-time.After(30 * time.Millisecond):
 	}
 	release <- struct{}{}
@@ -240,7 +240,7 @@ func TestAdmissionSerializaGeracoesExcedentes(t *testing.T) {
 	assert.Equal(t, int32(1), maximum.Load())
 }
 
-func TestAdmissionRespeitaDeadlineAntesDaEntrada(t *testing.T) {
+func TestAdmissionHonorsDeadlineBeforeEntry(t *testing.T) {
 	t.Parallel()
 
 	entered := make(chan struct{})
@@ -272,7 +272,7 @@ func TestAdmissionRespeitaDeadlineAntesDaEntrada(t *testing.T) {
 	require.NoError(t, <-firstDone)
 }
 
-func TestGeneratePropagaCancelamentoDoCliente(t *testing.T) {
+func TestGeneratePropagatesClientCancellation(t *testing.T) {
 	t.Parallel()
 
 	entered := make(chan struct{})
@@ -296,7 +296,7 @@ func TestGeneratePropagaCancelamentoDoCliente(t *testing.T) {
 	assert.Equal(t, codes.Canceled, status.Code(err))
 }
 
-func TestBeginShutdownCancelaTrabalhoEInterrompeAdmissao(t *testing.T) {
+func TestBeginShutdownCancelsWorkAndStopsAdmission(t *testing.T) {
 	t.Parallel()
 
 	entered := make(chan struct{})

@@ -1,5 +1,5 @@
-// Package httpdebug implementa o servidor HTTP local e opcional de
-// desenvolvimento do subprocesso Daedalus.
+// Package httpdebug implements the optional local HTTP development
+// server of the Daedalus subprocess.
 package httpdebug
 
 import (
@@ -28,16 +28,16 @@ import (
 )
 
 const (
-	// MaxHTTPDebugBodyBytes é o limite normativo de 1 MiB da seção 2.3.
+	// MaxHTTPDebugBodyBytes is the normative 1 MiB limit from section 2.3.
 	MaxHTTPDebugBodyBytes = 1 << 20
 
 	requestIDBytes = 16
 	debugIndexPath = "assets/index.html"
 	debugCSSPath   = "assets/styles.css"
 	debugJSPath    = "assets/app.js"
-	// A especificação não define o status de uma solicitação cujo cliente
-	// cancelou a conexão. A leitura conservadora usa o código convencional
-	// 499, sem transformá-lo em uma falha interna 500.
+	// The specification does not define the status of a request whose client
+	// canceled the connection. The conservative reading uses the conventional
+	// code 499, without turning it into an internal 500 failure.
 	clientClosedRequestStatus = 499
 )
 
@@ -46,7 +46,7 @@ type requestIDContextKey struct{}
 //go:embed assets/*
 var assets embed.FS
 
-// Server adapta o mesmo serviço gRPC para as rotas HTTP de debug.
+// Server adapts the same gRPC service to the HTTP debug routes.
 type Server struct {
 	service *service.Server
 	version string
@@ -54,10 +54,10 @@ type Server struct {
 	handler http.Handler
 }
 
-// New cria o handler HTTP sem abrir listener nem iniciar goroutines.
+// New creates the HTTP handler without opening a listener or starting goroutines.
 func New(serviceServer *service.Server, version string, logger *zap.Logger) *Server {
 	if serviceServer == nil {
-		panic("serviceServer não pode ser nil")
+		panic("serviceServer cannot be nil")
 	}
 	if logger == nil {
 		logger = zap.NewNop()
@@ -76,7 +76,7 @@ func New(serviceServer *service.Server, version string, logger *zap.Logger) *Ser
 	return server
 }
 
-// Handler devolve as rotas HTTP com validação de origem e logging.
+// Handler returns the HTTP routes with origin validation and logging.
 func (server *Server) Handler() http.Handler {
 	return server.handler
 }
@@ -91,18 +91,18 @@ func (server *Server) observeAndRestrict(next http.Handler) http.Handler {
 		))
 		defer func() {
 			server.logger.Info(
-				"requisição HTTP de debug concluída",
+				"debug HTTP request completed",
 				zap.String("request_id", requestID),
 				zap.Int("status", observed.status),
-				zap.Duration("duracao", time.Since(started)),
+				zap.Duration("duration", time.Since(started)),
 			)
 		}()
 
 		if err := validateLocalRequest(request); err != nil {
-			// A seção 2.3 exige recusar acesso não local, mas não fixa o
-			// status. A interpretação conservadora usa 403 para não sugerir
-			// que autenticação tornaria a origem suportada.
-			writeError(observed, request, http.StatusForbidden, "acesso_negado", "acesso local recusado")
+			// Section 2.3 requires refusing non-local access, but does not
+			// fix the status. The conservative interpretation uses 403 so
+			// authentication is not implied to make the origin supported.
+			writeError(observed, request, http.StatusForbidden, "access_denied", "local access refused")
 			return
 		}
 		next.ServeHTTP(observed, request)
@@ -114,7 +114,7 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	statusText := "ok"
 	statusCode := http.StatusOK
 	if !server.service.Serving() {
-		statusText = "indisponivel"
+		statusText = "unavailable"
 		statusCode = http.StatusServiceUnavailable
 	}
 	writer.WriteHeader(statusCode)
@@ -125,8 +125,8 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (server *Server) root(writer http.ResponseWriter, request *http.Request) {
-	// A seção 2.3 exige redirecionamento, mas não escolhe o código. A
-	// interpretação conservadora usa 307, que não reescreve o método.
+	// Section 2.3 requires a redirect, but does not choose the code. The
+	// conservative interpretation uses 307, which does not rewrite the method.
 	http.Redirect(writer, request, "/debug/", http.StatusTemporaryRedirect)
 }
 
@@ -144,16 +144,16 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 		assetPath = debugJSPath
 		contentType = "text/javascript; charset=utf-8"
 	default:
-		// A seção 2.3 não define fallback para caminhos de asset
-		// desconhecidos. A leitura conservadora devolve 404 em vez de
-		// mascarar um recurso ausente com o HTML da página.
+		// Section 2.3 does not define a fallback for unknown asset
+		// paths. The conservative reading returns 404 instead of
+		// masking a missing resource with the page HTML.
 		http.NotFound(writer, request)
 		return
 	}
 
 	content, err := assets.ReadFile(assetPath)
 	if err != nil {
-		http.Error(writer, "asset de debug indisponível", http.StatusInternalServerError)
+		http.Error(writer, "debug asset unavailable", http.StatusInternalServerError)
 		return
 	}
 	writer.Header().Set("Content-Type", contentType)
@@ -161,20 +161,20 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (server *Server) generate(writer http.ResponseWriter, request *http.Request) {
-	// Parâmetros MIME opcionais, como charset, não mudam o media type
-	// application/json exigido pela seção 2.3.
+	// Optional MIME parameters, such as charset, do not change the media type
+	// application/json required by section 2.3.
 	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		writeError(
 			writer, request, http.StatusBadRequest,
-			"content_type_invalido", "Content-Type deve ser application/json",
+			"invalid_content_type", "Content-Type must be application/json",
 		)
 		return
 	}
 	if request.ContentLength > MaxHTTPDebugBodyBytes {
 		writeError(
 			writer, request, http.StatusRequestEntityTooLarge,
-			"corpo_excedido", "corpo da solicitação excede o limite de 1 MiB",
+			"body_too_large", "request body exceeds the 1 MiB limit",
 		)
 		return
 	}
@@ -186,21 +186,21 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 		if errors.As(err, &maxBytesError) {
 			writeError(
 				writer, request, http.StatusRequestEntityTooLarge,
-				"corpo_excedido", "corpo da solicitação excede o limite de 1 MiB",
+				"body_too_large", "request body exceeds the 1 MiB limit",
 			)
 			return
 		}
-		writeError(writer, request, http.StatusBadRequest, "json_invalido", "não foi possível ler o corpo JSON")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "could not read the JSON body")
 		return
 	}
 
 	var protoRequest daedalusv1.GenerateRequest
 	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "json_invalido", "solicitação ProtoJSON inválida")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
 		return
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "json_invalido", "solicitação ProtoJSON inválida")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
 		return
 	}
 
@@ -215,7 +215,7 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 		EmitUnpopulated: true,
 	}).Marshal(response.Layout)
 	if err != nil {
-		writeError(writer, request, http.StatusInternalServerError, "falha_interna", "falha interna ao serializar layout")
+		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing layout")
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
@@ -238,25 +238,25 @@ func validateCanonicalMessage(
 ) error {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
-		return fmt.Errorf("objeto JSON inválido")
+		return fmt.Errorf("invalid JSON object")
 	}
 	for _, name := range required[descriptor.FullName()] {
 		if _, present := object[string(name)]; !present {
-			return fmt.Errorf("campo obrigatório %s ausente", name)
+			return fmt.Errorf("required field %s missing", name)
 		}
 	}
 	for name, value := range object {
 		field := descriptor.Fields().ByName(protoreflect.Name(name))
 		if field == nil {
-			return fmt.Errorf("campo não canônico ou desconhecido %s", name)
+			return fmt.Errorf("non-canonical or unknown field %s", name)
 		}
 		if isProtoJSONQuotedInteger(field.Kind()) {
 			var text string
 			if err := json.Unmarshal(value, &text); err != nil {
-				return fmt.Errorf("inteiro de 64 bits %s deve ser string decimal", name)
+				return fmt.Errorf("64-bit integer %s must be a decimal string", name)
 			}
 			if _, err := strconv.ParseUint(text, 10, 64); err != nil {
-				return fmt.Errorf("inteiro de 64 bits %s inválido", name)
+				return fmt.Errorf("invalid 64-bit integer %s", name)
 			}
 		}
 		if field.Kind() != protoreflect.MessageKind || string(value) == "null" {
@@ -265,7 +265,7 @@ func validateCanonicalMessage(
 		if field.IsList() {
 			var items []json.RawMessage
 			if err := json.Unmarshal(value, &items); err != nil {
-				return fmt.Errorf("lista %s inválida", name)
+				return fmt.Errorf("invalid list %s", name)
 			}
 			for _, item := range items {
 				if err := validateCanonicalMessage(item, field.Message(), required); err != nil {
@@ -301,7 +301,7 @@ func validateLocalRequest(request *http.Request) error {
 	}
 	remoteIP := net.ParseIP(remoteHost)
 	if remoteIP == nil || !remoteIP.IsLoopback() {
-		return fmt.Errorf("origem remota não é loopback")
+		return fmt.Errorf("remote origin is not loopback")
 	}
 
 	host, _, err := net.SplitHostPort(request.Host)
@@ -310,7 +310,7 @@ func validateLocalRequest(request *http.Request) error {
 	}
 	hostIP := net.ParseIP(host)
 	if hostIP == nil || !hostIP.IsLoopback() {
-		return fmt.Errorf("host não é IP literal de loopback")
+		return fmt.Errorf("host is not a literal loopback IP")
 	}
 
 	origin := request.Header.Get("Origin")
@@ -319,7 +319,7 @@ func validateLocalRequest(request *http.Request) error {
 	}
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Scheme != "http" || parsed.Host != request.Host {
-		return fmt.Errorf("origin não corresponde à mesma origem")
+		return fmt.Errorf("origin does not match the same origin")
 	}
 	return nil
 }
@@ -327,19 +327,19 @@ func validateLocalRequest(request *http.Request) error {
 func mapServiceError(err error) (int, string, string) {
 	switch status.Code(err) {
 	case codes.InvalidArgument:
-		return http.StatusBadRequest, "config_invalida", "configuração inválida"
+		return http.StatusBadRequest, "invalid_config", "invalid configuration"
 	case codes.ResourceExhausted:
-		return http.StatusRequestEntityTooLarge, "limite_excedido", "limite de recursos excedido"
+		return http.StatusRequestEntityTooLarge, "limit_exceeded", "resource limit exceeded"
 	case codes.FailedPrecondition:
-		return http.StatusUnprocessableEntity, "geracao_inviavel", "não foi possível gerar o layout solicitado"
+		return http.StatusUnprocessableEntity, "infeasible_generation", "could not generate the requested layout"
 	case codes.DeadlineExceeded:
-		return http.StatusGatewayTimeout, "prazo_excedido", "prazo da geração excedido"
+		return http.StatusGatewayTimeout, "deadline_exceeded", "generation deadline exceeded"
 	case codes.Canceled:
-		return clientClosedRequestStatus, "geracao_cancelada", "geração cancelada pelo cliente"
+		return clientClosedRequestStatus, "generation_canceled", "generation canceled by the client"
 	case codes.Unavailable:
-		return http.StatusServiceUnavailable, "servico_indisponivel", "serviço em desligamento"
+		return http.StatusServiceUnavailable, "service_unavailable", "service is shutting down"
 	default:
-		return http.StatusInternalServerError, "falha_interna", "falha interna ao gerar layout"
+		return http.StatusInternalServerError, "internal_failure", "internal failure while generating layout"
 	}
 }
 
@@ -367,8 +367,8 @@ func newRequestID() string {
 	if _, err := rand.Read(bytes); err == nil {
 		return hex.EncodeToString(bytes)
 	}
-	// crypto/rand indisponível não deve impedir a resposta de erro. O valor
-	// continua opaco e limitado à solicitação, sem carregar payload.
+	// crypto/rand being unavailable must not block the error response. The
+	// value stays opaque and limited to the request, without carrying a payload.
 	return hex.EncodeToString([]byte(strconv.FormatInt(time.Now().UnixNano(), 10)))
 }
 

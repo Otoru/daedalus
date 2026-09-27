@@ -27,62 +27,62 @@ import (
 )
 
 const (
-	enderecoRemotoLoopback = "127.0.0.1:54321"
-	hostLoopbackTeste      = "127.0.0.1:8090"
-	versaoTeste            = "v0.1.0-teste"
+	remoteLoopbackAddress = "127.0.0.1:54321"
+	loopbackTestHost      = "127.0.0.1:8090"
+	testVersion           = "v0.1.0-test"
 )
 
-func TestRotasBasicasServemSaudeRedirecionamentoEAssetLocal(t *testing.T) {
+func TestBasicRoutesServeHealthRedirectAndLocalAsset(t *testing.T) {
 	t.Parallel()
 
-	var geracoes atomic.Int32
-	server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
-		geracoes.Add(1)
+	var generations atomic.Int32
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		generations.Add(1)
 		return daedalus.Layout{}, nil
 	}, service.NewAdmission(1), zap.NewNop())
 
-	health := executarRequisicao(server.Handler(), http.MethodGet, "/healthz", nil)
+	health := executeRequest(server.Handler(), http.MethodGet, "/healthz", nil)
 	assert.Equal(t, http.StatusOK, health.Code)
 	assert.Equal(t, "application/json", health.Header().Get("Content-Type"))
-	assert.JSONEq(t, `{"status":"ok","version":"v0.1.0-teste"}`, health.Body.String())
+	assert.JSONEq(t, `{"status":"ok","version":"v0.1.0-test"}`, health.Body.String())
 
-	root := executarRequisicao(server.Handler(), http.MethodGet, "/", nil)
+	root := executeRequest(server.Handler(), http.MethodGet, "/", nil)
 	assert.Equal(t, http.StatusTemporaryRedirect, root.Code)
 	assert.Equal(t, "/debug/", root.Header().Get("Location"))
 
-	debug := executarRequisicao(server.Handler(), http.MethodGet, "/debug/", nil)
+	debug := executeRequest(server.Handler(), http.MethodGet, "/debug/", nil)
 	assert.Equal(t, http.StatusOK, debug.Code)
 	assert.Equal(t, "text/html; charset=utf-8", debug.Header().Get("Content-Type"))
 	assert.Contains(t, debug.Body.String(), "<!doctype html>")
 	assert.NotContains(t, debug.Body.String(), "http://")
 	assert.NotContains(t, debug.Body.String(), "https://")
-	assert.Zero(t, geracoes.Load(), "rotas GET não podem iniciar geração")
+	assert.Zero(t, generations.Load(), "GET routes must not start generation")
 }
 
-func TestAssetsDaInterfaceSaoEmbedadosLocaisESemCORS(t *testing.T) {
+func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 	t.Parallel()
 
-	server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
 		return daedalus.Layout{}, nil
 	}, service.NewAdmission(1), zap.NewNop())
-	assetsEsperados := []struct {
+	expectedAssets := []struct {
 		path        string
 		contentType string
-		conteudo    string
+		snippet     string
 	}{
-		{path: "/debug/", contentType: "text/html; charset=utf-8", conteudo: `id="request-editor"`},
-		{path: "/debug/styles.css", contentType: "text/css; charset=utf-8", conteudo: ".map-canvas"},
-		{path: "/debug/app.js", contentType: "text/javascript; charset=utf-8", conteudo: "/api/v1/generate"},
+		{path: "/debug/", contentType: "text/html; charset=utf-8", snippet: `id="request-editor"`},
+		{path: "/debug/styles.css", contentType: "text/css; charset=utf-8", snippet: ".map-canvas"},
+		{path: "/debug/app.js", contentType: "text/javascript; charset=utf-8", snippet: "/api/v1/generate"},
 	}
 
-	for _, esperado := range assetsEsperados {
-		esperado := esperado
-		t.Run(esperado.path, func(t *testing.T) {
-			response := executarRequisicao(server.Handler(), http.MethodGet, esperado.path, nil)
+	for _, expected := range expectedAssets {
+		expected := expected
+		t.Run(expected.path, func(t *testing.T) {
+			response := executeRequest(server.Handler(), http.MethodGet, expected.path, nil)
 
 			require.Equal(t, http.StatusOK, response.Code)
-			assert.Equal(t, esperado.contentType, response.Header().Get("Content-Type"))
-			assert.Contains(t, response.Body.String(), esperado.conteudo)
+			assert.Equal(t, expected.contentType, response.Header().Get("Content-Type"))
+			assert.Contains(t, response.Body.String(), expected.snippet)
 			assert.NotContains(t, response.Body.String(), "http://")
 			assert.NotContains(t, response.Body.String(), "https://")
 			assert.NotRegexp(t, `(?i)(?:src|href)\s*=\s*["']//`, response.Body.String())
@@ -91,10 +91,10 @@ func TestAssetsDaInterfaceSaoEmbedadosLocaisESemCORS(t *testing.T) {
 	}
 }
 
-func TestTodosAssetsEmbedadosNaoReferenciamHostExterno(t *testing.T) {
+func TestAllEmbeddedAssetsDoNotReferenceAnExternalHost(t *testing.T) {
 	t.Parallel()
 
-	var verificados int
+	var checked int
 	err := fs.WalkDir(assets, "assets", func(assetPath string, entry fs.DirEntry, walkErr error) error {
 		require.NoError(t, walkErr)
 		if entry.IsDir() {
@@ -108,7 +108,7 @@ func TestTodosAssetsEmbedadosNaoReferenciamHostExterno(t *testing.T) {
 
 		content, err := fs.ReadFile(assets, assetPath)
 		require.NoError(t, err)
-		verificados++
+		checked++
 		assert.NotContains(t, string(content), "http://", assetPath)
 		assert.NotContains(t, string(content), "https://", assetPath)
 		assert.NotRegexp(t, `(?i)["'(]//[[:alnum:].-]+(?:[/:"')]|$)`, string(content), assetPath)
@@ -116,14 +116,14 @@ func TestTodosAssetsEmbedadosNaoReferenciamHostExterno(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, verificados, 3, "HTML, CSS e JavaScript devem ser verificados")
+	assert.GreaterOrEqual(t, checked, 3, "HTML, CSS and JavaScript must be checked")
 }
 
-func TestGenerateAceitaProtoJSONSnakeCaseEDevolveLayoutDoMesmoGerador(t *testing.T) {
+func TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout(t *testing.T) {
 	t.Parallel()
 
 	generator := daedalus.Generator{}
-	server := novoServidorTeste(t, generator.GenerateContext, service.NewAdmission(1), zap.NewNop())
+	server := newTestServer(t, generator.GenerateContext, service.NewAdmission(1), zap.NewNop())
 	body := `{
 		"config": {
 			"width": 9,
@@ -142,7 +142,7 @@ func TestGenerateAceitaProtoJSONSnakeCaseEDevolveLayoutDoMesmoGerador(t *testing
 		}
 	}`
 
-	response := executarRequisicao(
+	response := executeRequest(
 		server.Handler(), http.MethodPost, "/api/v1/generate", strings.NewReader(body),
 	)
 
@@ -169,12 +169,12 @@ func TestGenerateAceitaProtoJSONSnakeCaseEDevolveLayoutDoMesmoGerador(t *testing
 	assert.Contains(t, response.Body.String(), `"seed":"18446744073709551615"`)
 }
 
-func TestGenerateExigeJSONProtoCanonicoECamposObrigatorios(t *testing.T) {
+func TestGenerateRequiresCanonicalProtoJSONAndRequiredFields(t *testing.T) {
 	t.Parallel()
 
-	var geracoes atomic.Int32
-	server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
-		geracoes.Add(1)
+	var generations atomic.Int32
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		generations.Add(1)
 		return daedalus.Layout{}, nil
 	}, service.NewAdmission(1), zap.NewNop())
 
@@ -183,20 +183,20 @@ func TestGenerateExigeJSONProtoCanonicoECamposObrigatorios(t *testing.T) {
 		contentType string
 		body        string
 	}{
-		{name: "content type ausente", body: `{"config":{"width":1,"height":1,"seed":"0"}}`},
-		{name: "content type incorreto", contentType: "text/plain", body: `{}`},
-		{name: "json inválido", contentType: "application/json", body: `{"config":`},
-		{name: "campo desconhecido", contentType: "application/json", body: `{"config":{"width":1,"height":1,"seed":"0","desconhecido":1}}`},
-		{name: "nome camel case", contentType: "application/json", body: `{"config":{"width":1,"height":1,"seed":"0","maxRooms":1}}`},
-		{name: "config ausente", contentType: "application/json", body: `{}`},
-		{name: "width ausente", contentType: "application/json", body: `{"config":{"height":1,"seed":"0"}}`},
-		{name: "height ausente", contentType: "application/json", body: `{"config":{"width":1,"seed":"0"}}`},
-		{name: "seed ausente", contentType: "application/json", body: `{"config":{"width":1,"height":1}}`},
+		{name: "missing content type", body: `{"config":{"width":1,"height":1,"seed":"0"}}`},
+		{name: "incorrect content type", contentType: "text/plain", body: `{}`},
+		{name: "invalid json", contentType: "application/json", body: `{"config":`},
+		{name: "unknown field", contentType: "application/json", body: `{"config":{"width":1,"height":1,"seed":"0","unknown":1}}`},
+		{name: "camel case name", contentType: "application/json", body: `{"config":{"width":1,"height":1,"seed":"0","maxRooms":1}}`},
+		{name: "missing config", contentType: "application/json", body: `{}`},
+		{name: "missing width", contentType: "application/json", body: `{"config":{"height":1,"seed":"0"}}`},
+		{name: "missing height", contentType: "application/json", body: `{"config":{"width":1,"seed":"0"}}`},
+		{name: "missing seed", contentType: "application/json", body: `{"config":{"width":1,"height":1}}`},
 	}
 	for _, testCase := range cases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
-			request := novaRequisicaoLocal(
+			request := newLocalRequest(
 				http.MethodPost, "/api/v1/generate", strings.NewReader(testCase.body),
 			)
 			if testCase.contentType != "" {
@@ -207,42 +207,42 @@ func TestGenerateExigeJSONProtoCanonicoECamposObrigatorios(t *testing.T) {
 			server.Handler().ServeHTTP(response, request)
 
 			assert.Equal(t, http.StatusBadRequest, response.Code)
-			assertErroEstruturadoEmPortugues(t, response)
+			assertStructuredError(t, response)
 			assert.NotContains(t, response.Body.String(), "layout")
 			assert.NotContains(t, response.Body.String(), "panic")
 		})
 	}
-	assert.Zero(t, geracoes.Load())
+	assert.Zero(t, generations.Load())
 
-	defaultServer := New(service.New(nil, service.NewAdmission(1)), versaoTeste, zap.NewNop())
-	invalidConfig := executarRequisicao(
+	defaultServer := New(service.New(nil, service.NewAdmission(1)), testVersion, zap.NewNop())
+	invalidConfig := executeRequest(
 		defaultServer.Handler(), http.MethodPost, "/api/v1/generate",
 		strings.NewReader(`{"config":{"width":0,"height":1,"seed":"0"}}`),
 	)
 	assert.Equal(t, http.StatusBadRequest, invalidConfig.Code)
-	assertErroEstruturadoEmPortugues(t, invalidConfig)
+	assertStructuredError(t, invalidConfig)
 }
 
-func TestGenerateRejeitaCorpoAcimaDoLimiteAntesDaGeracao(t *testing.T) {
+func TestGenerateRejectsOversizedBodyBeforeGeneration(t *testing.T) {
 	t.Parallel()
 
-	var geracoes atomic.Int32
-	server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
-		geracoes.Add(1)
+	var generations atomic.Int32
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		generations.Add(1)
 		return daedalus.Layout{}, nil
 	}, service.NewAdmission(1), zap.NewNop())
 	body := strings.Repeat("x", MaxHTTPDebugBodyBytes+1)
 
-	response := executarRequisicao(
+	response := executeRequest(
 		server.Handler(), http.MethodPost, "/api/v1/generate", strings.NewReader(body),
 	)
 
 	assert.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
-	assertErroEstruturadoEmPortugues(t, response)
-	assert.Zero(t, geracoes.Load())
+	assertStructuredError(t, response)
+	assert.Zero(t, generations.Load())
 }
 
-func TestGenerateMapeiaCategoriasDeErroSemVazarDetalhes(t *testing.T) {
+func TestGenerateMapsErrorCategoriesWithoutLeakingDetails(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -250,34 +250,34 @@ func TestGenerateMapeiaCategoriasDeErroSemVazarDetalhes(t *testing.T) {
 		err    error
 		status int
 	}{
-		{name: "limite", err: daedalus.ErrLimitExceeded, status: http.StatusRequestEntityTooLarge},
+		{name: "limit", err: daedalus.ErrLimitExceeded, status: http.StatusRequestEntityTooLarge},
 		{name: "plant", err: daedalus.ErrNoCompatiblePlant, status: http.StatusUnprocessableEntity},
-		{name: "rota", err: daedalus.ErrUnroutableEdge, status: http.StatusUnprocessableEntity},
+		{name: "route", err: daedalus.ErrUnroutableEdge, status: http.StatusUnprocessableEntity},
 		{name: "deadline", err: context.DeadlineExceeded, status: http.StatusGatewayTimeout},
-		{name: "interna", err: errors.New("segredo-interno"), status: http.StatusInternalServerError},
+		{name: "internal", err: errors.New("internal-secret"), status: http.StatusInternalServerError},
 	}
 	for _, testCase := range cases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+			server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
 				return daedalus.Layout{}, testCase.err
 			}, service.NewAdmission(1), zap.NewNop())
 
-			response := executarRequisicao(
+			response := executeRequest(
 				server.Handler(), http.MethodPost, "/api/v1/generate",
 				strings.NewReader(`{"config":{"width":1,"height":1,"seed":"0"}}`),
 			)
 
 			assert.Equal(t, testCase.status, response.Code)
-			assertErroEstruturadoEmPortugues(t, response)
-			assert.NotContains(t, response.Body.String(), "segredo-interno")
+			assertStructuredError(t, response)
+			assert.NotContains(t, response.Body.String(), "internal-secret")
 		})
 	}
 }
 
-func TestHTTPERPCCompartilhamAMesmaAdmissao(t *testing.T) {
+func TestHTTPAndRPCShareTheSameAdmission(t *testing.T) {
 	t.Parallel()
 
 	entered := make(chan struct{}, 2)
@@ -292,11 +292,11 @@ func TestHTTPERPCCompartilhamAMesmaAdmissao(t *testing.T) {
 			return daedalus.Layout{}, ctx.Err()
 		}
 	}, sharedAdmission)
-	httpServer := New(grpcServer, versaoTeste, zap.NewNop())
+	httpServer := New(grpcServer, testVersion, zap.NewNop())
 
 	httpDone := make(chan *httptest.ResponseRecorder)
 	go func() {
-		httpDone <- executarRequisicao(
+		httpDone <- executeRequest(
 			httpServer.Handler(), http.MethodPost, "/api/v1/generate",
 			strings.NewReader(`{"config":{"width":1,"height":1,"seed":"0"}}`),
 		)
@@ -312,7 +312,7 @@ func TestHTTPERPCCompartilhamAMesmaAdmissao(t *testing.T) {
 	}()
 	select {
 	case <-entered:
-		t.Fatal("RPC entrou enquanto a geração HTTP ocupava a única vaga")
+		t.Fatal("RPC entered while the HTTP generation held the only slot")
 	case <-time.After(30 * time.Millisecond):
 	}
 	release <- struct{}{}
@@ -323,19 +323,19 @@ func TestHTTPERPCCompartilhamAMesmaAdmissao(t *testing.T) {
 	require.NoError(t, <-rpcDone)
 }
 
-func TestCancelamentoDoClienteChegaAoGeradorHTTP(t *testing.T) {
+func TestClientCancellationReachesTheHTTPGenerator(t *testing.T) {
 	t.Parallel()
 
 	entered := make(chan struct{})
 	canceled := make(chan struct{})
-	server := novoServidorTeste(t, func(ctx context.Context, _ daedalus.Config) (daedalus.Layout, error) {
+	server := newTestServer(t, func(ctx context.Context, _ daedalus.Config) (daedalus.Layout, error) {
 		close(entered)
 		<-ctx.Done()
 		close(canceled)
 		return daedalus.Layout{}, ctx.Err()
 	}, service.NewAdmission(1), zap.NewNop())
 	ctx, cancel := context.WithCancel(context.Background())
-	request := novaRequisicaoLocal(
+	request := newLocalRequest(
 		http.MethodPost, "/api/v1/generate",
 		strings.NewReader(`{"config":{"width":1,"height":1,"seed":"0"}}`),
 	).WithContext(ctx)
@@ -349,9 +349,9 @@ func TestCancelamentoDoClienteChegaAoGeradorHTTP(t *testing.T) {
 	select {
 	case <-entered:
 	case <-done:
-		t.Fatalf("handler encerrou antes da geração: status=%d corpo=%s", response.Code, response.Body.String())
+		t.Fatalf("handler finished before generation: status=%d body=%s", response.Code, response.Body.String())
 	case <-time.After(time.Second):
-		t.Fatal("handler não iniciou a geração")
+		t.Fatal("handler did not start generation")
 	}
 
 	cancel()
@@ -359,48 +359,48 @@ func TestCancelamentoDoClienteChegaAoGeradorHTTP(t *testing.T) {
 	select {
 	case <-canceled:
 	case <-time.After(time.Second):
-		t.Fatal("gerador não observou o cancelamento do cliente")
+		t.Fatal("generator did not observe the client cancellation")
 	}
 	<-done
 }
 
-func TestSegurancaRecusaOrigemRemotaERegistraSomenteMetadados(t *testing.T) {
+func TestSecurityRejectsRemoteOriginAndLogsOnlyMetadata(t *testing.T) {
 	t.Parallel()
 
 	var logs bytes.Buffer
 	encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
 	logger := zap.New(zapcore.NewCore(encoder, zapcore.AddSync(&logs), zapcore.InfoLevel))
-	server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
 		return daedalus.Layout{}, nil
 	}, service.NewAdmission(1), logger)
-	segredo := "seed-super-secreta"
+	secret := "super-secret-seed"
 
 	remoteRequest := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	remoteRequest.RemoteAddr = "192.0.2.10:1234"
-	remoteRequest.Host = hostLoopbackTeste
+	remoteRequest.Host = loopbackTestHost
 	remoteResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(remoteResponse, remoteRequest)
 	assert.Equal(t, http.StatusForbidden, remoteResponse.Code)
 
-	originRequest := novaRequisicaoLocal(http.MethodGet, "/healthz", nil)
+	originRequest := newLocalRequest(http.MethodGet, "/healthz", nil)
 	originRequest.Header.Set("Origin", "http://127.0.0.1:9999")
 	originResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(originResponse, originRequest)
 	assert.Equal(t, http.StatusForbidden, originResponse.Code)
 
-	body := `{"config":{"width":1,"height":1,"seed":"0"},"` + segredo + `":"x"}`
-	response := executarRequisicao(
+	body := `{"config":{"width":1,"height":1,"seed":"0"},"` + secret + `":"x"}`
+	response := executeRequest(
 		server.Handler(), http.MethodPost, "/api/v1/generate", strings.NewReader(body),
 	)
 	assert.Equal(t, http.StatusBadRequest, response.Code)
 	assert.Empty(t, response.Header().Get("Access-Control-Allow-Origin"))
-	assert.NotContains(t, logs.String(), segredo)
+	assert.NotContains(t, logs.String(), secret)
 	assert.Contains(t, logs.String(), "request_id")
 	assert.Contains(t, logs.String(), "status")
-	assert.Contains(t, logs.String(), "duracao")
+	assert.Contains(t, logs.String(), "duration")
 }
 
-func TestHealthPassaAIndisponivelDuranteShutdown(t *testing.T) {
+func TestHealthBecomesUnavailableDuringShutdown(t *testing.T) {
 	t.Parallel()
 
 	serviceServer := service.New(
@@ -409,32 +409,32 @@ func TestHealthPassaAIndisponivelDuranteShutdown(t *testing.T) {
 		},
 		service.NewAdmission(1),
 	)
-	server := New(serviceServer, versaoTeste, zap.NewNop())
+	server := New(serviceServer, testVersion, zap.NewNop())
 	serviceServer.BeginShutdown()
 
-	response := executarRequisicao(server.Handler(), http.MethodGet, "/healthz", nil)
+	response := executeRequest(server.Handler(), http.MethodGet, "/healthz", nil)
 
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
-	assert.JSONEq(t, `{"status":"indisponivel","version":"v0.1.0-teste"}`, response.Body.String())
+	assert.JSONEq(t, `{"status":"unavailable","version":"v0.1.0-test"}`, response.Body.String())
 }
 
-func novoServidorTeste(
+func newTestServer(
 	t *testing.T,
 	generate service.GenerateFunc,
 	admission *service.Admission,
 	logger *zap.Logger,
 ) *Server {
 	t.Helper()
-	return New(service.New(generate, admission), versaoTeste, logger)
+	return New(service.New(generate, admission), testVersion, logger)
 }
 
-func executarRequisicao(
+func executeRequest(
 	handler http.Handler,
 	method string,
 	target string,
 	body io.Reader,
 ) *httptest.ResponseRecorder {
-	request := novaRequisicaoLocal(method, target, body)
+	request := newLocalRequest(method, target, body)
 	if method == http.MethodPost {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -443,18 +443,18 @@ func executarRequisicao(
 	return response
 }
 
-func novaRequisicaoLocal(
+func newLocalRequest(
 	method string,
 	target string,
 	body io.Reader,
 ) *http.Request {
 	request := httptest.NewRequest(method, target, body)
-	request.RemoteAddr = enderecoRemotoLoopback
-	request.Host = hostLoopbackTeste
+	request.RemoteAddr = remoteLoopbackAddress
+	request.Host = loopbackTestHost
 	return request
 }
 
-func assertErroEstruturadoEmPortugues(t *testing.T, response *httptest.ResponseRecorder) {
+func assertStructuredError(t *testing.T, response *httptest.ResponseRecorder) {
 	t.Helper()
 	assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
 	var got struct {
