@@ -2,7 +2,7 @@
 
 **Status:** especificação normativa v1 refinada — salas dinâmicas e HTTP local de desenvolvimento
 **Escopo:** biblioteca Go importável, subprocesso gRPC sob demanda e servidor HTTP local opcional para desenvolvimento/depuração
-**Idioma:** esta especificação, a documentação de pacote, comentários, textos de erro e documentação de protocolo estão em português. Os identificadores de domínio e de API permanecem em inglês.
+**Idioma:** este documento de especificação está em português. Todo o restante — documentação de pacote, comentários de documentação, comentários inline e de protocolo, textos de erro, nomes de testes, comentários de build e CI e textos da interface de desenvolvimento — está em inglês. Os identificadores de domínio e de API permanecem em inglês.
 **Fonte de produto:** transcrição de vídeo educativo, qualificada no Apêndice D; é inspiração, não autoridade de implementação.
 
 ## 1. Finalidade e não-objetivos
@@ -130,7 +130,7 @@ A rota HTTP existe para debug local e não substitui gRPC nem cria obrigação d
 
 ## 3. Convenções de nome e documentação
 
-- Prosa pública, comentários de documentação, comentários de protocolo, erros, nomes de testes e esta especificação estão em português. Conteúdo de jogo exibido ao jogador não é restringido.
+- Este documento de especificação está em português. Todo o restante — documentação de pacote, comentários de documentação, comentários inline e de protocolo, textos de erro, nomes de testes, comentários de build e CI e textos da interface de desenvolvimento — está em inglês. Os identificadores de domínio e de API permanecem em inglês. Conteúdo de jogo exibido ao jogador não é restringido.
 
 - Tipos, funções, métodos e campos Go exportados usam PascalCase. Nomes de pacote são palavras curtas em minúsculas. Nomes não exportados usam lowerCamelCase idiomático.
 

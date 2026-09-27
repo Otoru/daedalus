@@ -3,35 +3,35 @@ package daedalus
 import "errors"
 
 var (
-	errPlacementInvalidMask  = errors.New("placement não coincide com a máscara canônica")
-	errPlacementOutOfBounds  = errors.New("placement está fora dos limites do Grid")
-	errPlacementAreaExceeded = errors.New("placement excede a área máxima efetiva")
-	errPlacementDistance     = errors.New("âncora do placement não respeita a distância mínima")
-	errPlacementOverlap      = errors.New("placement sobrepõe um footprint aceito")
-	errPlacementGap          = errors.New("placement não respeita o espaçamento mínimo entre Rooms")
+	errPlacementInvalidMask  = errors.New("placement does not match the canonical mask")
+	errPlacementOutOfBounds  = errors.New("placement is outside Grid bounds")
+	errPlacementAreaExceeded = errors.New("placement exceeds the effective maximum area")
+	errPlacementDistance     = errors.New("placement anchor does not meet the minimum distance")
+	errPlacementOverlap      = errors.New("placement overlaps an accepted footprint")
+	errPlacementGap          = errors.New("placement does not meet the minimum gap between Rooms")
 )
 
 const (
-	// Limites da representação pública de coordenadas em Cell.
+	// Limits of the public Cell-coordinate representation.
 	minCellCoordinate int64 = -1 << 31
 	maxCellCoordinate int64 = 1<<31 - 1
-	// A grade codifica owner+1 para reservar zero como Cell vazia.
+	// The grid encodes owner+1 to reserve zero for an empty Cell.
 	placementOwnerEncodingOffset uint32 = 1
-	// unownedPlacementOwner nunca identifica uma Room aceita; durante a
-	// validação, o candidato ainda não foi marcado na grade de ocupação.
+	// unownedPlacementOwner never identifies an accepted Room; during validation,
+	// the candidate has not yet been marked in the occupancy grid.
 	unownedPlacementOwner = ^uint32(0)
 )
 
-// acceptedPlacement é uma Room já aceita, com âncora e footprint absoluto
-// materializados uma única vez pela solicitação que executa o Placer.
+// acceptedPlacement is an already accepted Room whose anchor and absolute
+// footprint are materialized once by the request running the Placer.
 type acceptedPlacement struct {
 	anchor    Cell
 	footprint []Cell
 }
 
-// placementOccupancy mantém, por solicitação, o índice da Room que ocupa
-// cada Cell. O índice é codificado com deslocamento para distinguir a Room
-// zero de uma Cell vazia.
+// placementOccupancy keeps, per request, the index of the Room occupying each
+// Cell. The index is encoded with an offset to distinguish Room zero from an
+// empty Cell.
 type placementOccupancy struct {
 	width  int64
 	height int64
@@ -131,26 +131,26 @@ func (occupancy *placementOccupancy) footprintRespectsGap(
 	return true
 }
 
-// buildPlacementFromAt deriva a bounding box e a máscara local a partir da
-// primeira Cell ocupada em ordem canônica. O caminho de geração fornece uma
-// âncora não negativa e dimensões limitadas pelo Grid v1; por isso a subtração
-// feita em int64 sempre cabe em Cell, inclusive quando a Origin é negativa.
+// buildPlacementFromAt derives the bounding box and local mask from the first
+// occupied Cell in canonical order. The generation path supplies a non-negative
+// anchor and dimensions bounded by the v1 Grid; therefore the int64 subtraction
+// always fits in Cell, including when Origin is negative.
 func buildPlacementFromAt(at Cell, shape RoomShape, width, height uint32) RoomPlacement {
 	return buildPlacementFromAtInto(at, shape, width, height, nil)
 }
 
-// buildPlacementFromAtInto deriva o placement no scratch privado informado.
-// O resultado precisa ser copiado antes da próxima reutilização do buffer.
+// buildPlacementFromAtInto derives the placement in the supplied private
+// scratch buffer. The result must be copied before the buffer is reused.
 func buildPlacementFromAtInto(
 	at Cell,
 	shape RoomShape,
 	width, height uint32,
 	scratch []Cell,
 ) RoomPlacement {
-	// A especificação só define esta derivação para dimensões válidas. Na
-	// leitura conservadora, dimensões inválidas preservam os dados recebidos
-	// e seguem o contrato dos helpers canônicos: offset zero e máscara nil;
-	// a primeira etapa da validação rejeita o resultado.
+	// The specification defines this derivation only for valid dimensions. Under
+	// the conservative reading, invalid dimensions preserve the supplied data
+	// and follow the canonical helpers' contract: zero offset and nil mask; the
+	// first validation step rejects the result.
 	firstOffset := RoomShapeFirstOffset(shape, width, height)
 	originX := int64(at.X) - int64(firstOffset.X)
 	originY := int64(at.Y) - int64(firstOffset.Y)
@@ -164,16 +164,16 @@ func buildPlacementFromAtInto(
 	}
 }
 
-// absoluteFootprint materializa os offsets locais sem alterar sua ordem
-// canônica. false indica que ao menos uma soma não cabe na representação de
-// Cell; placements dentro do Grid v1 nunca alcançam esse caso.
+// absoluteFootprint materializes local offsets without changing their canonical
+// order. False indicates that at least one sum does not fit the Cell
+// representation; placements within the v1 Grid never reach that case.
 func absoluteFootprint(placement RoomPlacement) ([]Cell, bool) {
 	return absoluteFootprintInto(placement, nil)
 }
 
-// absoluteFootprintInto materializa os offsets no buffer privado da
-// solicitação. O chamador deve copiar o resultado antes de reutilizar o
-// buffer quando o footprint precisar sobreviver à tentativa atual.
+// absoluteFootprintInto materializes offsets in the request's private buffer.
+// The caller must copy the result before reusing the buffer when the footprint
+// must outlive the current attempt.
 func absoluteFootprintInto(placement RoomPlacement, buffer []Cell) ([]Cell, bool) {
 	cellCount := len(placement.Cells)
 	if cap(buffer) < cellCount {
@@ -229,11 +229,11 @@ func placementWithinArea(placement RoomPlacement, maxFootprintCells uint32) bool
 	return uint64(len(placement.Cells)) <= uint64(maxFootprintCells)
 }
 
-// footprintsOverlap e footprintsRespectGap são a tradução literal da regra da
-// seção 7, comparando par a par. O caminho de produção usa a grade de
-// ocupação, que é muito mais barata; estas duas permanecem como oráculo de
-// referência nos testes de equivalência. Não as remova por parecerem código
-// morto: é contra elas que a otimização é verificada.
+// footprintsOverlap and footprintsRespectGap are literal translations of the
+// section 7 rule, comparing every pair. The production path uses the much
+// cheaper occupancy grid; these two remain as the reference oracle in
+// equivalence tests. Do not remove them as apparent dead code: the optimization
+// is verified against them.
 func footprintsOverlap(first, second []Cell) bool {
 	occupied := make(map[Cell]struct{}, len(first))
 	for _, cell := range first {
@@ -267,8 +267,8 @@ func footprintsRespectGap(first, second []Cell, minRoomGap uint32) bool {
 
 func localMinDistance(cell Cell, defaultDistance float64, regions []DensityRegion) float64 {
 	for _, region := range regions {
-		// A convenção congelada no F02 é semiaberta: Min inclusiva e Max
-		// exclusiva, conforme a documentação pública de DensityRegion.
+		// The convention frozen in F02 is half-open: inclusive Min and exclusive
+		// Max, as stated in DensityRegion's public documentation.
 		if cell.X >= region.Min.X && cell.X < region.Max.X && cell.Y >= region.Min.Y && cell.Y < region.Max.Y {
 			return region.MinDistance
 		}
@@ -293,16 +293,16 @@ func anchorsRespectDistance(first, second Cell, defaultDistance float64, regions
 	}
 	requiredSquared := float64(requiredDistance) * float64(requiredDistance)
 
-	// Nos Grids v1, cada delta é no máximo 255 e squaredDistance no máximo
-	// 130.050, muito abaixo de 2^53. A conversão para float64 é portanto
-	// exata e permite comparar com o quadrado da distância configurável sem
-	// arredondar a distância discreta.
+	// In v1 Grids, each delta is at most 255 and squaredDistance at most 130,050,
+	// far below 2^53. Conversion to float64 is therefore exact and permits
+	// comparison with the configurable distance squared without rounding the
+	// discrete distance.
 	return float64(squaredDistance) >= requiredSquared
 }
 
-// validatePlacementForAcceptance concentra a ordem normativa da seção 7.
-// Ela apenas lê accepted; o chamador efetua o append depois de nil, mantendo
-// atômica toda tentativa rejeitada.
+// validatePlacementForAcceptance centralizes the normative section 7 order. It
+// only reads accepted; the caller appends after nil, keeping every rejected
+// attempt atomic.
 func validatePlacementForAcceptance(
 	candidate RoomPlacement,
 	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
@@ -325,9 +325,9 @@ func validatePlacementForAcceptance(
 	return err
 }
 
-// validatePlacementAndMaterialize devolve o footprint absoluto que deve ser
-// guardado em acceptedPlacement quando a validação tem sucesso. Assim o
-// caminho de aceitação não recompõe uma Room já validada.
+// validatePlacementAndMaterialize returns the absolute footprint to store in
+// acceptedPlacement when validation succeeds. This keeps the acceptance path
+// from rebuilding an already validated Room.
 func validatePlacementAndMaterialize(
 	candidate RoomPlacement,
 	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
@@ -354,9 +354,9 @@ func validatePlacementAndMaterialize(
 	return footprint, nil
 }
 
-// validatePlacementAndMaterializeInto mantém a ordem normativa de validação,
-// mas materializa no scratch privado da solicitação. Em erro posterior à
-// materialização, devolve o scratch para que o laço Poisson possa reutilizá-lo.
+// validatePlacementAndMaterializeInto preserves the normative validation order
+// but materializes into the request's private scratch space. On an error after
+// materialization, it returns the scratch so the Poisson loop can reuse it.
 func validatePlacementAndMaterializeInto(
 	candidate RoomPlacement,
 	gridWidth, gridHeight, maxFootprintCells, minRoomGap uint32,
@@ -380,11 +380,11 @@ func validatePlacementAndMaterializeInto(
 	if !ok {
 		return scratch[:0], errPlacementOutOfBounds
 	}
-	// Sem a grade, sobreposição e gap não teriam como ser verificados e a
-	// sequência normativa ficaria incompleta em silêncio. Chamar com Rooms
-	// aceitas e sem grade é erro de programação, não entrada de usuário.
+	// Without the grid, overlap and gap could not be checked and the normative
+	// sequence would be silently incomplete. Calling with accepted Rooms and no
+	// grid is a programming error, not user input.
 	if len(accepted) > 0 && occupancy == nil {
-		panic("grade de ocupação ausente com placements já aceitos")
+		panic("occupancy grid is missing with already accepted placements")
 	}
 
 	candidateAt := candidateFootprint[0]
@@ -397,8 +397,8 @@ func validatePlacementAndMaterializeInto(
 	if occupancy != nil && occupancy.footprintOverlaps(candidateFootprint) {
 		return candidateFootprint, errPlacementOverlap
 	}
-	// O candidato ainda não possui owner. O sentinela evita confundi-lo com
-	// qualquer Room, inclusive quando accepted contém só vizinhos Bridson.
+	// The candidate has no owner yet. The sentinel prevents confusing it with
+	// any Room, including when accepted contains only Bridson neighbours.
 	if occupancy != nil && !occupancy.footprintRespectsGap(candidateFootprint, minRoomGap, unownedPlacementOwner) {
 		return candidateFootprint, errPlacementGap
 	}

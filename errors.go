@@ -2,37 +2,35 @@ package daedalus
 
 import "errors"
 
-// Erros sentinela das categorias de falha do SDK (Apêndice B da
-// especificação). Eles definem categorias, não a representação concreta:
-// o gerador e a validação os devolvem envolvidos com contexto via
-// fmt.Errorf e %w, e o chamador deve testá-los exclusivamente com
-// errors.Is. Nenhuma falha devolve Layout parcial.
+// Sentinel errors for the SDK failure categories (Appendix B of the
+// specification). They define categories, not the concrete representation:
+// the generator and validation return them wrapped with context via fmt.Errorf
+// and %w, and callers must test them exclusively with errors.Is. No failure
+// returns a partial Layout.
 //
-// No serviço gRPC, o mapeamento é: ErrInvalidConfig → InvalidArgument,
-// ErrLimitExceeded → ResourceExhausted, expiração de deadline →
-// DeadlineExceeded e cancelamento do chamador → Canceled. Cancelamento e
-// deadline usam diretamente context.Canceled e context.DeadlineExceeded,
-// sem sentinelas próprios.
+// In the gRPC service, the mapping is: ErrInvalidConfig → InvalidArgument,
+// ErrLimitExceeded → ResourceExhausted, deadline expiration → DeadlineExceeded,
+// and caller cancellation → Canceled. Cancellation and deadlines use
+// context.Canceled and context.DeadlineExceeded directly, without dedicated
+// sentinels.
 var (
-	// ErrInvalidConfig marca uma Config que viola faixas, finitude
-	// numérica, formato de catálogo, regiões de densidade ou solicitações
-	// de papel. A validação ocorre antes de qualquer stream aleatório.
-	ErrInvalidConfig = errors.New("daedalus: configuração inválida")
+	// ErrInvalidConfig marks a Config that violates ranges, numeric finiteness,
+	// catalog format, density regions, or role requests. Validation occurs
+	// before any random stream is consumed.
+	ErrInvalidConfig = errors.New("daedalus: invalid configuration")
 
-	// ErrLimitExceeded marca uma Config que excede os limites v1 de
-	// produto (MaxCells ou MaxRooms). É detectada antes de alocação,
-	// geração ou consumo de RNG, e a Config nunca é truncada
-	// silenciosamente.
-	ErrLimitExceeded = errors.New("daedalus: limite de produto excedido")
+	// ErrLimitExceeded marks a Config that exceeds the v1 product limits
+	// (MaxCells or MaxRooms). It is detected before allocation, generation, or
+	// RNG consumption, and the Config is never silently truncated.
+	ErrLimitExceeded = errors.New("daedalus: product limit exceeded")
 
-	// ErrNoCompatiblePlant marca uma Config válida cujo catálogo não
-	// contém nenhuma RoomPlant cujas DoorDirections suportam as
-	// Directions necessárias de uma Room e cujas Tags contêm as
-	// RequiredTags do papel atribuído.
-	ErrNoCompatiblePlant = errors.New("daedalus: nenhuma plant compatível")
+	// ErrNoCompatiblePlant marks a valid Config whose catalog contains no
+	// RoomPlant whose DoorDirections support a Room's required Directions and
+	// whose Tags contain the assigned role's RequiredTags.
+	ErrNoCompatiblePlant = errors.New("daedalus: no compatible plant")
 
-	// ErrUnroutableEdge marca uma aresta cujas duas rotas em L cruzam uma
-	// terceira Room e para a qual a busca em largura determinística não
-	// encontra caminho ortogonal entre as extremidades.
-	ErrUnroutableEdge = errors.New("daedalus: aresta sem rota ortogonal")
+	// ErrUnroutableEdge marks an edge whose two L-routes cross a third Room and
+	// for which the deterministic breadth-first search finds no orthogonal path
+	// between the endpoints.
+	ErrUnroutableEdge = errors.New("daedalus: edge has no orthogonal route")
 )

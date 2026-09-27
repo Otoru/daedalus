@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// layoutInvariantFailures é o oráculo único das invariantes de Layout da seção 5.2.
-// Cada diagnóstico contém caminho de campo, valor esperado e valor real para que
-// uma regressão não fique escondida atrás de uma comparação por hash.
+// layoutInvariantFailures is the single oracle for the section 5.2 Layout
+// invariants. Each diagnostic contains a field path, expected value, and actual
+// value so a regression cannot hide behind a hash comparison.
 func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string {
 	failures := make([]string, 0)
 	fail := func(path string, expected, actual any) {
-		failures = append(failures, fmt.Sprintf("%s: esperado %v; real %v", path, expected, actual))
+		failures = append(failures, fmt.Sprintf("%s: expected %v; actual %v", path, expected, actual))
 	}
 
 	if layout.Seed != effective.seed {
@@ -35,7 +35,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		fail("Layout.Grid.Cells.len", wantedGridCells, len(layout.Grid.Cells))
 	}
 	if len(layout.Rooms) == 0 {
-		fail("Layout.Rooms.len", "ao menos 1", 0)
+		fail("Layout.Rooms.len", "at least 1", 0)
 	}
 	if uint32(len(layout.Rooms)) > effective.maxRooms {
 		fail("Layout.Rooms.len", fmt.Sprintf("<= %d", effective.maxRooms), len(layout.Rooms))
@@ -50,7 +50,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 			fail(path+".ID", RoomID(roomIndex), room.ID)
 		}
 		if _, exists := roomByID[room.ID]; exists {
-			fail(path+".ID", "único", room.ID)
+			fail(path+".ID", "unique", room.ID)
 		}
 		roomByID[room.ID] = room
 		roomIndexByID[room.ID] = roomIndex
@@ -64,7 +64,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 			fail(path+".Cells", wantedCells, room.Cells)
 		}
 		if len(room.Cells) == 0 {
-			fail(path+".Cells.len", "ao menos 1", 0)
+			fail(path+".Cells.len", "at least 1", 0)
 			continue
 		}
 		if room.At != room.Cells[0] {
@@ -76,14 +76,14 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		for cellIndex, cell := range room.Cells {
 			cellPath := fmt.Sprintf("%s.Cells[%d]", path, cellIndex)
 			if !cellInsideGrid(cell, effective.width, effective.height) {
-				fail(cellPath, "dentro do Grid", cell)
+				fail(cellPath, "inside the Grid", cell)
 			}
 			if _, exists := seenCells[cell]; exists {
-				fail(cellPath, "Cell única no footprint", cell)
+				fail(cellPath, "unique Cell in footprint", cell)
 			}
 			seenCells[cell] = struct{}{}
 			if owner, occupied := roomCells[cell]; occupied {
-				fail(cellPath, "sem sobreposição", fmt.Sprintf("também pertence à RoomID %d", owner))
+				fail(cellPath, "no overlap", fmt.Sprintf("also belongs to RoomID %d", owner))
 			}
 			roomCells[cell] = room.ID
 			minimumX = min(minimumX, cell.X)
@@ -92,7 +92,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 			maximumY = max(maximumY, cell.Y)
 		}
 		if !cellsAreFourConnected(room.Cells) {
-			fail(path+".Cells", "footprint 4-conexo", room.Cells)
+			fail(path+".Cells", "4-connected footprint", room.Cells)
 		}
 		actualOrigin := Cell{X: minimumX, Y: minimumY}
 		if room.Origin != actualOrigin {
@@ -114,7 +114,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 			second := layout.Rooms[secondIndex]
 			pairPath := fmt.Sprintf("Layout.Rooms[%d,%d]", firstIndex, secondIndex)
 			if !footprintsRespectGap(first.Cells, second.Cells, effective.roomGeometry.MinRoomGap) {
-				fail(pairPath+".MinRoomGap", fmt.Sprintf("> %d", effective.roomGeometry.MinRoomGap), "violado")
+				fail(pairPath+".MinRoomGap", fmt.Sprintf("> %d", effective.roomGeometry.MinRoomGap), "violated")
 			}
 			if !anchorsRespectDistance(first.At, second.At, effective.minDistance, effective.densityRegions) {
 				required := max(localMinDistance(first.At, effective.minDistance, effective.densityRegions), localMinDistance(second.At, effective.minDistance, effective.densityRegions))
@@ -134,13 +134,13 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		fromIndex, fromExists := roomIndexByID[corridor.FromRoomID]
 		toIndex, toExists := roomIndexByID[corridor.ToRoomID]
 		if !fromExists {
-			fail(path+".FromRoomID", "RoomID existente", corridor.FromRoomID)
+			fail(path+".FromRoomID", "existing RoomID", corridor.FromRoomID)
 		}
 		if !toExists {
-			fail(path+".ToRoomID", "RoomID existente", corridor.ToRoomID)
+			fail(path+".ToRoomID", "existing RoomID", corridor.ToRoomID)
 		}
 		if corridor.FromRoomID == corridor.ToRoomID {
-			fail(path+".ToRoomID", "distinto de FromRoomID", corridor.ToRoomID)
+			fail(path+".ToRoomID", "distinct from FromRoomID", corridor.ToRoomID)
 		}
 		if fromExists && toExists && corridor.FromRoomID != corridor.ToRoomID {
 			adjacency[fromIndex] = append(adjacency[fromIndex], toIndex)
@@ -149,17 +149,17 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		fromDoor, fromDoorExists := doorAt(layout.Doors, corridor.FromDoorID)
 		toDoor, toDoorExists := doorAt(layout.Doors, corridor.ToDoorID)
 		if !fromDoorExists {
-			fail(path+".FromDoorID", "DoorID existente", corridor.FromDoorID)
+			fail(path+".FromDoorID", "existing DoorID", corridor.FromDoorID)
 		} else if fromDoor.RoomID != corridor.FromRoomID {
 			fail(path+".FromDoorID.RoomID", corridor.FromRoomID, fromDoor.RoomID)
 		}
 		if !toDoorExists {
-			fail(path+".ToDoorID", "DoorID existente", corridor.ToDoorID)
+			fail(path+".ToDoorID", "existing DoorID", corridor.ToDoorID)
 		} else if toDoor.RoomID != corridor.ToRoomID {
 			fail(path+".ToDoorID.RoomID", corridor.ToRoomID, toDoor.RoomID)
 		}
 		if corridor.FromDoorID == corridor.ToDoorID {
-			fail(path+".ToDoorID", "distinto de FromDoorID", corridor.ToDoorID)
+			fail(path+".ToDoorID", "distinct from FromDoorID", corridor.ToDoorID)
 		}
 		doorCorridors[corridor.FromDoorID] = append(doorCorridors[corridor.FromDoorID], corridor.ID)
 		doorCorridors[corridor.ToDoorID] = append(doorCorridors[corridor.ToDoorID], corridor.ID)
@@ -167,14 +167,14 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		for cellIndex, cell := range corridor.Cells {
 			cellPath := fmt.Sprintf("%s.Cells[%d]", path, cellIndex)
 			if !cellInsideGrid(cell, effective.width, effective.height) {
-				fail(cellPath, "dentro do Grid", cell)
+				fail(cellPath, "inside the Grid", cell)
 			}
 			if owner, occupied := roomCells[cell]; occupied {
-				fail(cellPath, "externa aos footprints", fmt.Sprintf("RoomID %d", owner))
+				fail(cellPath, "outside the footprints", fmt.Sprintf("RoomID %d", owner))
 			}
 			corridorCells[cell] = append(corridorCells[cell], corridor.ID)
 			if cellIndex > 0 && manhattanDistance(corridor.Cells[cellIndex-1], cell) != 1 {
-				fail(cellPath, "adjacente à Cell anterior", cell)
+				fail(cellPath, "adjacent to previous Cell", cell)
 			}
 		}
 		if fromDoorExists && toDoorExists {
@@ -182,7 +182,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 			toOutside := addCell(toDoor.At, toDoor.Direction.Delta())
 			if len(corridor.Cells) == 0 {
 				if fromOutside != toDoor.At || toOutside != fromDoor.At {
-					fail(path+".Cells", "vazio apenas entre Doors adjacentes e opostas", corridor.Cells)
+					fail(path+".Cells", "empty only between adjacent opposite Doors", corridor.Cells)
 				}
 			} else {
 				if corridor.Cells[0] != fromOutside {
@@ -210,7 +210,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		visited := graphReachable(adjacency, 0)
 		for roomIndex, reached := range visited {
 			if !reached {
-				fail(fmt.Sprintf("Layout.Rooms[%d]", roomIndex), "alcançável a partir da RoomID 0", "desconectada")
+				fail(fmt.Sprintf("Layout.Rooms[%d]", roomIndex), "reachable from RoomID 0", "disconnected")
 			}
 		}
 	}
@@ -224,24 +224,24 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		}
 		room, roomExists := roomByID[door.RoomID]
 		if !roomExists {
-			fail(path+".RoomID", "RoomID existente", door.RoomID)
+			fail(path+".RoomID", "existing RoomID", door.RoomID)
 		} else if owner, occupied := roomCells[door.At]; !occupied || owner != door.RoomID {
-			fail(path+".At", fmt.Sprintf("Cell da RoomID %d", door.RoomID), door.At)
+			fail(path+".At", fmt.Sprintf("Cell of RoomID %d", door.RoomID), door.At)
 		}
 		if door.Direction < DirectionNorth || door.Direction > DirectionWest {
-			fail(path+".Direction", "North, East, South ou West", door.Direction)
+			fail(path+".Direction", "North, East, South, or West", door.Direction)
 		} else {
 			outside := addCell(door.At, door.Direction.Delta())
 			if !cellInsideGrid(outside, effective.width, effective.height) {
-				fail(path+".At+Direction", "dentro do Grid", outside)
+				fail(path+".At+Direction", "inside the Grid", outside)
 			}
 			if owner, occupied := roomCells[outside]; occupied && owner == door.RoomID {
-				fail(path+".At+Direction", "fora do próprio footprint", outside)
+				fail(path+".At+Direction", "outside its own footprint", outside)
 			}
 		}
 		key := doorInvariantKey{roomID: door.RoomID, at: door.At, direction: door.Direction}
 		if previous, exists := seenDoors[key]; exists {
-			fail(path, "Door única por (RoomID, At, Direction)", fmt.Sprintf("duplica DoorID %d", previous))
+			fail(path, "unique Door by (RoomID, At, Direction)", fmt.Sprintf("duplicates DoorID %d", previous))
 		}
 		seenDoors[key] = door.ID
 		expectedRoomDoors[door.RoomID] = append(expectedRoomDoors[door.RoomID], door.ID)
@@ -250,10 +250,10 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 			fail(path+".CorridorIDs", wantedCorridors, door.CorridorIDs)
 		}
 		if len(door.CorridorIDs) == 0 {
-			fail(path+".CorridorIDs.len", "ao menos 1", 0)
+			fail(path+".CorridorIDs.len", "at least 1", 0)
 		}
 		if !strictlyIncreasingCorridorIDs(door.CorridorIDs) {
-			fail(path+".CorridorIDs", "ordem numérica crescente", door.CorridorIDs)
+			fail(path+".CorridorIDs", "ascending numeric order", door.CorridorIDs)
 		}
 		_ = room
 	}
@@ -306,7 +306,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 				fail(path+".CorridorIDs", corridorIDs, state.CorridorIDs)
 			}
 			if !strictlyIncreasingCorridorIDs(state.CorridorIDs) {
-				fail(path+".CorridorIDs", "ordem numérica crescente", state.CorridorIDs)
+				fail(path+".CorridorIDs", "ascending numeric order", state.CorridorIDs)
 			}
 		default:
 			if state.Kind != CellKindEmpty {
@@ -332,7 +332,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 		}
 		limit, requested := requestedCounts[*room.Role]
 		if !requested {
-			fail(fmt.Sprintf("Layout.Rooms[%d].Role", roomIndex), "papel solicitado", *room.Role)
+			fail(fmt.Sprintf("Layout.Rooms[%d].Role", roomIndex), "requested role", *room.Role)
 			continue
 		}
 		actualCounts[*room.Role]++
@@ -354,7 +354,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 func assertLayoutInvariants(t *testing.T, effective effectiveConfig, layout Layout) {
 	t.Helper()
 	for _, failure := range layoutInvariantFailures(effective, layout) {
-		assert.Fail(t, "invariante de Layout violada", failure)
+		assert.Fail(t, "Layout invariant violated", failure)
 	}
 }
 

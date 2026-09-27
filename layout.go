@@ -1,120 +1,112 @@
 package daedalus
 
-// Layout é o resultado completo, imutável e gerado com sucesso de uma
-// solicitação de dungeon. Ele descreve geometria, não a entrada do processo:
-// não repete o tuning de Config, apenas a Seed e o Grid resultante.
+// Layout is the complete, immutable, successfully generated result of a dungeon
+// request. It describes geometry, not process input: it does not repeat Config
+// tuning, only the Seed and resulting Grid.
 //
-// Invariantes garantidas pelo gerador: existe pelo menos uma Room; todo
-// Room.At é distinto; com n Rooms existem ao menos n-1 Corridors se n > 1 e
-// zero se n == 1; o grafo Room/Corridor é conectado (uma árvore quando
-// Config.ExtraEdgeCount == 0); todos os slices, inclusive aninhados, são
-// alocados por solicitação, de modo que mutar um Layout nunca muta o
-// resultado de outra solicitação.
+// Generator-guaranteed invariants: at least one Room exists; every Room.At is
+// distinct; with n Rooms there are at least n-1 Corridors if n > 1 and zero if
+// n == 1; the Room/Corridor graph is connected (a tree when
+// Config.ExtraEdgeCount == 0); all slices, including nested ones, are allocated
+// per request, so mutating one Layout never mutates another request's result.
 type Layout struct {
-	// Seed é a Seed efetiva que originou este Layout.
+	// Seed is the effective Seed that produced this Layout.
 	Seed Seed
-	// Grid é o espaço físico de Cells do Layout.
+	// Grid is the Layout's physical Cell space.
 	Grid Grid
-	// Rooms lista as Rooms em ordem canônica de RoomID.
+	// Rooms lists Rooms in canonical RoomID order.
 	Rooms []Room
-	// Corridors lista os Corridors em ordem canônica de CorridorID.
+	// Corridors lists Corridors in canonical CorridorID order.
 	Corridors []Corridor
-	// Doors lista as Doors em ordem canônica de DoorID.
+	// Doors lists Doors in canonical DoorID order.
 	Doors []Door
 }
 
-// Grid é o espaço retangular de Width × Height Cells de um Layout, onde
-// 0 ≤ X < Width e 0 ≤ Y < Height.
+// Grid is a Layout's rectangular Width × Height Cell space, where
+// 0 ≤ X < Width and 0 ≤ Y < Height.
 type Grid struct {
-	// Width é a largura do Grid, em Cells, na faixa 1..256.
+	// Width is the Grid width in Cells, in the range 1..256.
 	Width uint32
-	// Height é a altura do Grid, em Cells, na faixa 1..256.
+	// Height is the Grid height in Cells, in the range 1..256.
 	Height uint32
-	// CellSize é o tamanho de uma Cell em unidades opacas definidas pelo
-	// chamador, copiado de Config somente para saída; nenhum algoritmo o
-	// converte para pixels.
+	// CellSize is one Cell's size in opaque caller-defined units, copied from
+	// Config only for output; no algorithm converts it to pixels.
 	CellSize float64
-	// Cells contém exatamente Width × Height estados, em ordem canônica
-	// (Y e depois X): o estado de (x, y) está em Cells[y*Width+x].
+	// Cells contains exactly Width × Height states in canonical order (Y then X):
+	// the state of (x, y) is at Cells[y*Width+x].
 	Cells []CellState
 }
 
-// Room é um vértice topológico do Layout e contém o footprint absoluto da
-// máscara da Room, em ordem canônica Y/X.
+// Room is a topological Layout vertex and contains the Room mask's absolute
+// footprint in canonical Y/X order.
 type Room struct {
-	// ID é o identificador estável da Room, na ordem de criação.
+	// ID is the stable Room identifier, in creation order.
 	ID RoomID
-	// At é a primeira Cell ocupada do footprint em ordem canônica Y/X.
+	// At is the first occupied footprint Cell in canonical Y/X order.
 	At Cell
-	// Shape é a máscara canônica da Room.
+	// Shape is the Room's canonical mask.
 	Shape RoomShape
-	// Origin é o canto superior esquerdo da bounding box da Room.
+	// Origin is the Room bounding box's top-left corner.
 	Origin Cell
-	// Width é a largura da bounding box, em Cells.
+	// Width is the bounding-box width in Cells.
 	Width uint32
-	// Height é a altura da bounding box, em Cells.
+	// Height is the bounding-box height in Cells.
 	Height uint32
-	// Cells é o footprint absoluto da Room, em ordem Y e depois X.
+	// Cells is the Room's absolute footprint, ordered by Y then X.
 	Cells []Cell
-	// Role é o papel temático da Room, ou nil quando
-	// Config.RoomRoleRequests está vazio ou nenhum papel foi atribuído a
-	// esta Room. Nenhuma Room recebe mais de um Role em v1.
+	// Role is the Room's thematic role, or nil when Config.RoomRoleRequests is
+	// empty or no role was assigned to this Room. No Room receives more than one
+	// Role in v1.
 	Role *RoomRole
-	// PlantID é o metadado de asset selecionado do catálogo, ou a string
-	// vazia quando Config.PlantCatalog está ausente. Nunca altera
-	// topologia.
+	// PlantID is the asset metadata selected from the catalog, or the empty
+	// string when Config.PlantCatalog is absent. It never changes topology.
 	PlantID PlantID
-	// Tags é a cópia canônica das tags da Plant selecionada; vazio quando
-	// não há catálogo ou a Plant não declara tags.
+	// Tags is the canonical copy of the selected Plant's tags; empty when there
+	// is no catalog or the Plant declares no tags.
 	Tags []string
-	// DoorIDs lista as aberturas da Room em ordem de Cell (Y, X) e depois
-	// Direction; pode ser vazio quando a Room não possui Corridors.
+	// DoorIDs lists the Room's openings in Cell (Y, X) then Direction order; it
+	// may be empty when the Room has no Corridors.
 	DoorIDs []DoorID
 }
 
-// Corridor é uma aresta topológica entre duas Rooms e suas Cells ortogonais
-// internas ordenadas. Corridors são arestas lógicas sobre o espaço físico
-// de Grid.Cells; Cells de Corridor podem ser compartilhadas entre Corridors.
+// Corridor is a topological edge between two Rooms and its ordered internal
+// orthogonal Cells. Corridors are logical edges over the physical Grid.Cells
+// space; Corridor Cells may be shared between Corridors.
 type Corridor struct {
-	// ID é o identificador estável do Corridor, na ordem de criação.
+	// ID is the stable Corridor identifier, in creation order.
 	ID CorridorID
-	// FromRoomID é a Room de origem da aresta; sempre distinta de
-	// ToRoomID.
+	// FromRoomID is the edge's source Room; always distinct from ToRoomID.
 	FromRoomID RoomID
-	// ToRoomID é a Room de destino da aresta; sempre distinta de
-	// FromRoomID.
+	// ToRoomID is the edge's destination Room; always distinct from FromRoomID.
 	ToRoomID RoomID
-	// FromDoorID é a Door usada na Room de origem.
+	// FromDoorID is the Door used in the source Room.
 	FromDoorID DoorID
-	// ToDoorID é a Door usada na Room de destino.
+	// ToDoorID is the Door used in the destination Room.
 	ToDoorID DoorID
-	// Cells são as Cells internas do traçado, ordenadas do lado From até
-	// o lado To, excluindo as Cells das Rooms de extremidade. É vazio
-	// quando as Rooms são adjacentes. A sequência é sempre 4-conexa.
+	// Cells are the route's internal Cells, ordered from the From side to the To
+	// side, excluding the endpoint Rooms' Cells. It is empty when the Rooms are
+	// adjacent. The sequence is always 4-connected.
 	Cells []Cell
-	// PlantID é o metadado de asset selecionado do catálogo, ou a string
-	// vazia quando Config.PlantCatalog está ausente. Nunca altera
-	// topologia.
+	// PlantID is the asset metadata selected from the catalog, or the empty
+	// string when Config.PlantCatalog is absent. It never changes topology.
 	PlantID PlantID
-	// Tags é a cópia canônica das tags da Plant selecionada; vazio quando
-	// não há catálogo ou a Plant não declara tags.
+	// Tags is the canonical copy of the selected Plant's tags; empty when there
+	// is no catalog or the Plant declares no tags.
 	Tags []string
 }
 
-// Door é a abertura lógica de uma Room identificada por Cell e Direction
-// cardinal. Door é única por (RoomID, At, Direction), mesmo quando múltiplas
-// arestas a utilizam.
+// Door is a Room's logical opening identified by a Cell and cardinal Direction.
+// A Door is unique by (RoomID, At, Direction), even when multiple edges use it.
 type Door struct {
-	// ID é o identificador estável da Door, na ordem de criação.
+	// ID is the stable Door identifier, in creation order.
 	ID DoorID
-	// RoomID é a Room à qual esta abertura pertence.
+	// RoomID is the Room to which this opening belongs.
 	RoomID RoomID
-	// At é uma Cell de borda pertencente ao footprint da Room dona.
+	// At is a boundary Cell belonging to the owning Room's footprint.
 	At Cell
-	// Direction é a direção do primeiro passo interno do Corridor a
-	// partir da Room; com Cells vazias, é a direção entre as extremidades.
+	// Direction is the direction of the Corridor's first internal step away from
+	// the Room; with empty Cells, it is the direction between endpoints.
 	Direction Direction
-	// CorridorIDs lista, em ordem crescente, uma ou mais arestas que usam
-	// esta abertura.
+	// CorridorIDs lists, in ascending order, one or more edges using this opening.
 	CorridorIDs []CorridorID
 }

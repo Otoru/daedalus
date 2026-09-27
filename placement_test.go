@@ -8,18 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDerivacaoDaAncoraReconstroiMascarasCanonicas(t *testing.T) {
+func TestAnchorDerivationReconstructsCanonicalMasks(t *testing.T) {
 	tests := []struct {
 		name   string
 		shape  RoomShape
 		width  uint32
 		height uint32
 	}{
-		{"retangulo", RoomShapeRectangle, 4, 3},
+		{"rectangle", RoomShapeRectangle, 4, 3},
 		{"L", RoomShapeL, 4, 3},
 		{"T", RoomShapeT, 5, 4},
-		{"cruz", RoomShapeCross, 5, 5},
-		{"circulo", RoomShapeCircle, 5, 5},
+		{"cross", RoomShapeCross, 5, 5},
+		{"circle", RoomShapeCircle, 5, 5},
 	}
 
 	for _, tc := range tests {
@@ -41,7 +41,7 @@ func TestDerivacaoDaAncoraReconstroiMascarasCanonicas(t *testing.T) {
 	}
 }
 
-func TestFootprintAbsolutoReutilizaBufferDaSolicitacao(t *testing.T) {
+func TestAbsoluteFootprintReusesRequestBuffer(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 10, Y: 12}, RoomShapeRectangle, 4, 3)
 	buffer := make([]Cell, 0, len(placement.Cells))
 	var footprint []Cell
@@ -52,11 +52,11 @@ func TestFootprintAbsolutoReutilizaBufferDaSolicitacao(t *testing.T) {
 	})
 
 	require.True(t, ok)
-	assert.Zero(t, allocations, "a materialização quente precisa reutilizar o buffer da solicitação")
+	assert.Zero(t, allocations, "hot materialization must reuse the request buffer")
 	assert.Equal(t, Cell{X: 10, Y: 12}, footprint[0])
 }
 
-func TestAncoraNaBordaPodeGerarOrigemNegativa(t *testing.T) {
+func TestBoundaryAnchorMayProduceNegativeOrigin(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeCross, 5, 5)
 
 	assert.Equal(t, Cell{X: -2, Y: 0}, placement.Origin)
@@ -64,14 +64,14 @@ func TestAncoraNaBordaPodeGerarOrigemNegativa(t *testing.T) {
 	assert.ErrorIs(t, validatePlacementForAcceptance(placement, 8, 8, 25, 0, 1, nil, nil, nil), errPlacementOutOfBounds)
 }
 
-func TestBoundsAceitaBoundingBoxNoLimiteExatoDoGrid(t *testing.T) {
+func TestBoundsAcceptsBoundingBoxAtExactGridLimit(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 2, Y: 2}, RoomShapeRectangle, 3, 3)
 
 	assert.True(t, placementWithinBounds(placement, 5, 5))
 	assert.NoError(t, validatePlacementForAcceptance(placement, 5, 5, 9, 0, 1, nil, nil, nil))
 }
 
-func TestGapZeroAceitaFootprintsEncostadosERejeitaSobreposicao(t *testing.T) {
+func TestGapZeroAcceptsTouchingFootprintsAndRejectsOverlap(t *testing.T) {
 	accepted := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeRectangle, 2, 2)
 	touching := buildPlacementFromAt(Cell{X: 2, Y: 0}, RoomShapeRectangle, 2, 2)
 	overlapping := buildPlacementFromAt(Cell{X: 1, Y: 1}, RoomShapeRectangle, 2, 2)
@@ -81,7 +81,7 @@ func TestGapZeroAceitaFootprintsEncostadosERejeitaSobreposicao(t *testing.T) {
 	assert.ErrorIs(t, validatePlacementForAcceptance(overlapping, 8, 8, 4, 0, 1, nil, acceptedPlacements, occupancy), errPlacementOverlap)
 }
 
-func TestGapUmRejeitaContatoDiagonal(t *testing.T) {
+func TestGapOneRejectsDiagonalContact(t *testing.T) {
 	accepted := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeRectangle, 1, 1)
 	diagonal := buildPlacementFromAt(Cell{X: 1, Y: 1}, RoomShapeRectangle, 1, 1)
 	acceptedPlacements, occupancy := mustAcceptedState(t, 4, 4, accepted)
@@ -90,7 +90,7 @@ func TestGapUmRejeitaContatoDiagonal(t *testing.T) {
 	assert.ErrorIs(t, validatePlacementForAcceptance(diagonal, 4, 4, 1, 1, 1, nil, acceptedPlacements, occupancy), errPlacementGap)
 }
 
-func TestDistanciaEntreAncorasUsaMaiorDistanciaLocal(t *testing.T) {
+func TestAnchorDistanceUsesGreaterLocalDistance(t *testing.T) {
 	regions := []DensityRegion{
 		{Min: Cell{X: 0, Y: 0}, Max: Cell{X: 3, Y: 3}, MinDistance: 2},
 		{Min: Cell{X: 4, Y: 0}, Max: Cell{X: 8, Y: 3}, MinDistance: 5},
@@ -102,20 +102,20 @@ func TestDistanciaEntreAncorasUsaMaiorDistanciaLocal(t *testing.T) {
 	assert.Equal(t, 5.0, localMinDistance(b, 3, regions))
 	assert.False(t, anchorsRespectDistance(a, b, 3, regions))
 	assert.True(t, anchorsRespectDistance(a, Cell{X: 6, Y: 1}, 3, regions))
-	// Max é exclusivo: esta Cell fica fora da primeira região.
+	// Max is exclusive: this Cell lies outside the first region.
 	assert.Equal(t, 3.0, localMinDistance(Cell{X: 3, Y: 2}, 3, regions))
 }
 
-func TestMascaraValidaRejeitaOffsetsAdulterados(t *testing.T) {
+func TestValidMaskRejectsTamperedOffsets(t *testing.T) {
 	canonical := buildPlacementFromAt(Cell{X: 3, Y: 3}, RoomShapeRectangle, 2, 2)
 	tests := []struct {
 		name  string
 		cells []Cell
 	}{
-		{"duplicados", []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}}},
-		{"desconexos", []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 0, Y: 1}, {X: 3, Y: 3}}},
-		{"ordem diferente", []Cell{{X: 1, Y: 0}, {X: 0, Y: 0}, {X: 0, Y: 1}, {X: 1, Y: 1}}},
-		{"forma diferente", RoomShapeOffsets(RoomShapeL, 2, 2)},
+		{"duplicates", []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}}},
+		{"disconnected", []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 0, Y: 1}, {X: 3, Y: 3}}},
+		{"different order", []Cell{{X: 1, Y: 0}, {X: 0, Y: 0}, {X: 0, Y: 1}, {X: 1, Y: 1}}},
+		{"different shape", RoomShapeOffsets(RoomShapeL, 2, 2)},
 	}
 
 	for _, tc := range tests {
@@ -127,7 +127,7 @@ func TestMascaraValidaRejeitaOffsetsAdulterados(t *testing.T) {
 	}
 }
 
-func TestValidacaoDePlacementParaNaPrimeiraRegraViolada(t *testing.T) {
+func TestPlacementValidationStopsAtFirstViolatedRule(t *testing.T) {
 	placement := RoomPlacement{
 		Shape:  RoomShapeRectangle,
 		Origin: Cell{X: -1, Y: 0},
@@ -140,14 +140,14 @@ func TestValidacaoDePlacementParaNaPrimeiraRegraViolada(t *testing.T) {
 	assert.ErrorIs(t, err, errPlacementInvalidMask)
 }
 
-func TestAreaDoPlacementRespeitaLimiteEfetivo(t *testing.T) {
+func TestPlacementAreaRespectsEffectiveLimit(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeRectangle, 2, 2)
 
 	assert.False(t, placementWithinArea(placement, 3))
 	assert.ErrorIs(t, validatePlacementForAcceptance(placement, 4, 4, 3, 0, 1, nil, nil, nil), errPlacementAreaExceeded)
 }
 
-func TestSobreposicaoDetectaCellCompartilhada(t *testing.T) {
+func TestOverlapDetectsSharedCell(t *testing.T) {
 	a := []Cell{{X: 1, Y: 1}, {X: 2, Y: 1}}
 	b := []Cell{{X: 2, Y: 1}, {X: 3, Y: 1}}
 	c := []Cell{{X: 3, Y: 1}}
@@ -156,7 +156,7 @@ func TestSobreposicaoDetectaCellCompartilhada(t *testing.T) {
 	assert.False(t, footprintsOverlap(a, c))
 }
 
-func TestVizinhancaNaGradeEquivaleAComparacaoParAPar(t *testing.T) {
+func TestGridNeighbourhoodMatchesPairwiseComparison(t *testing.T) {
 	const (
 		gridSize       = uint32(32)
 		casesPerGap    = 500
@@ -177,12 +177,12 @@ func TestVizinhancaNaGradeEquivaleAComparacaoParAPar(t *testing.T) {
 
 			expected := footprintsRespectGap(candidateFootprint, acceptedFootprint, minRoomGap)
 			actual := occupancy.footprintRespectsGap(candidateFootprint, minRoomGap, candidateOwner)
-			assert.Equal(t, expected, actual, "gap=%d caso=%d", minRoomGap, testCase)
+			assert.Equal(t, expected, actual, "gap=%d case=%d", minRoomGap, testCase)
 		}
 	}
 }
 
-func TestVizinhancaNaGradeIgnoraCellsDaMesmaRoom(t *testing.T) {
+func TestGridNeighbourhoodIgnoresCellsOfSameRoom(t *testing.T) {
 	const owner = uint32(7)
 	footprint := []Cell{{X: 4, Y: 4}, {X: 5, Y: 4}}
 	occupancy := newPlacementOccupancy(8, 8)
@@ -227,7 +227,7 @@ func mustAcceptedState(t testing.TB, gridWidth, gridHeight uint32, placements ..
 	return accepted, occupancy
 }
 
-func BenchmarkAceitacao256(b *testing.B) {
+func BenchmarkAcceptance256(b *testing.B) {
 	const (
 		gridSize     = uint32(256)
 		roomSize     = uint32(9)

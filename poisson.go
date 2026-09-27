@@ -6,37 +6,37 @@ import (
 	"math"
 )
 
-var errPlacementRequestNotNormalized = errors.New("solicitação de placement não está normalizada")
+var errPlacementRequestNotNormalized = errors.New("placement request is not normalized")
 
 const (
-	// roomShapeCount é a quantidade de formas contíguas do contrato v1.
+	// roomShapeCount is the number of contiguous shapes in the v1 contract.
 	roomShapeCount = int(RoomShapeCircle) + 1
-	// annulusSquareWidthFactor e annulusSquareHalfFactor descrevem o
-	// quadrado [-2r,2r] que circunscreve o anel.
+	// annulusSquareWidthFactor and annulusSquareHalfFactor describe the
+	// [-2r,2r] square enclosing the annulus.
 	annulusSquareWidthFactor = 4.0
 	annulusSquareHalfFactor  = 2.0
-	// uniformAccelerationRange cobre a vizinhança 5×5 da grade Bridson
-	// quando não existem DensityRegions.
+	// uniformAccelerationRange covers the Bridson grid's 5×5 neighbourhood when
+	// no DensityRegions exist.
 	uniformAccelerationRange = 2
-	// densityAccelerationMargin é a margem prescrita pela seção 7 para
-	// o alcance variável da grade Bridson.
+	// densityAccelerationMargin is the section 7 margin for the Bridson grid's
+	// variable range.
 	densityAccelerationMargin = 1
-	// bridsonDimensions é o divisor sqrt(2) do lado de célula em duas
-	// dimensões, conforme a seção 7.
+	// bridsonDimensions is the sqrt(2) divisor for a Cell side in two dimensions,
+	// as specified by section 7.
 	bridsonDimensions = 2.0
-	// cancellationCandidateInterval limita o intervalo entre consultas de
-	// Context durante propostas candidatas.
+	// cancellationCandidateInterval limits the interval between Context checks
+	// during candidate proposals.
 	cancellationCandidateInterval uint64 = 256
 )
 
-// poissonDiskRoomsPlacer implementa o algoritmo embutido e congelado
-// poisson_disk_rooms_v1. O tipo não possui estado: todos os buffers e streams
-// pertencem a uma chamada de Place.
+// poissonDiskRoomsPlacer implements the built-in, frozen
+// poisson_disk_rooms_v1 algorithm. The type has no state: every buffer and
+// stream belongs to one Place call.
 type poissonDiskRoomsPlacer struct{}
 
 var _ Placer = poissonDiskRoomsPlacer{}
 
-// Place propõe Rooms segundo a seção 7 da especificação.
+// Place proposes Rooms according to section 7 of the specification.
 func (poissonDiskRoomsPlacer) Place(req PlacementRequest) ([]RoomPlacement, error) {
 	ctx := req.Context
 	if ctx == nil {
@@ -226,14 +226,14 @@ func (sampler roomGeometrySampler) sample(stream *splitMix64) (roomGeometryCombi
 	return sampler.combinations[first+int(selected)], true
 }
 
-// sampleUniformAnnulusByRejection traduz SampleUniformAnnulusByRejection da
-// seção 7. A spec não escreve a transformação de uniform01 para o
-// quadrado; a interpretação congelada em v1 é u*4r-2r em cada eixo.
-// uniform01 pertence a [0,1), coerente com o limite externo exclusivo do
-// anel; o limite interno é inclusivo. Também por interpretação da seção 7,
-// pares fora do anel são rejeitados internamente, sem consumir uma tentativa
-// geométrica, como indica o nome do pseudocódigo e a lista normativa de
-// motivos de rejeição de propostas.
+// sampleUniformAnnulusByRejection translates section 7's
+// SampleUniformAnnulusByRejection. The specification does not state the
+// transformation from uniform01 to the square; the frozen v1 interpretation is
+// u*4r-2r on each axis. uniform01 belongs to [0,1), consistent with the
+// annulus's exclusive outer bound; the inner bound is inclusive. Also under the
+// section 7 interpretation, pairs outside the annulus are rejected internally
+// without consuming a geometry attempt, as indicated by the pseudocode name
+// and the normative list of proposal-rejection reasons.
 func sampleUniformAnnulusByRejection(stream *splitMix64, radius float64) (float64, float64) {
 	squareWidth := float64(radius) * annulusSquareWidthFactor
 	squareHalf := float64(radius) * annulusSquareHalfFactor
@@ -312,8 +312,8 @@ func (grid *anchorAccelerationGrid) insert(anchor Cell, acceptedIndex int) {
 	grid.buckets[int(index)] = append(grid.buckets[int(index)], acceptedIndex)
 }
 
-// nearbyInto acrescenta os vizinhos ao buffer da solicitação na ordem
-// determinística dos buckets e evita alocação por tentativa Poisson.
+// nearbyInto appends neighbours to the request buffer in deterministic bucket
+// order and avoids allocation per Poisson attempt.
 func (grid *anchorAccelerationGrid) nearbyInto(
 	anchor Cell,
 	accepted []acceptedPlacement,
@@ -384,8 +384,8 @@ func nearestPlacementToGridCenter(
 				continue
 			}
 
-			// Dobrar as coordenadas compara a distância ao centro geométrico
-			// sem ponto flutuante: centro=(dimensão-1)/2.
+			// Doubling coordinates compares distance to the geometric center without
+			// floating point: center=(dimension-1)/2.
 			doubledX := x * int64(annulusSquareHalfFactor)
 			doubledY := y * int64(annulusSquareHalfFactor)
 			deltaX := doubledX - int64(gridWidth-1)

@@ -2,147 +2,135 @@ package daedalus
 
 import "context"
 
-// Placer é o algoritmo que propõe placements de Room para uma
-// solicitação de geração. É uma das duas únicas interfaces Strategy de v1;
-// funções e closures a satisfazem idiomaticamente, sem hierarquias de
-// classes nem factories.
+// Placer is the algorithm that proposes Room placements for a generation
+// request. It is one of only two Strategy interfaces in v1; functions and
+// closures satisfy it idiomatically, without class hierarchies or factories.
 //
-// Placer devolve somente RoomPlacements: não atribui Plants, Doors nem IDs e
-// não muta Layout. O Generator embutido usa poisson_disk_rooms_v1. Uma
-// implementação injetada pelo jogo é responsabilidade de quem a escreveu:
-// determinismo, cancelamento via PlacementRequest.Context e segurança
-// concorrente cabem ao plugin; um Placer compartilhado entre goroutines
-// precisa ser seguro para chamadas simultâneas.
+// Placer returns only RoomPlacements: it assigns no Plants, Doors, or IDs and
+// does not mutate Layout. The built-in Generator uses poisson_disk_rooms_v1. A
+// game-injected implementation is the implementer's responsibility:
+// determinism, cancellation through PlacementRequest.Context, and concurrency
+// safety belong to the plugin; a Placer shared between goroutines must be safe
+// for simultaneous calls.
 type Placer interface {
-	// Place propõe as Rooms da solicitação. Deve devolver placements válidos
-	// dentro dos limites de Grid do pedido, ou um erro. Deve
-	// observar req.Context e abandonar o trabalho ao ser cancelado.
+	// Place proposes the request's Rooms. It must return valid placements within
+	// the request's Grid bounds, or an error. It must observe req.Context and
+	// abandon work when canceled.
 	Place(req PlacementRequest) ([]RoomPlacement, error)
 }
 
-// RoomPlacement descreve uma Room proposta, com Cells locais relativas à
-// Origin e ordenadas pela máscara canônica.
+// RoomPlacement describes a proposed Room, with local Cells relative to Origin
+// and ordered by the canonical mask.
 type RoomPlacement struct {
-	// Shape é a máscara discreta canônica do footprint.
+	// Shape is the footprint's canonical discrete mask.
 	Shape RoomShape
-	// Origin é o canto superior esquerdo da bounding box.
+	// Origin is the bounding box's top-left corner.
 	Origin Cell
-	// Width é a largura da bounding box, em Cells.
+	// Width is the bounding-box width in Cells.
 	Width uint32
-	// Height é a altura da bounding box, em Cells.
+	// Height is the bounding-box height in Cells.
 	Height uint32
-	// Cells contém os offsets locais canônicos da máscara, em ordem Y/X.
+	// Cells contains the mask's canonical local offsets in Y/X order.
 	Cells []Cell
 }
 
-// PlacementRequest carrega todos os dados variáveis de uma solicitação de
-// posicionamento de Rooms.
+// PlacementRequest carries all variable data for a Room-placement request.
 type PlacementRequest struct {
-	// Context carrega o cancelamento e o deadline do chamador. O Placer
-	// deve verificá-lo nas fronteiras de fase e em laços longos, e nunca
-	// devolver resultado parcial após cancelamento.
+	// Context carries caller cancellation and deadline. The Placer must check it
+	// at phase boundaries and in long loops, and never return a partial result
+	// after cancellation.
 	Context context.Context
-	// Width é a largura do Grid de destino, em Cells.
+	// Width is the target Grid width in Cells.
 	Width uint32
-	// Height é a altura do Grid de destino, em Cells.
+	// Height is the target Grid height in Cells.
 	Height uint32
-	// MinDistance é a distância euclidiana mínima, em Cells, entre centros
-	// de Rooms fora de toda DensityRegion.
+	// MinDistance is the minimum Euclidean distance, in Cells, between Room
+	// centers outside every DensityRegion.
 	MinDistance float64
-	// DensityRegions lista as regiões de densidade já validadas da Config;
-	// vazio significa MinDistance uniforme.
+	// DensityRegions lists the Config's already validated density regions; empty
+	// means uniform MinDistance.
 	DensityRegions []DensityRegion
-	// RoomGeometry contém a geometria já normalizada para esta solicitação.
+	// RoomGeometry contains geometry already normalized for this request.
 	RoomGeometry RoomGeometry
-	// MaxAttempts é o máximo de candidatos por ponto ativo.
+	// MaxAttempts is the maximum number of candidates per active point.
 	MaxAttempts uint32
-	// MaxRooms é o máximo de Rooms aceitas; encerra o posicionamento
-	// quando atingido.
+	// MaxRooms is the maximum number of accepted Rooms; placement stops when reached.
 	MaxRooms uint32
-	// Seed é a fonte do stream aleatório de posicionamento da solicitação.
+	// Seed is the source of the request's placement random stream.
 	Seed Seed
-	// geometryCombinations preserva a lista normalizada e canonicamente
-	// ordenada pela validação da Config. O Placer embutido a recebe do
-	// Generator sem recalcular combinações nem depender de iteração de map.
+	// geometryCombinations preserves the normalized, canonically ordered list
+	// from Config validation. The built-in Placer receives it from Generator
+	// without recomputing combinations or depending on map iteration.
 	//
-	// O campo é privado de propósito: um Placer escrito pelo jogo não
-	// precisa dele, porque RoomGeometry já chega normalizada e as
-	// combinações são deriváveis dela. Só os algoritmos embutidos usam
-	// esse atalho, e só o Generator o preenche.
+	// The field is deliberately private: a game-written Placer does not need it
+	// because RoomGeometry arrives normalized and the combinations can be derived
+	// from it. Only built-in algorithms use this shortcut, and only Generator
+	// populates it.
 	geometryCombinations []roomGeometryCombination
 }
 
-// Connector é o algoritmo que escolhe as arestas Room-a-Room de uma
-// solicitação de geração. É uma das duas únicas interfaces Strategy de v1;
-// funções e closures a satisfazem idiomaticamente.
+// Connector is the algorithm that chooses Room-to-Room edges for a generation
+// request. It is one of only two Strategy interfaces in v1; functions and
+// closures satisfy it idiomatically.
 //
-// Connector devolve somente arestas: não roteia Cells e não muta Layout. O
-// resultado deve ser um grafo simples que torna toda Room alcançável; o
-// Generator rejeita Connections duplicadas, próprias, desconhecidas ou
-// desconectadas. O resultado final contém entre n-1 e
-// n-1+ConnectionRequest.ExtraEdgeCount arestas; com ExtraEdgeCount == 0 o
-// Generator rejeita qualquer ciclo e exige uma árvore. O Connector embutido
-// é prim_rooms_v1, que devolve a árvore de backbone; os atalhos de
-// ExtraEdgeCount são acrescentados pelo Generator na fase de ciclos, não pelo
-// Connector.
-// Uma implementação injetada pelo jogo responde por seu determinismo,
-// cancelamento e segurança concorrente.
+// Connector returns only edges: it does not route Cells or mutate Layout. The
+// result must be a simple graph that makes every Room reachable; Generator
+// rejects duplicate, self, unknown, or disconnected Connections. The final
+// result contains between n-1 and n-1+ConnectionRequest.ExtraEdgeCount edges;
+// with ExtraEdgeCount == 0 Generator rejects every cycle and requires a tree.
+// The built-in Connector is prim_rooms_v1, which returns the backbone tree;
+// ExtraEdgeCount shortcuts are added by Generator during the cycle phase, not
+// by Connector. A game-injected implementation is responsible for its own
+// determinism, cancellation, and concurrency safety.
 type Connector interface {
-	// Connect escolhe as arestas Room-a-Room da solicitação, ou devolve um
-	// erro. Deve observar req.Context e abandonar o trabalho ao ser
-	// cancelado.
+	// Connect chooses the request's Room-to-Room edges, or returns an error. It
+	// must observe req.Context and abandon work when canceled.
 	Connect(req ConnectionRequest) ([]Connection, error)
 }
 
-// PlacedRoom descreve uma Room já posicionada, incluindo âncora, máscara,
-// bounding box e footprint absoluto. A ordem da sequência é a ordem canônica
-// de RoomID.
+// PlacedRoom describes an already positioned Room, including anchor, mask,
+// bounding box, and absolute footprint. Sequence order is canonical RoomID order.
 type PlacedRoom struct {
-	// ID é o identificador estável da Room, na ordem de criação.
+	// ID is the stable Room identifier, in creation order.
 	ID RoomID
-	// At é a primeira Cell ocupada do footprint em ordem canônica Y/X.
+	// At is the first occupied footprint Cell in canonical Y/X order.
 	At Cell
-	// Shape é a máscara discreta canônica do footprint.
+	// Shape is the footprint's canonical discrete mask.
 	Shape RoomShape
-	// Origin é o canto superior esquerdo da bounding box.
+	// Origin is the bounding box's top-left corner.
 	Origin Cell
-	// Width é a largura da bounding box, em Cells.
+	// Width is the bounding-box width in Cells.
 	Width uint32
-	// Height é a altura da bounding box, em Cells.
+	// Height is the bounding-box height in Cells.
 	Height uint32
-	// Cells contém o footprint absoluto, ordenado por Y e depois X.
+	// Cells contains the absolute footprint, ordered by Y then X.
 	Cells []Cell
 }
 
-// ConnectionRequest carrega todos os dados variáveis de uma solicitação de
-// conexão de Rooms.
+// ConnectionRequest carries all variable data for a Room-connection request.
 type ConnectionRequest struct {
-	// Context carrega o cancelamento e o deadline do chamador. O Connector
-	// deve verificá-lo nas fronteiras de fase e em laços longos, e nunca
-	// devolver resultado parcial após cancelamento.
+	// Context carries caller cancellation and deadline. The Connector must check
+	// it at phase boundaries and in long loops, and never return a partial result
+	// after cancellation.
 	Context context.Context
-	// Rooms lista as Rooms posicionadas em ordem canônica de RoomID.
+	// Rooms lists positioned Rooms in canonical RoomID order.
 	Rooms []PlacedRoom
-	// Width é a largura do Grid de destino, em Cells.
+	// Width is the target Grid width in Cells.
 	Width uint32
-	// Height é a altura do Grid de destino, em Cells.
+	// Height is the target Grid height in Cells.
 	Height uint32
-	// ExtraEdgeCount é a quantidade máxima de arestas curtas descartadas
-	// que o Generator pode reintroduzir após o backbone; 0 exige que o
-	// resultado seja uma árvore.
+	// ExtraEdgeCount is the maximum number of discarded short edges Generator may
+	// reintroduce after the backbone; 0 requires the result to be a tree.
 	ExtraEdgeCount uint32
-	// Seed é a fonte do stream aleatório de conexão da solicitação. O
-	// Connector embutido prim_rooms_v1 a recebe, mas não consome sorteio.
+	// Seed is the source of the request's connection random stream. The built-in
+	// prim_rooms_v1 Connector receives it but consumes no draw.
 	Seed Seed
 }
 
-// Connection é uma aresta topológica escolhida pelo Connector entre duas
-// Rooms distintas.
+// Connection is a topological edge chosen by Connector between two distinct Rooms.
 type Connection struct {
-	// FromRoomID é a Room de origem da aresta; sempre distinta de
-	// ToRoomID.
+	// FromRoomID is the edge's source Room; always distinct from ToRoomID.
 	FromRoomID RoomID
-	// ToRoomID é a Room de destino da aresta; sempre distinta de
-	// FromRoomID.
+	// ToRoomID is the edge's destination Room; always distinct from FromRoomID.
 	ToRoomID RoomID
 }

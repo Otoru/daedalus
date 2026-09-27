@@ -1,24 +1,24 @@
 package daedalus
 
-// RoomShape identifica a máscara canônica de uma Room. A ordem canônica é
-// Rectangle, L, T, Cross e Circle; Rectangle é o valor zero.
+// RoomShape identifies a Room's canonical mask. The canonical order is
+// Rectangle, L, T, Cross, and Circle; Rectangle is the zero value.
 type RoomShape int
 
 const (
-	// RoomShapeRectangle ocupa toda a bounding box.
+	// RoomShapeRectangle occupies the entire bounding box.
 	RoomShapeRectangle RoomShape = iota
-	// RoomShapeL ocupa a linha superior e a coluna esquerda.
+	// RoomShapeL occupies the top row and left column.
 	RoomShapeL
-	// RoomShapeT ocupa a linha superior e a coluna central.
+	// RoomShapeT occupies the top row and center column.
 	RoomShapeT
-	// RoomShapeCross ocupa a linha central e a coluna central.
+	// RoomShapeCross occupies the center row and center column.
 	RoomShapeCross
-	// RoomShapeCircle ocupa o disco inteiro dentro de uma bounding box quadrada.
+	// RoomShapeCircle occupies the full disk inside a square bounding box.
 	RoomShapeCircle
 )
 
 const (
-	// Limites geométricos invariantes das máscaras do contrato v1.
+	// Invariant geometric limits for the v1 contract masks.
 	roomShapeMinDimension uint32 = 2
 	roomShapeMinWide      uint32 = 3
 	roomShapeMinCircle    uint32 = 5
@@ -26,8 +26,8 @@ const (
 	roomShapeMaxCellCoord uint32 = 1<<31 - 1
 )
 
-// ValidRoomShapeDimensions informa se width e height descrevem uma máscara
-// válida para shape, sem construir uma Room ou seus offsets.
+// ValidRoomShapeDimensions reports whether width and height describe a valid
+// mask for shape without constructing a Room or its offsets.
 func ValidRoomShapeDimensions(shape RoomShape, width, height uint32) bool {
 	if width == 0 || height == 0 || width > roomShapeMaxCellCoord || height > roomShapeMaxCellCoord {
 		return false
@@ -49,14 +49,14 @@ func ValidRoomShapeDimensions(shape RoomShape, width, height uint32) bool {
 	}
 }
 
-// RoomShapeOffsets devolve os offsets locais canônicos da máscara, relativos
-// à Origin e ordenados por Y e depois X. Dimensões inválidas devolvem nil.
+// RoomShapeOffsets returns the mask's canonical local offsets relative to
+// Origin, ordered by Y then X. Invalid dimensions return nil.
 func RoomShapeOffsets(shape RoomShape, width, height uint32) []Cell {
 	return roomShapeOffsetsInto(shape, width, height, nil)
 }
 
-// roomShapeOffsetsInto materializa a máscara no buffer privado informado.
-// O wrapper público preserva slices próprios ao chamar sem buffer.
+// roomShapeOffsetsInto materializes the mask in the supplied private buffer.
+// The public wrapper preserves independent slices by calling it without a buffer.
 func roomShapeOffsetsInto(shape RoomShape, width, height uint32, buffer []Cell) []Cell {
 	if !ValidRoomShapeDimensions(shape, width, height) {
 		return nil
@@ -76,9 +76,9 @@ func roomShapeOffsetsInto(shape RoomShape, width, height uint32, buffer []Cell) 
 	return offsets
 }
 
-// RoomShapeFirstOffset devolve o offset da primeira Cell ocupada em ordem
-// canônica Y/X. Dimensões inválidas devolvem a Cell zero; valide-as com
-// ValidRoomShapeDimensions antes de usar o resultado.
+// RoomShapeFirstOffset returns the offset of the first occupied Cell in
+// canonical Y/X order. Invalid dimensions return the zero Cell; validate them
+// with ValidRoomShapeDimensions before using the result.
 func RoomShapeFirstOffset(shape RoomShape, width, height uint32) Cell {
 	if !ValidRoomShapeDimensions(shape, width, height) {
 		return Cell{}

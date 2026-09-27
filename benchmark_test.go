@@ -24,7 +24,7 @@ func BenchmarkGenerate(b *testing.B) {
 					b.Fatal(err)
 				}
 				if len(layout.Rooms) == 0 {
-					b.Fatal("Generate não devolveu Rooms")
+					b.Fatal("Generate returned no Rooms")
 				}
 			}
 		})
@@ -34,21 +34,21 @@ func BenchmarkGenerate(b *testing.B) {
 func generationBenchmarks() []generationBenchmark {
 	return []generationBenchmark{
 		{
-			name: "Pequena_seed_3",
+			name: "Small_seed_3",
 			config: Config{
 				Width: 64, Height: 64, Seed: 3,
 				MinDistance: 6, MaxAttempts: 30, MaxRooms: 128,
 			},
 		},
 		{
-			name: "Tipica_seed_11",
+			name: "Typical_seed_11",
 			config: Config{
 				Width: 128, Height: 128, Seed: 11,
 				MinDistance: 6, MaxAttempts: 30, MaxRooms: 256,
 			},
 		},
 		{
-			name:   "Maxima_v1_seed_17",
+			name:   "Maximum_v1_seed_17",
 			config: maximumV1BenchmarkConfig(),
 		},
 	}
@@ -94,7 +94,7 @@ func maximumV1BenchmarkConfig() Config {
 	}
 }
 
-func TestCargaMaximaDoBenchmarkHabilitaRecursosV1(t *testing.T) {
+func TestMaximumBenchmarkLoadEnablesV1Features(t *testing.T) {
 	config := maximumV1BenchmarkConfig()
 
 	assert.Equal(t, uint32(256), config.Width)

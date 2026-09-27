@@ -3,24 +3,23 @@ package daedalus
 import "context"
 
 const (
-	// primSingleRoomLimit é a maior quantidade de Rooms que não exige aresta.
+	// primSingleRoomLimit is the largest Room count requiring no edge.
 	primSingleRoomLimit = 1
-	// primStartingRoomIndex corresponde à RoomID 0 na sequência canônica.
+	// primStartingRoomIndex corresponds to RoomID 0 in the canonical sequence.
 	primStartingRoomIndex = 0
-	// boundingBoxCenterDivisor converte a extensão entre a primeira e a
-	// última coordenada da bounding box em deslocamento até o centro.
+	// boundingBoxCenterDivisor converts the span between the first and last
+	// bounding-box coordinates into an offset to the center.
 	boundingBoxCenterDivisor = 2.0
-	// boundingBoxCellAdjustment converte quantidade de Cells em extensão
-	// entre os centros da primeira e da última Cell.
+	// boundingBoxCellAdjustment converts a Cell count into the span between the
+	// centers of the first and last Cells.
 	boundingBoxCellAdjustment = 1.0
-	// primCancellationUpdateInterval limita o intervalo entre consultas ao
-	// Context durante atualizações de melhores chaves, conforme a seção 11.
+	// primCancellationUpdateInterval limits the interval between Context checks
+	// during best-key updates, as specified by section 11.
 	primCancellationUpdateInterval uint64 = 256
 )
 
-// primRoomsConnector implementa o algoritmo embutido e congelado
-// prim_rooms_v1. O tipo não possui estado: todos os buffers pertencem à
-// chamada de Connect.
+// primRoomsConnector implements the built-in, frozen prim_rooms_v1 algorithm.
+// The type has no state: every buffer belongs to the Connect call.
 type primRoomsConnector struct{}
 
 var _ Connector = primRoomsConnector{}
@@ -37,8 +36,8 @@ type primEdgeCandidate struct {
 	destination   Cell
 }
 
-// Connect escolhe somente a árvore de backbone entre as Rooms. Atalhos de
-// ExtraEdgeCount pertencem à fase posterior do Generator.
+// Connect chooses only the backbone tree among Rooms. ExtraEdgeCount shortcuts
+// belong to Generator's later phase.
 func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 	roomCount := len(req.Rooms)
 	edgeCapacity := roomCount - primSingleRoomLimit
@@ -88,9 +87,9 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 				},
 				toIndex:       toIndex,
 				squaredWeight: squaredCenterDistance(centers[fromIndex], centers[toIndex]),
-				// A "Cell de destino" da seção 8 é interpretada como a
-				// âncora At da Room de destino, a Cell que o contrato de
-				// PlacedRoom fornece para desempates canônicos.
+				// Section 8's "destination Cell" is interpreted as the destination
+				// Room's At anchor, the Cell supplied by the PlacedRoom contract for
+				// canonical tie-breaks.
 				destination: to.At,
 			}
 			if !hasKey[toIndex] || primEdgeLess(candidate, bestKeys[toIndex]) {
@@ -135,13 +134,13 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 	return edges, nil
 }
 
-// boundingBoxCenter devolve o centro da bounding box como centroide das
-// Cells, isto é, Origin + (dimensão-1)/2. A alternativa seria o centro da
-// área, Origin + dimensão/2, e as duas produzem árvores diferentes porque o
-// deslocamento depende da dimensão de cada Room. A seção 8 resolve a dúvida
-// ao afirmar que, para Rooms 1×1, o peso "coincide com distância entre
-// âncoras": isso só vale com (dimensão-1)/2, que anula o deslocamento quando
-// a dimensão é 1.
+// boundingBoxCenter returns the bounding-box center as the centroid of its
+// Cells, that is, Origin + (dimension-1)/2. The alternative would be the area
+// center, Origin + dimension/2, and the two produce different trees because the
+// offset depends on each Room's dimension. Section 8 resolves the ambiguity by
+// stating that, for 1×1 Rooms, the weight "matches the distance between
+// anchors": that is true only with (dimension-1)/2, which makes the offset zero
+// when the dimension is 1.
 func boundingBoxCenter(room PlacedRoom) roomCenter {
 	width := float64(room.Width)
 	widthSpan := width - boundingBoxCellAdjustment
@@ -167,9 +166,9 @@ func squaredCenterDistance(first, second roomCenter) float64 {
 }
 
 func primEdgeLess(first, second primEdgeCandidate) bool {
-	// A seção 8 define peso euclidiano. Como sqrt é estritamente crescente
-	// para valores não negativos, comparar o quadrado preserva exatamente a
-	// mesma ordem sem introduzir outro arredondamento no caminho congelado.
+	// Section 8 defines Euclidean weight. Because sqrt is strictly increasing for
+	// non-negative values, comparing the square preserves exactly the same order
+	// without introducing another rounding operation into the frozen path.
 	if first.squaredWeight != second.squaredWeight {
 		return first.squaredWeight < second.squaredWeight
 	}
@@ -180,10 +179,10 @@ func primEdgeLess(first, second primEdgeCandidate) bool {
 		return first.connection.ToRoomID < second.connection.ToRoomID
 	}
 
-	// Em um grafo simples, FromRoomID e ToRoomID já identificam a aresta e
-	// tornam este terceiro nível inalcançável no Prim. A seção 8 o congela
-	// porque o mesmo comparador será reutilizado pela seleção de arestas
-	// descartadas na fase de ciclos; por isso preservamos a ordem Cell Y/X.
+	// In a simple graph, FromRoomID and ToRoomID already identify the edge and
+	// make this third level unreachable in Prim. Section 8 freezes it because the
+	// same comparator is reused to select discarded edges in the cycle phase;
+	// therefore we preserve Cell Y/X order.
 	if first.destination.Y != second.destination.Y {
 		return first.destination.Y < second.destination.Y
 	}

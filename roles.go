@@ -8,30 +8,30 @@ import (
 )
 
 const (
-	// topologyFirstRoomIndex é a posição canônica da RoomID 0, raiz das
-	// distâncias temáticas e primeira Room aceita pelo posicionamento.
+	// topologyFirstRoomIndex is RoomID 0's canonical position, the root of
+	// thematic distances and the first Room accepted by placement.
 	topologyFirstRoomIndex = 0
-	// topologyNextRoomOffset avança ao próximo par no grafo completo sem
-	// produzir aresta própria.
+	// topologyNextRoomOffset advances to the next pair in the complete graph
+	// without producing a self-edge.
 	topologyNextRoomOffset = 1
-	// topologyUndirectedEdgeDivisor remove a duplicidade das duas orientações
-	// ao dimensionar o grafo simples completo.
+	// topologyUndirectedEdgeDivisor removes the duplicate orientations when
+	// sizing the complete simple graph.
 	topologyUndirectedEdgeDivisor = 2
-	// topologyNoExtraEdges desliga integralmente a fase de atalhos.
+	// topologyNoExtraEdges completely disables the shortcut phase.
 	topologyNoExtraEdges uint32 = 0
-	// topologyNoRoomIndex representa a ausência de candidata temática.
+	// topologyNoRoomIndex represents the absence of a thematic candidate.
 	topologyNoRoomIndex = -1
 )
 
 var (
-	// errBossRoleWithoutStart sinaliza quebra de uma invariável interna: a
-	// validação da Config deve rejeitar Boss sem Start antes desta fase.
-	errBossRoleWithoutStart = errors.New("atribuição de Boss alcançada sem solicitação Start")
-	// errTopologyUnknownRoom sinaliza uma Connection que escapou da validação
-	// do Connector com um RoomID inexistente.
-	errTopologyUnknownRoom = errors.New("topologia contém RoomID desconhecido")
-	// errTopologyDisconnected sinaliza uma árvore de backbone que escapou da
-	// validação do Connector sem alcançar todas as Rooms.
+	// errBossRoleWithoutStart signals a broken internal invariant: Config
+	// validation must reject Boss without Start before this phase.
+	errBossRoleWithoutStart = errors.New("assignment of the Boss role reached without a Start request")
+	// errTopologyUnknownRoom signals a Connection with a nonexistent RoomID that
+	// escaped Connector validation.
+	errTopologyUnknownRoom = errors.New("topology contains unknown RoomID")
+	// errTopologyDisconnected signals a backbone tree that escaped Connector
+	// validation without reaching every Room.
 	errTopologyDisconnected = errors.New("topologia de backbone desconectada")
 )
 
@@ -40,9 +40,9 @@ type weightedRoomNeighbor struct {
 	weight    float64
 }
 
-// applyTopologyOptions fixa a ordem normativa da seção 8.1: os papéis são
-// projetados sobre a árvore de backbone antes que qualquer atalho seja
-// acrescentado. Nenhuma das fases recebe ou consome stream aleatório.
+// applyTopologyOptions fixes the normative section 8.1 order: roles are
+// projected onto the backbone tree before any shortcut is added. Neither phase
+// receives or consumes a random stream.
 func applyTopologyOptions(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -61,11 +61,11 @@ func applyTopologyOptions(
 	return roles, connections, nil
 }
 
-// assignRoomRoles atribui papéis na ordem declarada, reservando RoomID 0
-// para Start quando a solicitação existe. A reserva antecipada é a leitura
-// conservadora da seção 8.1: Start recebe RoomID 0 mesmo quando sua entrada
-// aparece depois de Boss ou Treasure; as demais entradas preservam a ordem
-// do chamador e nunca podem ocupar essa Room.
+// assignRoomRoles assigns roles in declared order, reserving RoomID 0 for Start
+// when that request exists. Early reservation is the conservative reading of
+// section 8.1: Start receives RoomID 0 even when its entry appears after Boss or
+// Treasure; the remaining entries preserve caller order and can never occupy
+// that Room.
 func assignRoomRoles(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -108,12 +108,12 @@ func assignRoomRoles(
 		roles[startIndex] = roomRolePointer(RoomRoleStart)
 	}
 
-	// A seção 8.1 mede Treasure "mais distante de Start", mas exige Start
-	// apenas para Boss; a validação da Config aceita Treasure sozinho. Nesse
-	// caso a origem continua sendo a RoomID 0, a primeira Room aceita, que é
-	// exatamente a Room que Start ocuparia. A leitura é conservadora e vira
-	// contrato congelado: sem ela, "distante de Start" não teria referência
-	// e a atribuição seria indefinida.
+	// Section 8.1 measures Treasure as "farthest from Start" but requires Start
+	// only for Boss; Config validation accepts Treasure alone. In that case the
+	// origin remains RoomID 0, the first accepted Room, exactly the Room Start
+	// would occupy. This conservative reading becomes a frozen contract: without
+	// it, "farthest from Start" would have no reference and assignment would be
+	// undefined.
 	var distances []float64
 	if needsDistances {
 		var err error
@@ -228,10 +228,9 @@ func roomRolePointer(role RoomRole) *RoomRole {
 	return &assigned
 }
 
-// addExtraConnections acrescenta as menores arestas do grafo completo que
-// não pertencem ao backbone. Com contagem zero, retorna imediatamente sem
-// formar, ordenar ou percorrer o conjunto de descartadas, conforme a seção
-// 8.1.
+// addExtraConnections adds the shortest complete-graph edges not belonging to
+// the backbone. With a zero count, it returns immediately without forming,
+// sorting, or traversing the discarded set, as specified by section 8.1.
 func addExtraConnections(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -284,9 +283,9 @@ func addExtraConnections(
 				},
 				toIndex:       toIndex,
 				squaredWeight: squaredCenterDistance(centers[fromIndex], centers[toIndex]),
-				// A orientação canônica da aresta descartada é do menor para
-				// o maior RoomID; portanto esta é a Cell de destino usada pelo
-				// terceiro desempate congelado do Prim.
+				// A discarded edge's canonical orientation is from lower to higher
+				// RoomID; this is therefore the destination Cell used by Prim's
+				// frozen third tie-break.
 				destination: rooms[toIndex].At,
 			})
 		}

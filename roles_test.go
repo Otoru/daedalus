@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPapéisVaziosNãoAtribuemNemConsomemSorteio(t *testing.T) {
+func TestEmptyRolesAssignAndConsumeNoDraw(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 3, 0)}
 	backbone := []Connection{{FromRoomID: 0, ToRoomID: 1}}
 	streams := newRNGStreams(Seed(91))
@@ -23,7 +23,7 @@ func TestPapéisVaziosNãoAtribuemNemConsomemSorteio(t *testing.T) {
 	assert.Equal(t, wantStreams, streams)
 }
 
-func TestStartRecebeSempreRoomIDZero(t *testing.T) {
+func TestStartAlwaysReceivesRoomIDZero(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 7, 7), placedRoomAt(1, 0, 0)}
 	requests := []RoomRoleRequest{{Role: RoomRoleStart, Count: 1}}
 
@@ -35,7 +35,7 @@ func TestStartRecebeSempreRoomIDZero(t *testing.T) {
 	assert.Nil(t, roles[1])
 }
 
-func TestBossUsaSomaPonderadaDoCaminhoNaÁrvore(t *testing.T) {
+func TestBossUsesWeightedTreePathSum(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 10, 0),
@@ -56,10 +56,10 @@ func TestBossUsaSomaPonderadaDoCaminhoNaÁrvore(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, roles[2])
-	assert.Equal(t, RoomRoleBoss, *roles[2], "a Room 1 é mais distante em linha reta, mas a Room 2 tem caminho ponderado maior")
+	assert.Equal(t, RoomRoleBoss, *roles[2], "Room 1 is farther in a straight line, but Room 2 has the greater weighted path")
 }
 
-func TestPapéisUsamCentrosDasBoundingBoxes(t *testing.T) {
+func TestRolesUseBoundingBoxCenters(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		{
@@ -81,10 +81,10 @@ func TestPapéisUsamCentrosDasBoundingBoxes(t *testing.T) {
 
 	require.NoError(t, err)
 	assertRoleAt(t, roles, 1, RoomRoleBoss)
-	assert.Nil(t, roles[2], "a métrica por âncora escolheria a Room 2")
+	assert.Nil(t, roles[2], "the anchor metric would choose Room 2")
 }
 
-func TestPapéisDesempatamDistânciaPorRoomIDCrescente(t *testing.T) {
+func TestRolesBreakDistanceTiesByAscendingRoomID(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, -2, 0),
@@ -107,7 +107,7 @@ func TestPapéisDesempatamDistânciaPorRoomIDCrescente(t *testing.T) {
 	assert.Nil(t, roles[2])
 }
 
-func TestTreasureEscolhePróximasMaisDistantesSemRepetir(t *testing.T) {
+func TestTreasureChoosesNextFarthestWithoutRepeating(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 1, 0),
@@ -134,7 +134,7 @@ func TestTreasureEscolhePróximasMaisDistantesSemRepetir(t *testing.T) {
 	assertRoleAt(t, roles, 3, RoomRoleBoss)
 }
 
-func TestTreasureEBossRespeitamAOrdemDasSolicitações(t *testing.T) {
+func TestTreasureAndBossRespectRequestOrder(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 1, 0),
@@ -157,7 +157,7 @@ func TestTreasureEBossRespeitamAOrdemDasSolicitações(t *testing.T) {
 	assertRoleAt(t, roles, 2, RoomRoleTreasure)
 }
 
-func TestMenosRoomsQuePapéisAtribuiOQueCouberSemDuplicar(t *testing.T) {
+func TestFewerRoomsThanRolesAssignsWhatFitsWithoutDuplicates(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0)}
 	requests := []RoomRoleRequest{
 		{Role: RoomRoleStart, Count: 1},
@@ -172,7 +172,7 @@ func TestMenosRoomsQuePapéisAtribuiOQueCouberSemDuplicar(t *testing.T) {
 	assertRoleAt(t, roles, 1, RoomRoleBoss)
 }
 
-func TestBossSemStartÉErroDeProgramação(t *testing.T) {
+func TestBossWithoutStartIsProgrammingError(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0)}
 
 	roles, err := assignRoomRoles(context.Background(), rooms, []Connection{{FromRoomID: 0, ToRoomID: 1}}, []RoomRoleRequest{{Role: RoomRoleBoss, Count: 1}})
@@ -181,7 +181,7 @@ func TestBossSemStartÉErroDeProgramação(t *testing.T) {
 	assert.Nil(t, roles)
 }
 
-func TestZeroAtalhosPreservaÁrvoreESaltaFaseSemSorteio(t *testing.T) {
+func TestZeroShortcutsPreservesTreeAndSkipsPhaseWithoutDraw(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0), placedRoomAt(2, 2, 0)}
 	backbone := []Connection{{FromRoomID: 0, ToRoomID: 1}, {FromRoomID: 1, ToRoomID: 2}}
 	streams := newRNGStreams(Seed(92))
@@ -195,7 +195,7 @@ func TestZeroAtalhosPreservaÁrvoreESaltaFaseSemSorteio(t *testing.T) {
 	assert.Equal(t, wantStreams, streams)
 }
 
-func TestAtalhosSãoAsPrimeirasArestasDescartadasOrdenadas(t *testing.T) {
+func TestShortcutsAreFirstOrderedDiscardedEdges(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 2, 0),
@@ -221,7 +221,7 @@ func TestAtalhosSãoAsPrimeirasArestasDescartadasOrdenadas(t *testing.T) {
 	assertGraphConnected(t, rooms, connections)
 }
 
-func TestAtalhosAcimaDoDisponívelAcrescentamTodosSemErro(t *testing.T) {
+func TestShortcutsAboveAvailableAddAllWithoutError(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0), placedRoomAt(2, 2, 0)}
 	backbone := []Connection{{FromRoomID: 0, ToRoomID: 1}, {FromRoomID: 1, ToRoomID: 2}}
 
@@ -231,7 +231,7 @@ func TestAtalhosAcimaDoDisponívelAcrescentamTodosSemErro(t *testing.T) {
 	assert.Equal(t, append(append([]Connection(nil), backbone...), Connection{FromRoomID: 0, ToRoomID: 2}), connections)
 }
 
-func TestPapéisSãoCalculadosAntesDosAtalhos(t *testing.T) {
+func TestRolesAreComputedBeforeShortcuts(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 1, 0),
@@ -249,10 +249,10 @@ func TestPapéisSãoCalculadosAntesDosAtalhos(t *testing.T) {
 
 	require.NoError(t, err)
 	assertRoleAt(t, roles, 3, RoomRoleBoss)
-	assert.Contains(t, connections, Connection{FromRoomID: 0, ToRoomID: 3}, "o atalho encurta o caminho até o Boss somente depois da atribuição")
+	assert.Contains(t, connections, Connection{FromRoomID: 0, ToRoomID: 3}, "the shortcut shortens the path to the Boss only after assignment")
 }
 
-func TestPapéisEAtalhosHabilitadosNãoConsomemSorteio(t *testing.T) {
+func TestEnabledRolesAndShortcutsConsumeNoDraw(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 1, 0),
@@ -274,7 +274,7 @@ func TestPapéisEAtalhosHabilitadosNãoConsomemSorteio(t *testing.T) {
 	assert.Equal(t, wantStreams, streams)
 }
 
-func TestFasesDePapéisEAtalhosRespeitamContextCancelado(t *testing.T) {
+func TestRoleAndShortcutPhasesRespectCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0)}
@@ -313,6 +313,6 @@ func assertGraphConnected(t *testing.T, rooms []PlacedRoom, connections []Connec
 		}
 	}
 	for roomIndex := range rooms {
-		assert.True(t, visited[roomIndex], "Room %d precisa permanecer alcançável", roomIndex)
+		assert.True(t, visited[roomIndex], "Room %d must stay reachable", roomIndex)
 	}
 }

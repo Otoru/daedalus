@@ -12,21 +12,20 @@ import (
 	"testing"
 )
 
-// TestPacoteRaizImportaApenasBibliotecaPadrao mantém o núcleo de geração
-// importável de forma independente: grpc, protobuf, fx, zap e os bindings
-// gerados vivem fora deste pacote. A análise é feita por AST (go/parser) e
-// cada import é resolvido com go/build; qualquer import fora de GOROOT falha
-// o teste.
-func TestPacoteRaizImportaApenasBibliotecaPadrao(t *testing.T) {
+// TestRootPackageImportsOnlyStandardLibrary keeps the generation core
+// independently importable: grpc, protobuf, fx, zap, and generated bindings
+// live outside this package. Analysis uses the AST (go/parser), and each import
+// is resolved with go/build; any import outside GOROOT fails the test.
+func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("localizar este arquivo de teste")
+		t.Fatal("locate this test file")
 	}
 	directory := filepath.Dir(thisFile)
 	fileSet := token.NewFileSet()
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		t.Fatalf("listar arquivos de produção da raiz: %v", err)
+		t.Fatalf("list root production files: %v", err)
 	}
 
 	foundProductionFile := false
@@ -37,28 +36,28 @@ func TestPacoteRaizImportaApenasBibliotecaPadrao(t *testing.T) {
 		}
 		matchesBuild, err := build.Default.MatchFile(directory, fileName)
 		if err != nil {
-			t.Fatalf("avaliar restrições de build de %s: %v", fileName, err)
+			t.Fatalf("evaluate build constraints for %s: %v", fileName, err)
 		}
 		if !matchesBuild {
 			continue
 		}
 		file, err := parser.ParseFile(fileSet, filepath.Join(directory, fileName), nil, parser.ImportsOnly)
 		if err != nil {
-			t.Fatalf("analisar imports de %s: %v", fileName, err)
+			t.Fatalf("parse imports from %s: %v", fileName, err)
 		}
 		foundProductionFile = true
 		for _, importSpec := range file.Imports {
 			importPath, err := strconv.Unquote(importSpec.Path.Value)
 			if err != nil {
-				t.Fatalf("interpretar import em %s: %v", fileName, err)
+				t.Fatalf("interpret import in %s: %v", fileName, err)
 			}
 			importedPackage, err := build.Default.Import(importPath, directory, build.FindOnly)
 			if err != nil || !importedPackage.Goroot {
-				t.Errorf("%s importa pacote fora da biblioteca padrão: %q", filepath.Base(fileName), importPath)
+				t.Errorf("%s imports package outside the standard library: %q", filepath.Base(fileName), importPath)
 			}
 		}
 	}
 	if !foundProductionFile {
-		t.Fatal("pacote de produção daedalus não encontrado")
+		t.Fatal("daedalus production package not found")
 	}
 }

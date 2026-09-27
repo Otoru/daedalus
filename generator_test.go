@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGeneratorMaterializaLayoutMinimo(t *testing.T) {
+func TestGeneratorMaterializesMinimalLayout(t *testing.T) {
 	layout, err := (Generator{}).Generate(Config{Width: 1, Height: 1, Seed: 7})
 
 	require.NoError(t, err)
@@ -31,7 +31,7 @@ func TestGeneratorMaterializaLayoutMinimo(t *testing.T) {
 	assert.Empty(t, layout.Doors)
 }
 
-func TestGenerateContextPreservaCancelamentoDoChamador(t *testing.T) {
+func TestGenerateContextPreservesCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -41,7 +41,7 @@ func TestGenerateContextPreservaCancelamentoDoChamador(t *testing.T) {
 	assert.Equal(t, Layout{}, layout)
 }
 
-func TestGeneratorSelecionaPlantsCompatíveisComAsDoors(t *testing.T) {
+func TestGeneratorSelectsPlantsCompatibleWithDoors(t *testing.T) {
 	generator := Generator{
 		Placer: fixedPlacer{placements: []RoomPlacement{
 			rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
@@ -52,10 +52,10 @@ func TestGeneratorSelecionaPlantsCompatíveisComAsDoors(t *testing.T) {
 	config := fixedGeometryConfigForTest(7, 3, 2)
 	config.PlantCatalog = &PlantCatalog{
 		Rooms: []RoomPlant{
-			{ID: "oeste", Tags: []string{"fria"}, Weight: 1, DoorDirections: []Direction{DirectionWest}},
-			{ID: "leste", Tags: []string{"quente"}, Weight: 1, DoorDirections: []Direction{DirectionEast}},
+			{ID: "west", Tags: []string{"cold"}, Weight: 1, DoorDirections: []Direction{DirectionWest}},
+			{ID: "east", Tags: []string{"hot"}, Weight: 1, DoorDirections: []Direction{DirectionEast}},
 		},
-		Corridors: []CorridorPlant{{ID: "pedra", Tags: []string{"úmida"}, Weight: 1}},
+		Corridors: []CorridorPlant{{ID: "stone", Tags: []string{"damp"}, Weight: 1}},
 	}
 
 	layout, err := generator.Generate(config)
@@ -63,22 +63,22 @@ func TestGeneratorSelecionaPlantsCompatíveisComAsDoors(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, layout.Rooms, 2)
 	require.Len(t, layout.Corridors, 1)
-	assert.Equal(t, PlantID("leste"), layout.Rooms[0].PlantID)
-	assert.Equal(t, []string{"quente"}, layout.Rooms[0].Tags)
-	assert.Equal(t, PlantID("oeste"), layout.Rooms[1].PlantID)
-	assert.Equal(t, []string{"fria"}, layout.Rooms[1].Tags)
-	assert.Equal(t, PlantID("pedra"), layout.Corridors[0].PlantID)
-	assert.Equal(t, []string{"úmida"}, layout.Corridors[0].Tags)
+	assert.Equal(t, PlantID("east"), layout.Rooms[0].PlantID)
+	assert.Equal(t, []string{"hot"}, layout.Rooms[0].Tags)
+	assert.Equal(t, PlantID("west"), layout.Rooms[1].PlantID)
+	assert.Equal(t, []string{"cold"}, layout.Rooms[1].Tags)
+	assert.Equal(t, PlantID("stone"), layout.Corridors[0].PlantID)
+	assert.Equal(t, []string{"damp"}, layout.Corridors[0].Tags)
 }
 
-func TestCatálogoIncompatívelNãoDevolveLayoutParcial(t *testing.T) {
+func TestIncompatibleCatalogReturnsNoPartialLayout(t *testing.T) {
 	generator := twoRoomGeneratorForTest()
 	config := fixedGeometryConfigForTest(7, 3, 2)
 	config.PlantCatalog = &PlantCatalog{
 		Rooms: []RoomPlant{
-			{ID: "somente-norte", Weight: 1, DoorDirections: []Direction{DirectionNorth}},
+			{ID: "north-only", Weight: 1, DoorDirections: []Direction{DirectionNorth}},
 		},
-		Corridors: []CorridorPlant{{ID: "pedra", Weight: 1}},
+		Corridors: []CorridorPlant{{ID: "stone", Weight: 1}},
 	}
 
 	layout, err := generator.Generate(config)
@@ -87,7 +87,7 @@ func TestCatálogoIncompatívelNãoDevolveLayoutParcial(t *testing.T) {
 	assert.Equal(t, Layout{}, layout)
 }
 
-func TestGeneratorMaterializaGridEIDsCanônicos(t *testing.T) {
+func TestGeneratorMaterializesGridAndCanonicalIDs(t *testing.T) {
 	layout, err := twoRoomGeneratorForTest().Generate(fixedGeometryConfigForTest(7, 3, 2))
 
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestGeneratorMaterializaGridEIDsCanônicos(t *testing.T) {
 	}
 }
 
-func TestRoomDoorIDsFicamOrdenadosPorCellEDireção(t *testing.T) {
+func TestRoomDoorIDsAreSortedByCellAndDirection(t *testing.T) {
 	generator := Generator{
 		Placer: fixedPlacer{placements: []RoomPlacement{
 			rectanglePlacementForTest(Cell{X: 3, Y: 3}, 1, 1),
@@ -144,22 +144,22 @@ func TestRoomDoorIDsFicamOrdenadosPorCellEDireção(t *testing.T) {
 	assert.Equal(t, DirectionSouth, second.Direction)
 }
 
-func TestGeneratorRejeitaPlacementsInválidosDoPlugin(t *testing.T) {
+func TestGeneratorRejectsInvalidPluginPlacements(t *testing.T) {
 	valid := rectanglePlacementForTest(Cell{X: 1, Y: 1}, 2, 2)
 	tests := []struct {
 		name      string
 		placement RoomPlacement
 	}{
-		{name: "máscara duplicada", placement: RoomPlacement{
+		{name: "duplicate mask", placement: RoomPlacement{
 			Shape: RoomShapeRectangle, Origin: Cell{X: 1, Y: 1}, Width: 2, Height: 2,
 			Cells: []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}},
 		}},
-		{name: "máscara desconexa", placement: RoomPlacement{
+		{name: "disconnected mask", placement: RoomPlacement{
 			Shape: RoomShapeRectangle, Origin: Cell{X: 1, Y: 1}, Width: 2, Height: 2,
 			Cells: []Cell{{X: 0, Y: 0}, {X: 1, Y: 1}},
 		}},
-		{name: "fora do Grid", placement: rectanglePlacementForTest(Cell{X: 7, Y: 7}, 2, 2)},
-		{name: "incompatível com Shape", placement: RoomPlacement{
+		{name: "outside the Grid", placement: rectanglePlacementForTest(Cell{X: 7, Y: 7}, 2, 2)},
+		{name: "incompatible with Shape", placement: RoomPlacement{
 			Shape: RoomShapeL, Origin: valid.Origin, Width: valid.Width, Height: valid.Height,
 			Cells: valid.Cells,
 		}},
@@ -190,7 +190,7 @@ func TestGeneratorRejeitaPlacementsInválidosDoPlugin(t *testing.T) {
 	}
 }
 
-func TestGeneratorRejeitaConexõesInválidasDoPlugin(t *testing.T) {
+func TestGeneratorRejectsInvalidPluginConnections(t *testing.T) {
 	placements := []RoomPlacement{
 		rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
 		rectanglePlacementForTest(Cell{X: 4, Y: 1}, 1, 1),
@@ -200,14 +200,14 @@ func TestGeneratorRejeitaConexõesInválidasDoPlugin(t *testing.T) {
 		name        string
 		connections []Connection
 	}{
-		{name: "aresta própria", connections: []Connection{{FromRoomID: 0, ToRoomID: 0}}},
-		{name: "aresta duplicada", connections: []Connection{
+		{name: "self edge", connections: []Connection{{FromRoomID: 0, ToRoomID: 0}}},
+		{name: "duplicate edge", connections: []Connection{
 			{FromRoomID: 0, ToRoomID: 1}, {FromRoomID: 1, ToRoomID: 0}, {FromRoomID: 1, ToRoomID: 2},
 		}},
-		{name: "RoomID desconhecido", connections: []Connection{
+		{name: "unknown RoomID", connections: []Connection{
 			{FromRoomID: 0, ToRoomID: 1}, {FromRoomID: 1, ToRoomID: 9},
 		}},
-		{name: "grafo desconectado", connections: []Connection{{FromRoomID: 0, ToRoomID: 1}}},
+		{name: "disconnected graph", connections: []Connection{{FromRoomID: 0, ToRoomID: 1}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -224,7 +224,7 @@ func TestGeneratorRejeitaConexõesInválidasDoPlugin(t *testing.T) {
 	}
 }
 
-func TestGeneratorRejeitaConnectorQueNãoDevolveÁrvoreDeBackbone(t *testing.T) {
+func TestGeneratorRejectsConnectorThatReturnsNoBackboneTree(t *testing.T) {
 	generator := Generator{
 		Placer: fixedPlacer{placements: []RoomPlacement{
 			rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
@@ -244,7 +244,7 @@ func TestGeneratorRejeitaConnectorQueNãoDevolveÁrvoreDeBackbone(t *testing.T) 
 	assert.Equal(t, Layout{}, layout)
 }
 
-func TestGeneratorAceitaCicloDoConnectorDentroDoOrçamentoDeAtalhos(t *testing.T) {
+func TestGeneratorAcceptsConnectorCycleWithinShortcutBudget(t *testing.T) {
 	generator := Generator{
 		Placer: fixedPlacer{placements: []RoomPlacement{
 			rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
@@ -266,7 +266,7 @@ func TestGeneratorAceitaCicloDoConnectorDentroDoOrçamentoDeAtalhos(t *testing.T
 	assert.Len(t, layout.Corridors, 3)
 }
 
-func TestLayoutsDeSolicitaçõesDistintasNãoCompartilhamSlices(t *testing.T) {
+func TestLayoutsFromDistinctRequestsDoNotShareSlices(t *testing.T) {
 	generator := twoRoomGeneratorForTest()
 	config := fixedGeometryConfigForTest(7, 3, 2)
 	config.PlantCatalog = &PlantCatalog{
@@ -274,7 +274,7 @@ func TestLayoutsDeSolicitaçõesDistintasNãoCompartilhamSlices(t *testing.T) {
 			ID: "room", Tags: []string{"original"}, Weight: 1,
 			DoorDirections: []Direction{DirectionNorth, DirectionEast, DirectionSouth, DirectionWest},
 		}},
-		Corridors: []CorridorPlant{{ID: "corridor", Tags: []string{"pedra"}, Weight: 1}},
+		Corridors: []CorridorPlant{{ID: "corridor", Tags: []string{"stone"}, Weight: 1}},
 	}
 	first, firstErr := generator.Generate(config)
 	second, secondErr := generator.Generate(config)
@@ -283,10 +283,10 @@ func TestLayoutsDeSolicitaçõesDistintasNãoCompartilhamSlices(t *testing.T) {
 	require.Equal(t, first, second)
 
 	first.Rooms[0].Cells[0] = Cell{X: 99, Y: 99}
-	first.Rooms[0].Tags[0] = "alterada"
+	first.Rooms[0].Tags[0] = "changed"
 	first.Rooms[0].DoorIDs[0] = DoorID(99)
 	first.Corridors[0].Cells[0] = Cell{X: 98, Y: 98}
-	first.Corridors[0].Tags[0] = "alterada"
+	first.Corridors[0].Tags[0] = "changed"
 	first.Doors[0].CorridorIDs[0] = CorridorID(99)
 	first.Grid.Cells[0].CorridorIDs = append(first.Grid.Cells[0].CorridorIDs, CorridorID(99))
 
@@ -294,13 +294,13 @@ func TestLayoutsDeSolicitaçõesDistintasNãoCompartilhamSlices(t *testing.T) {
 	assert.Equal(t, []string{"original"}, second.Rooms[0].Tags)
 	assert.NotEqual(t, DoorID(99), second.Rooms[0].DoorIDs[0])
 	assert.NotEqual(t, Cell{X: 98, Y: 98}, second.Corridors[0].Cells[0])
-	assert.Equal(t, []string{"pedra"}, second.Corridors[0].Tags)
+	assert.Equal(t, []string{"stone"}, second.Corridors[0].Tags)
 	assert.NotEqual(t, CorridorID(99), second.Doors[0].CorridorIDs[0])
 	assert.Empty(t, second.Grid.Cells[0].CorridorIDs)
 }
 
-func TestErrosDePluginsNãoPublicamLayout(t *testing.T) {
-	pluginErr := errors.New("falha controlada do plugin")
+func TestPluginErrorsDoNotPublishLayout(t *testing.T) {
+	pluginErr := errors.New("controlled plugin failure")
 	tests := []Generator{
 		{Placer: fixedPlacer{err: pluginErr}},
 		{Placer: fixedPlacer{placements: []RoomPlacement{rectanglePlacementForTest(Cell{}, 1, 1)}}, Connector: fixedConnector{err: pluginErr}},
@@ -312,7 +312,7 @@ func TestErrosDePluginsNãoPublicamLayout(t *testing.T) {
 	}
 }
 
-func TestGeneratorPadrãoProduzFootprintsDinâmicosEÁrvoreConexa(t *testing.T) {
+func TestDefaultGeneratorProducesDynamicFootprintsAndConnectedTree(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 123, MaxRooms: 24}
 
 	layout, err := (Generator{}).Generate(config)
@@ -328,15 +328,15 @@ func TestGeneratorPadrãoProduzFootprintsDinâmicosEÁrvoreConexa(t *testing.T) 
 	assertLayoutGraphConnectedForTest(t, layout)
 }
 
-func TestOrdemDoCatálogoNãoAlteraSeleçãoPonderada(t *testing.T) {
+func TestCatalogOrderDoesNotChangeWeightedSelection(t *testing.T) {
 	firstConfig := fixedGeometryConfigForTest(7, 3, 2)
 	firstConfig.Seed = 91
 	firstConfig.PlantCatalog = &PlantCatalog{
 		Rooms: []RoomPlant{
 			{ID: "zeta", Weight: 3, DoorDirections: allDirectionsForTest()},
-			{ID: "alfa", Weight: 1, DoorDirections: allDirectionsForTest()},
+			{ID: "alpha", Weight: 1, DoorDirections: allDirectionsForTest()},
 		},
-		Corridors: []CorridorPlant{{ID: "zeta-corredor", Weight: 2}, {ID: "alfa-corredor", Weight: 1}},
+		Corridors: []CorridorPlant{{ID: "zeta-corridor", Weight: 2}, {ID: "alpha-corridor", Weight: 1}},
 	}
 	secondConfig := firstConfig
 	secondCatalog := *firstConfig.PlantCatalog
@@ -352,17 +352,17 @@ func TestOrdemDoCatálogoNãoAlteraSeleçãoPonderada(t *testing.T) {
 	assert.Equal(t, first, second)
 }
 
-func TestTagsRequeridasDoRoleFiltramPlantDaRoom(t *testing.T) {
+func TestRoleRequiredTagsFilterRoomPlant(t *testing.T) {
 	config := fixedGeometryConfigForTest(7, 3, 2)
 	config.RoomRoleRequests = []RoomRoleRequest{{
-		Role: RoomRoleStart, Count: 1, RequiredTags: []string{"início"},
+		Role: RoomRoleStart, Count: 1, RequiredTags: []string{"start"},
 	}}
 	config.PlantCatalog = &PlantCatalog{
 		Rooms: []RoomPlant{
-			{ID: "comum", Weight: 100, DoorDirections: allDirectionsForTest()},
-			{ID: "entrada", Tags: []string{"início"}, Weight: 1, DoorDirections: allDirectionsForTest()},
+			{ID: "common", Weight: 100, DoorDirections: allDirectionsForTest()},
+			{ID: "entrance", Tags: []string{"start"}, Weight: 1, DoorDirections: allDirectionsForTest()},
 		},
-		Corridors: []CorridorPlant{{ID: "corredor", Weight: 1}},
+		Corridors: []CorridorPlant{{ID: "corridor", Weight: 1}},
 	}
 
 	layout, err := twoRoomGeneratorForTest().Generate(config)
@@ -370,11 +370,11 @@ func TestTagsRequeridasDoRoleFiltramPlantDaRoom(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, layout.Rooms[0].Role)
 	assert.Equal(t, RoomRoleStart, *layout.Rooms[0].Role)
-	assert.Equal(t, PlantID("entrada"), layout.Rooms[0].PlantID)
-	assert.Contains(t, layout.Rooms[0].Tags, "início")
+	assert.Equal(t, PlantID("entrance"), layout.Rooms[0].PlantID)
+	assert.Contains(t, layout.Rooms[0].Tags, "start")
 }
 
-func TestLimitesFalhamAntesDeInvocarPlugins(t *testing.T) {
+func TestLimitsFailBeforeInvokingPlugins(t *testing.T) {
 	geometryOverLimit := fixedGeometryConfigForTest(1, 1, 1)
 	geometryOverLimit.RoomGeometry.MaxFootprintCells = MaxFootprintCells + 1
 	tests := []Config{
@@ -392,7 +392,7 @@ func TestLimitesFalhamAntesDeInvocarPlugins(t *testing.T) {
 	}
 }
 
-func TestGeneratorCompartilhadoÉDeterminísticoEmChamadasConcorrentes(t *testing.T) {
+func TestSharedGeneratorIsDeterministicUnderConcurrentCalls(t *testing.T) {
 	generator := Generator{}
 	config := Config{Width: 24, Height: 24, Seed: 456, MaxRooms: 20}
 	baseline, baselineErr := generator.Generate(config)
@@ -417,7 +417,7 @@ func TestGeneratorCompartilhadoÉDeterminísticoEmChamadasConcorrentes(t *testin
 	}
 }
 
-func TestCancelamentoDeUmaSolicitaçãoNãoAfetaOutra(t *testing.T) {
+func TestCancellationOfOneRequestDoesNotAffectAnother(t *testing.T) {
 	generator := Generator{}
 	config := Config{Width: 24, Height: 24, Seed: 789, MaxRooms: 20}
 	canceledContext, cancel := context.WithCancel(context.Background())
@@ -445,7 +445,7 @@ func TestCancelamentoDeUmaSolicitaçãoNãoAfetaOutra(t *testing.T) {
 	assert.NotEmpty(t, successfulLayout.Rooms)
 }
 
-func TestCancelamentoDuranteValidaçãoDePlacementsImpedePróximaFase(t *testing.T) {
+func TestCancellationDuringPlacementValidationPreventsNextPhase(t *testing.T) {
 	ctx := &countingCancelContext{cancelAt: 4}
 	connector := &recordingConnector{}
 	generator := Generator{
@@ -479,7 +479,7 @@ type fixedConnector struct {
 type panicPlacer struct{}
 
 func (panicPlacer) Place(PlacementRequest) ([]RoomPlacement, error) {
-	panic("Placer não deveria ser chamado")
+	panic("Placer must not be called")
 }
 
 type recordingConnector struct {
@@ -572,7 +572,7 @@ func assertLayoutGraphConnectedForTest(t *testing.T, layout Layout) {
 		}
 	}
 	for roomID, reached := range visited {
-		assert.True(t, reached, "RoomID %d não foi alcançada", roomID)
+		assert.True(t, reached, "RoomID %d was not reached", roomID)
 	}
 }
 

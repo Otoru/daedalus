@@ -14,10 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var updateGoldens = flag.Bool("update", false, "regrava as fixtures golden após revisão explícita")
+var updateGoldens = flag.Bool("update", false, "rewrite golden fixtures after explicit review")
 
 type goldenCase struct {
 	name      string
+	fixture   string
 	config    Config
 	generator Generator
 	check     func(*testing.T, Layout)
@@ -40,24 +41,24 @@ func (connections goldenConnector) Connect(ConnectionRequest) ([]Connection, err
 	return append([]Connection(nil), connections...), nil
 }
 
-func TestLayoutsGoldenCongelados(t *testing.T) {
+func TestFrozenGoldenLayouts(t *testing.T) {
 	for _, testCase := range goldenCases() {
 		t.Run(testCase.name, func(t *testing.T) {
 			layout, err := testCase.generator.Generate(testCase.config)
 			require.NoError(t, err)
 			testCase.check(t, layout)
 
-			// O Layout já nasce na ordem canônica normativa; mantê-lo inteiro na
-			// fixture congela inclusive as Cells Empty e a ordem row-major.
+			// Layout is already produced in normative canonical order; keeping it
+			// whole in the fixture also freezes Empty Cells and row-major order.
 			normalized := layout
-			fixturePath := filepath.Join("testdata", "golden", testCase.name+".json")
+			fixturePath := filepath.Join("testdata", "golden", testCase.fixture+".json")
 			if *updateGoldens {
 				writeGoldenFixture(t, fixturePath, normalized)
 			}
 
 			expected := readGoldenFixture(t, fixturePath)
 			if diagnostic := goldenDifference(expected, normalized); diagnostic != "" {
-				assert.Fail(t, "Layout divergiu da fixture congelada", diagnostic)
+				assert.Fail(t, "Layout diverged from frozen fixture", diagnostic)
 			}
 		})
 	}
@@ -98,7 +99,8 @@ func goldenCases() []goldenCase {
 
 	return []goldenCase{
 		{
-			name: "formas_limites_gap_catalogo",
+			name: "shapes_bounds_gap_catalog",
+			fixture: "formas_limites_gap_catalogo",
 			config: Config{
 				Width: 24, Height: 18, Seed: 0xF011,
 				MinDistance: 2, MaxAttempts: 30, MaxRooms: 5,
@@ -113,7 +115,8 @@ func goldenCases() []goldenCase {
 			check:     checkShapeGolden,
 		},
 		{
-			name: "desempate_prim_e_pesos",
+			name: "prim_tie_break_and_weights",
+			fixture: "desempate_prim_e_pesos",
 			config: Config{
 				Width: 11, Height: 11, Seed: 0xF012,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
@@ -127,7 +130,8 @@ func goldenCases() []goldenCase {
 			check: checkTieGolden,
 		},
 		{
-			name: "bfs_serpenteante",
+			name: "winding_bfs",
+			fixture: "bfs_serpenteante",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF013,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
@@ -151,7 +155,8 @@ func goldenCases() []goldenCase {
 			check: checkBFSGolden,
 		},
 		{
-			name: "corridors_compartilham_cell",
+			name: "corridors_share_cell",
+			fixture: "corridors_compartilham_cell",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF014,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 4,
@@ -173,7 +178,8 @@ func goldenCases() []goldenCase {
 			check: checkSharedCellGolden,
 		},
 		{
-			name: "poisson_rejeicao_e_densidade",
+			name: "poisson_rejection_and_density",
+			fixture: "poisson_rejeicao_e_densidade",
 			config: Config{
 				Width: 20, Height: 20, Seed: 123,
 				MinDistance: 2, MaxAttempts: 12, MaxRooms: 20,
@@ -240,7 +246,7 @@ func checkBFSGolden(t *testing.T, layout Layout) {
 	t.Helper()
 	require.NotEmpty(t, layout.Corridors)
 	assert.GreaterOrEqual(t, corridorTurnCount(layout.Corridors[0].Cells), 2,
-		"o bloqueio das duas rotas em L precisa acionar a BFS")
+		"blocking both L-routes must trigger BFS")
 	assert.Contains(t, layout.Corridors[0].Cells, Cell{X: 3, Y: 0})
 }
 
@@ -252,7 +258,7 @@ func checkSharedCellGolden(t *testing.T, layout Layout) {
 			foundShared = true
 		}
 	}
-	assert.True(t, foundShared, "ao menos uma Cell precisa pertencer a múltiplos Corridors")
+	assert.True(t, foundShared, "at least one Cell must belong to multiple Corridors")
 }
 
 func checkPoissonGolden(t *testing.T, layout Layout) {
@@ -264,7 +270,7 @@ func checkPoissonGolden(t *testing.T, layout Layout) {
 			foundDenseRegion = true
 		}
 	}
-	assert.True(t, foundDenseRegion, "o caso precisa materializar a DensityRegion semiaberta")
+	assert.True(t, foundDenseRegion, "the case must materialize the half-open DensityRegion")
 }
 
 func corridorTurnCount(cells []Cell) int {
@@ -292,21 +298,21 @@ func writeGoldenFixture(t *testing.T, path string, layout Layout) {
 func readGoldenFixture(t *testing.T, path string) Layout {
 	t.Helper()
 	contents, err := os.ReadFile(path)
-	require.NoError(t, err, "fixture ausente; regenere explicitamente com go test ./ -run TestLayoutsGoldenCongelados -update")
+	require.NoError(t, err, "fixture missing; regenerate explicitly with go test ./ -run TestFrozenGoldenLayouts -update")
 	var layout Layout
 	require.NoError(t, json.Unmarshal(contents, &layout))
 	return layout
 }
 
-func TestDiagnosticoGoldenApontaPrimeiraCellAlterada(t *testing.T) {
+func TestGoldenDiagnosticPointsToFirstChangedCell(t *testing.T) {
 	expected := Layout{Rooms: []Room{{ID: 0, Cells: []Cell{{X: 2, Y: 3}}}}}
 	actual := Layout{Rooms: []Room{{ID: 0, Cells: []Cell{{X: 9, Y: 3}}}}}
 
 	diagnostic := goldenDifference(expected, actual)
 
-	assert.Contains(t, diagnostic, "primeiro caminho divergente: Layout.Rooms[0].Cells[0].X")
-	assert.Contains(t, diagnostic, "escalar esperado=2 real=9")
-	assert.Contains(t, diagnostic, "Cells alteradas: Rooms[0].Cells: esperado=[{2 3}] real=[{9 3}]")
+	assert.Contains(t, diagnostic, "first divergent path: Layout.Rooms[0].Cells[0].X")
+	assert.Contains(t, diagnostic, "scalar expected=2 actual=9")
+	assert.Contains(t, diagnostic, "changed Cells: Rooms[0].Cells: expected=[{2 3}] actual=[{9 3}]")
 }
 
 func goldenDifference(expected, actual Layout) string {
@@ -320,17 +326,17 @@ func goldenDifference(expected, actual Layout) string {
 	missingIDs, extraIDs := goldenIDDifferences(expected, actual)
 	cellChanges := goldenCellDifferences(expected, actual)
 	return strings.Join([]string{
-		"primeiro caminho divergente: " + path,
-		fmt.Sprintf("escalar esperado=%v real=%v", expectedScalar, actualScalar),
-		"IDs ausentes: " + missingIDs,
-		"IDs extras: " + extraIDs,
-		"Cells alteradas: " + cellChanges,
+		"first divergent path: " + path,
+		fmt.Sprintf("scalar expected=%v actual=%v", expectedScalar, actualScalar),
+		"missing IDs: " + missingIDs,
+		"extra IDs: " + extraIDs,
+		"changed Cells: " + cellChanges,
 	}, "\n")
 }
 
 func firstGoldenDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
 	if expected.Type() != actual.Type() {
-		return path + ".tipo", expected.Type(), actual.Type(), true
+		return path + ".type", expected.Type(), actual.Type(), true
 	}
 	if expected.Kind() == reflect.Pointer {
 		if expected.IsNil() != actual.IsNil() {
@@ -393,10 +399,10 @@ func goldenIDDifferences(expected, actual Layout) (string, string) {
 	collectIDDifferences("CorridorID", corridorIDs(expected.Corridors), corridorIDs(actual.Corridors), &missing, &extra)
 	collectIDDifferences("DoorID", doorIDs(expected.Doors), doorIDs(actual.Doors), &missing, &extra)
 	if len(missing) == 0 {
-		missing = append(missing, "nenhum")
+		missing = append(missing, "none")
 	}
 	if len(extra) == 0 {
-		extra = append(extra, "nenhum")
+		extra = append(extra, "none")
 	}
 	return strings.Join(missing, ", "), strings.Join(extra, ", ")
 }
@@ -453,7 +459,7 @@ func goldenCellDifferences(expected, actual Layout) string {
 	for roomIndex := 0; roomIndex < len(expected.Rooms) && roomIndex < len(actual.Rooms); roomIndex++ {
 		if !reflect.DeepEqual(expected.Rooms[roomIndex].Cells, actual.Rooms[roomIndex].Cells) {
 			return fmt.Sprintf(
-				"Rooms[%d].Cells: esperado=%v real=%v",
+				"Rooms[%d].Cells: expected=%v actual=%v",
 				roomIndex, expected.Rooms[roomIndex].Cells, actual.Rooms[roomIndex].Cells,
 			)
 		}
@@ -461,7 +467,7 @@ func goldenCellDifferences(expected, actual Layout) string {
 	for corridorIndex := 0; corridorIndex < len(expected.Corridors) && corridorIndex < len(actual.Corridors); corridorIndex++ {
 		if !reflect.DeepEqual(expected.Corridors[corridorIndex].Cells, actual.Corridors[corridorIndex].Cells) {
 			return fmt.Sprintf(
-				"Corridors[%d].Cells: esperado=%v real=%v",
+				"Corridors[%d].Cells: expected=%v actual=%v",
 				corridorIndex, expected.Corridors[corridorIndex].Cells, actual.Corridors[corridorIndex].Cells,
 			)
 		}
@@ -473,7 +479,7 @@ func goldenCellDifferences(expected, actual Layout) string {
 	for cellIndex := 0; cellIndex < sharedGridLength; cellIndex++ {
 		if !reflect.DeepEqual(expected.Grid.Cells[cellIndex], actual.Grid.Cells[cellIndex]) {
 			return fmt.Sprintf(
-				"Grid.Cells[%d]: esperado=%s real=%s",
+				"Grid.Cells[%d]: expected=%s actual=%s",
 				cellIndex,
 				formatGoldenCellState(expected.Grid.Cells[cellIndex]),
 				formatGoldenCellState(actual.Grid.Cells[cellIndex]),
@@ -482,11 +488,11 @@ func goldenCellDifferences(expected, actual Layout) string {
 	}
 	if len(expected.Grid.Cells) != len(actual.Grid.Cells) {
 		return fmt.Sprintf(
-			"Grid.Cells.len: esperado=%d real=%d",
+			"Grid.Cells.len: expected=%d actual=%d",
 			len(expected.Grid.Cells), len(actual.Grid.Cells),
 		)
 	}
-	return "nenhuma"
+	return "none"
 }
 
 func formatGoldenCellState(state CellState) string {

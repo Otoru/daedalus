@@ -7,12 +7,12 @@ import (
 )
 
 const (
-	// Defaults e limites fixos da Config v1, definidos na seção 5.3.
+	// Fixed v1 Config defaults and limits, defined in section 5.3.
 	defaultCellSize    = 1.0
 	defaultMinDistance = 6.0
-	// Piso de MinDistance da seção 5.3, em Cells. É invariante próprio e
-	// não deve ser confundido com defaultCellSize, que por acaso tem o
-	// mesmo valor mas descreve outra grandeza.
+	// Section 5.3 MinDistance floor, in Cells. It is an invariant in its own
+	// right and must not be confused with defaultCellSize, which happens to have
+	// the same value but describes a different quantity.
 	minimumMinDistance       = 1.0
 	defaultMaxAttempts       = 30
 	maximumMaxAttempts       = 1024
@@ -23,7 +23,7 @@ const (
 	defaultMaxFootprintCells = 81
 	defaultMinRoomGap        = 1
 
-	// Pesos do perfil geométrico dinâmico padrão, em ordem canônica.
+	// Default dynamic geometry profile weights, in canonical order.
 	defaultRectangleWeight = 4
 	defaultLWeight         = 2
 	defaultTWeight         = 2
@@ -39,16 +39,16 @@ var canonicalRoomShapes = [...]RoomShape{
 	RoomShapeCircle,
 }
 
-// roomGeometryCombination é uma combinação de máscara e bounding box já
-// validada. A ordem canônica é Shape, Width e Height.
+// roomGeometryCombination is an already validated mask and bounding-box
+// combination. Canonical order is Shape, Width, then Height.
 type roomGeometryCombination struct {
 	shape  RoomShape
 	width  uint32
 	height uint32
 }
 
-// effectiveConfig concentra defaults e dados validados para que as fases de
-// geração não precisem reinterpretar a Config pública.
+// effectiveConfig centralizes defaults and validated data so generation phases
+// do not need to reinterpret the public Config.
 type effectiveConfig struct {
 	width                uint32
 	height               uint32
@@ -66,20 +66,20 @@ type effectiveConfig struct {
 	plantCatalog         *PlantCatalog
 }
 
-// normalizeConfig valida toda a entrada antes de qualquer fase de geração e
-// devolve uma cópia efetiva, com defaults aplicados e geometria enumerada.
+// normalizeConfig validates all input before any generation phase and returns
+// an effective copy with defaults applied and geometry enumerated.
 func normalizeConfig(config Config) (effectiveConfig, error) {
 	var effective effectiveConfig
 
 	if config.Width == 0 || config.Height == 0 {
-		return effective, fmt.Errorf("%w: largura e altura são obrigatórias", ErrInvalidConfig)
+		return effective, fmt.Errorf("%w: width and height are required", ErrInvalidConfig)
 	}
 	if config.Width > maximumGridDimension || config.Height > maximumGridDimension {
-		return effective, fmt.Errorf("%w: dimensão do Grid excede o máximo v1", ErrLimitExceeded)
+		return effective, fmt.Errorf("%w: Grid dimension exceeds the v1 maximum", ErrLimitExceeded)
 	}
 	cellCount := uint64(config.Width) * uint64(config.Height)
 	if cellCount > uint64(MaxCells) {
-		return effective, fmt.Errorf("%w: quantidade de Cells excede o máximo v1", ErrLimitExceeded)
+		return effective, fmt.Errorf("%w: Cell count exceeds the v1 maximum", ErrLimitExceeded)
 	}
 
 	effective.width = config.Width
@@ -91,7 +91,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		effective.cellSize = defaultCellSize
 	}
 	if !isFinite(effective.cellSize) || effective.cellSize <= 0 {
-		return effectiveConfig{}, fmt.Errorf("%w: CellSize deve ser finito e positivo", ErrInvalidConfig)
+		return effectiveConfig{}, fmt.Errorf("%w: CellSize must be finite and positive", ErrInvalidConfig)
 	}
 
 	effective.minDistance = config.MinDistance
@@ -99,7 +99,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		effective.minDistance = defaultMinDistance
 	}
 	if !isFinite(effective.minDistance) || effective.minDistance < minimumMinDistance {
-		return effectiveConfig{}, fmt.Errorf("%w: MinDistance deve ser finito e ao menos uma Cell", ErrInvalidConfig)
+		return effectiveConfig{}, fmt.Errorf("%w: MinDistance must be finite and at least one Cell", ErrInvalidConfig)
 	}
 
 	effective.maxAttempts = config.MaxAttempts
@@ -107,7 +107,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		effective.maxAttempts = defaultMaxAttempts
 	}
 	if effective.maxAttempts > maximumMaxAttempts {
-		return effectiveConfig{}, fmt.Errorf("%w: MaxAttempts excede o máximo v1", ErrInvalidConfig)
+		return effectiveConfig{}, fmt.Errorf("%w: MaxAttempts exceeds the v1 maximum", ErrInvalidConfig)
 	}
 
 	effective.maxRooms = config.MaxRooms
@@ -115,7 +115,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		effective.maxRooms = MaxRooms
 	}
 	if effective.maxRooms > MaxRooms {
-		return effectiveConfig{}, fmt.Errorf("%w: MaxRooms excede o máximo v1", ErrLimitExceeded)
+		return effectiveConfig{}, fmt.Errorf("%w: MaxRooms exceeds the v1 maximum", ErrLimitExceeded)
 	}
 
 	if !validCorridorOrder(config.CorridorOrder) {
@@ -125,7 +125,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 	effective.extraEdgeCount = config.ExtraEdgeCount
 	maximumEdges := uint64(effective.maxRooms) * uint64(effective.maxRooms-1) / 2
 	if uint64(effective.extraEdgeCount) > maximumEdges {
-		return effectiveConfig{}, fmt.Errorf("%w: ExtraEdgeCount excede as arestas possíveis", ErrInvalidConfig)
+		return effectiveConfig{}, fmt.Errorf("%w: ExtraEdgeCount exceeds the possible edges", ErrInvalidConfig)
 	}
 
 	roleRequests, err := validateRoomRoleRequests(config.RoomRoleRequests, effective.maxRooms)
@@ -173,25 +173,25 @@ func normalizeRoomGeometry(source *RoomGeometry, gridWidth, gridHeight uint32) (
 		MinRoomGap:        source.MinRoomGap,
 	}
 	if geometry.MinWidth == 0 || geometry.MinHeight == 0 {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: dimensões mínimas de Room são obrigatórias", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: minimum Room dimensions are required", ErrInvalidConfig)
 	}
 	if geometry.MaxWidth < geometry.MinWidth || geometry.MaxHeight < geometry.MinHeight {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: dimensões máximas de Room são menores que as mínimas", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: maximum Room dimensions are smaller than the minimum dimensions", ErrInvalidConfig)
 	}
 	if geometry.MaxWidth > gridWidth || geometry.MaxHeight > gridHeight {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: dimensões de Room excedem o Grid", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: Room dimensions exceed the Grid", ErrInvalidConfig)
 	}
 	if geometry.MaxFootprintCells == 0 {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: MaxFootprintCells é obrigatório", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: MaxFootprintCells is required", ErrInvalidConfig)
 	}
 	if geometry.MaxFootprintCells > MaxFootprintCells {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: MaxFootprintCells excede o máximo v1", ErrLimitExceeded)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: MaxFootprintCells exceeds the v1 maximum", ErrLimitExceeded)
 	}
 	if geometry.MinRoomGap > maximumMinRoomGap {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: MinRoomGap excede o máximo v1", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: MinRoomGap exceeds the v1 maximum", ErrInvalidConfig)
 	}
 	if len(source.Shapes) == 0 {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: Shapes não pode ser vazia", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: Shapes must not be empty", ErrInvalidConfig)
 	}
 
 	weights := make([]RoomShapeWeight, 0, len(source.Shapes))
@@ -203,7 +203,7 @@ func normalizeRoomGeometry(source *RoomGeometry, gridWidth, gridHeight uint32) (
 				return RoomGeometry{}, nil, fmt.Errorf("%w: RoomShape desconhecida", ErrInvalidConfig)
 			}
 			if shapeWeight.Weight == 0 {
-				return RoomGeometry{}, nil, fmt.Errorf("%w: peso de RoomShape deve ser positivo", ErrInvalidConfig)
+				return RoomGeometry{}, nil, fmt.Errorf("%w: RoomShape weight must be positive", ErrInvalidConfig)
 			}
 			if shapeWeight.Shape != canonicalShape {
 				continue
@@ -226,7 +226,7 @@ func normalizeRoomGeometry(source *RoomGeometry, gridWidth, gridHeight uint32) (
 
 	combinations := enumerateGeometryCombinations(geometry)
 	if len(combinations) == 0 {
-		return RoomGeometry{}, nil, fmt.Errorf("%w: geometria não possui combinação válida dentro da área", ErrInvalidConfig)
+		return RoomGeometry{}, nil, fmt.Errorf("%w: geometry has no valid combination within the area", ErrInvalidConfig)
 	}
 	geometry.Shapes = filterShapesWithCombinations(geometry.Shapes, combinations)
 	return geometry, combinations, nil
@@ -250,13 +250,12 @@ func defaultRoomGeometry(gridWidth, gridHeight uint32) RoomGeometry {
 	}
 }
 
-// enumerateGeometryCombinations materializa, em ordem canônica de Shape,
-// Width e Height, todos os pares de dimensões que produzem máscara válida
-// dentro da área. A seção 7 exige essa lista ordenada para que SampleGeometry
-// sorteie sem iteração de map. No pior caso permitido (geometria 1..256 nas
-// duas dimensões, cinco formas) são cerca de 2,1×10^5 combinações, algo em
-// torno de 2,5 MB; é o preço de detectar geometria insatisfazível antes de
-// qualquer sorteio.
+// enumerateGeometryCombinations materializes, in canonical Shape, Width, and
+// Height order, every dimension pair that produces a valid mask within the
+// area. Section 7 requires this ordered list so SampleGeometry draws without
+// map iteration. In the worst permitted case (geometry 1..256 in both
+// dimensions, five shapes), there are about 2.1×10^5 combinations, around
+// 2.5 MB; this is the cost of detecting unsatisfiable geometry before any draw.
 func enumerateGeometryCombinations(geometry RoomGeometry) []roomGeometryCombination {
 	combinations := make([]roomGeometryCombination, 0)
 	for _, shape := range canonicalRoomShapes {
@@ -320,12 +319,11 @@ func validateRoomRoleRequests(requests []RoomRoleRequest, maxRooms uint32) ([]Ro
 			return nil, fmt.Errorf("%w: RoomRole solicitado mais de uma vez", ErrInvalidConfig)
 		}
 		seen[request.Role] = struct{}{}
-		// A seção 8.1 descreve Start e Boss no singular ("ela recebe
-		// RoomID 0", "a Room não atribuída mais distante"), e a seção 5.2
-		// proíbe mais de um Role por Room em v1. A spec não escreve a
-		// restrição de Count, mas qualquer outro valor seria
-		// insatisfazível; rejeitar aqui evita descobrir isso depois do
-		// consumo de RNG.
+		// Section 8.1 describes Start and Boss in the singular ("it receives
+		// RoomID 0", "the farthest unassigned Room"), and section 5.2 forbids
+		// more than one Role per Room in v1. The specification does not state the
+		// Count restriction, but any other value would be unsatisfiable; rejecting
+		// it here avoids discovering that after RNG consumption.
 		if request.Role == RoomRoleStart || request.Role == RoomRoleBoss {
 			if request.Count != 1 {
 				return nil, fmt.Errorf("%w: Start e Boss exigem Count igual a um", ErrInvalidConfig)
@@ -334,7 +332,7 @@ func validateRoomRoleRequests(requests []RoomRoleRequest, maxRooms uint32) ([]Ro
 			return nil, fmt.Errorf("%w: Count de Treasure excede MaxRooms", ErrInvalidConfig)
 		}
 		if err := validateTags(request.RequiredTags); err != nil {
-			return nil, fmt.Errorf("%w: tags requeridas do papel são inválidas", err)
+			return nil, fmt.Errorf("%w: required role tags are invalid", err)
 		}
 		if request.Role == RoomRoleStart {
 			hasStart = true
@@ -346,13 +344,13 @@ func validateRoomRoleRequests(requests []RoomRoleRequest, maxRooms uint32) ([]Ro
 		})
 	}
 	if _, hasBoss := seen[RoomRoleBoss]; hasBoss && !hasStart {
-		return nil, fmt.Errorf("%w: Boss exige uma solicitação Start", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: Boss requires a Start request", ErrInvalidConfig)
 	}
-	// Regra conservadora, também não literal na spec: mais papéis do que o
-	// teto de Rooms nunca pode ser satisfeito, e a seção 5.3 exige detectar
-	// geometria insatisfazível antes de alocar ou sortear.
+	// Conservative rule, also not literal in the specification: more roles than
+	// the Room limit can never be satisfied, and section 5.3 requires detecting
+	// unsatisfiable geometry before allocating or drawing.
 	if assignedRooms > uint64(maxRooms) {
-		return nil, fmt.Errorf("%w: quantidade total de papéis excede MaxRooms", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: total role count exceeds MaxRooms", ErrInvalidConfig)
 	}
 	return validated, nil
 }
@@ -361,17 +359,17 @@ func validateDensityRegions(regions []DensityRegion, width, height uint32) ([]De
 	validated := append([]DensityRegion(nil), regions...)
 	for index, region := range validated {
 		if region.Min.X < 0 || region.Min.Y < 0 || region.Max.X <= region.Min.X || region.Max.Y <= region.Min.Y {
-			return nil, fmt.Errorf("%w: DensityRegion deve ser um retângulo não vazio", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: DensityRegion must be a non-empty rectangle", ErrInvalidConfig)
 		}
 		if int64(region.Max.X) > int64(width) || int64(region.Max.Y) > int64(height) {
-			return nil, fmt.Errorf("%w: DensityRegion está fora do Grid", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: DensityRegion is outside the Grid", ErrInvalidConfig)
 		}
 		if !isFinite(region.MinDistance) || region.MinDistance < minimumMinDistance {
-			return nil, fmt.Errorf("%w: MinDistance de DensityRegion deve ser finita e ao menos uma Cell", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: DensityRegion MinDistance must be finite and at least one Cell", ErrInvalidConfig)
 		}
 		for previous := 0; previous < index; previous++ {
 			if densityRegionsOverlap(validated[previous], region) {
-				return nil, fmt.Errorf("%w: DensityRegions não podem se sobrepor", ErrInvalidConfig)
+				return nil, fmt.Errorf("%w: DensityRegions must not overlap", ErrInvalidConfig)
 			}
 		}
 	}
@@ -383,7 +381,7 @@ func validatePlantCatalog(source *PlantCatalog) (*PlantCatalog, error) {
 		return nil, nil
 	}
 	if len(source.Rooms) == 0 || len(source.Corridors) == 0 {
-		return nil, fmt.Errorf("%w: catálogo deve conter Plants de Room e Corridor", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: catalog must contain Room and Corridor Plants", ErrInvalidConfig)
 	}
 
 	catalog := &PlantCatalog{
@@ -396,10 +394,10 @@ func validatePlantCatalog(source *PlantCatalog) (*PlantCatalog, error) {
 			return nil, err
 		}
 		if err := validateTags(plant.Tags); err != nil {
-			return nil, fmt.Errorf("%w: tags de RoomPlant são inválidas", err)
+			return nil, fmt.Errorf("%w: RoomPlant tags are invalid", err)
 		}
 		if len(plant.DoorDirections) == 0 {
-			return nil, fmt.Errorf("%w: RoomPlant deve declarar DoorDirections", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: RoomPlant must declare DoorDirections", ErrInvalidConfig)
 		}
 		seenDirections := make(map[Direction]struct{}, len(plant.DoorDirections))
 		for _, direction := range plant.DoorDirections {
@@ -424,7 +422,7 @@ func validatePlantCatalog(source *PlantCatalog) (*PlantCatalog, error) {
 			return nil, err
 		}
 		if err := validateTags(plant.Tags); err != nil {
-			return nil, fmt.Errorf("%w: tags de CorridorPlant são inválidas", err)
+			return nil, fmt.Errorf("%w: CorridorPlant tags are invalid", err)
 		}
 		catalog.Corridors = append(catalog.Corridors, CorridorPlant{
 			ID: plant.ID, Weight: plant.Weight,
@@ -436,13 +434,13 @@ func validatePlantCatalog(source *PlantCatalog) (*PlantCatalog, error) {
 
 func validatePlantIdentity(id PlantID, weight uint32, seen map[PlantID]struct{}) error {
 	if id == "" || !utf8.ValidString(string(id)) {
-		return fmt.Errorf("%w: PlantID deve ser UTF-8 não vazio", ErrInvalidConfig)
+		return fmt.Errorf("%w: PlantID must be non-empty UTF-8", ErrInvalidConfig)
 	}
 	if _, exists := seen[id]; exists {
 		return fmt.Errorf("%w: PlantID duplicado na lista", ErrInvalidConfig)
 	}
 	if weight == 0 {
-		return fmt.Errorf("%w: peso de Plant deve ser positivo", ErrInvalidConfig)
+		return fmt.Errorf("%w: Plant weight must be positive", ErrInvalidConfig)
 	}
 	seen[id] = struct{}{}
 	return nil
@@ -452,7 +450,7 @@ func validateTags(tags []string) error {
 	seen := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		if tag == "" || !utf8.ValidString(tag) {
-			return fmt.Errorf("%w: tag deve ser UTF-8 não vazia", ErrInvalidConfig)
+			return fmt.Errorf("%w: tag must be non-empty UTF-8", ErrInvalidConfig)
 		}
 		if _, exists := seen[tag]; exists {
 			return fmt.Errorf("%w: tag duplicada", ErrInvalidConfig)

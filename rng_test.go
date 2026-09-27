@@ -7,15 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMix64PreservaVetoresCongelados(t *testing.T) {
+func TestMix64PreservesFrozenVectors(t *testing.T) {
 	tests := []struct {
 		name string
 		seed uint64
 		want uint64
 	}{
 		{name: "zero", seed: 0x0000000000000000, want: 0xe220a8397b1dcdaf},
-		{name: "um", seed: 0x0000000000000001, want: 0x910a2dec89025cc1},
-		{name: "valor grande", seed: 0xfedcba9876543210, want: 0x7ae893b5e32fee86},
+		{name: "one", seed: 0x0000000000000001, want: 0x910a2dec89025cc1},
+		{name: "large value", seed: 0xfedcba9876543210, want: 0x7ae893b5e32fee86},
 	}
 
 	for _, tc := range tests {
@@ -25,7 +25,7 @@ func TestMix64PreservaVetoresCongelados(t *testing.T) {
 	}
 }
 
-func TestStreamsDerivadosSaoDistintos(t *testing.T) {
+func TestDerivedStreamsAreDistinct(t *testing.T) {
 	streams := newRNGStreams(Seed(0x0123456789abcdef))
 	states := []uint64{
 		streams.placement.state,
@@ -41,7 +41,7 @@ func TestStreamsDerivadosSaoDistintos(t *testing.T) {
 		0x094e8a43ce39fbe0,
 		0x7a76321e37168f90,
 	}
-	assert.Equal(t, want, states, "derivação congelada dos cinco streams")
+	assert.Equal(t, want, states, "frozen derivation of the five streams")
 
 	for i := range states {
 		for j := i + 1; j < len(states); j++ {
@@ -50,16 +50,16 @@ func TestStreamsDerivadosSaoDistintos(t *testing.T) {
 	}
 }
 
-func TestMesmaSeedReproduzSequencia(t *testing.T) {
+func TestSameSeedReproducesSequence(t *testing.T) {
 	first := newRNGStreams(Seed(42))
 	second := newRNGStreams(Seed(42))
 
 	for draw := 0; draw < 128; draw++ {
-		assert.Equal(t, first.placement.next(), second.placement.next(), "sorteio %d", draw)
+		assert.Equal(t, first.placement.next(), second.placement.next(), "draw %d", draw)
 	}
 }
 
-func TestUniform01RespeitaIntervaloSemiaberto(t *testing.T) {
+func TestUniform01RespectsHalfOpenInterval(t *testing.T) {
 	const stateWhoseNextValueIsZero = uint64(0x61c8864680b583eb)
 	zeroStream := splitMix64{state: stateWhoseNextValueIsZero}
 	assert.Equal(t, 0.0, zeroStream.uniform01())
@@ -67,27 +67,27 @@ func TestUniform01RespeitaIntervaloSemiaberto(t *testing.T) {
 	stream := newSplitMix64(0)
 	for draw := 0; draw < 100_000; draw++ {
 		got := stream.uniform01()
-		assert.GreaterOrEqual(t, got, 0.0, "sorteio %d", draw)
-		assert.Less(t, got, 1.0, "sorteio %d", draw)
+		assert.GreaterOrEqual(t, got, 0.0, "draw %d", draw)
+		assert.Less(t, got, 1.0, "draw %d", draw)
 	}
 }
 
-func TestUniformIntRespeitaLimitesInclusivos(t *testing.T) {
+func TestUniformIntRespectsInclusiveBounds(t *testing.T) {
 	stream := newSplitMix64(1234)
 	seenLower := false
 	seenUpper := false
 	for draw := 0; draw < 10_000; draw++ {
 		got := stream.uniformInt(3, 7)
-		assert.GreaterOrEqual(t, got, uint64(3), "sorteio %d", draw)
-		assert.LessOrEqual(t, got, uint64(7), "sorteio %d", draw)
+		assert.GreaterOrEqual(t, got, uint64(3), "draw %d", draw)
+		assert.LessOrEqual(t, got, uint64(7), "draw %d", draw)
 		seenLower = seenLower || got == 3
 		seenUpper = seenUpper || got == 7
 	}
-	assert.True(t, seenLower, "limite inferior não foi observado")
-	assert.True(t, seenUpper, "limite superior não foi observado")
+	assert.True(t, seenLower, "lower bound was not observed")
+	assert.True(t, seenUpper, "upper bound was not observed")
 }
 
-func TestUniformIntComLimitesIguaisNaoConsomeSorteio(t *testing.T) {
+func TestUniformIntWithEqualBoundsConsumesNoDraw(t *testing.T) {
 	stream := newSplitMix64(5678)
 	stateBefore := stream.state
 
@@ -97,7 +97,7 @@ func TestUniformIntComLimitesIguaisNaoConsomeSorteio(t *testing.T) {
 	assert.Equal(t, stateBefore, stream.state)
 }
 
-func TestUniformIntNaoFavorecePrimeirosValores(t *testing.T) {
+func TestUniformIntDoesNotFavorFirstValues(t *testing.T) {
 	const (
 		sampleCount = 200_000
 		bucketCount = 10
@@ -111,11 +111,11 @@ func TestUniformIntNaoFavorecePrimeirosValores(t *testing.T) {
 
 	expected := float64(sampleCount) / float64(bucketCount)
 	for value, count := range counts {
-		assert.InDelta(t, expected, float64(count), expected*tolerance, "valor %d", value)
+		assert.InDelta(t, expected, float64(count), expected*tolerance, "value %d", value)
 	}
 }
 
-func TestUniformIntRejeitaPrefixoIncompleto(t *testing.T) {
+func TestUniformIntRejectsIncompletePrefix(t *testing.T) {
 	const (
 		initialState      = uint64(3)
 		upper             = uint64(1 << 63)
@@ -128,10 +128,10 @@ func TestUniformIntRejeitaPrefixoIncompleto(t *testing.T) {
 
 	assert.Equal(t, wantAfterRejected, got)
 	assert.Equal(t, wantFinalState, stream.state,
-		"um valor no prefixo incompleto deve ser rejeitado antes do resultado")
+		"a value in the incomplete prefix must be rejected before the result")
 }
 
-func TestConsumirUmStreamNaoAlteraOsDemais(t *testing.T) {
+func TestConsumingOneStreamDoesNotChangeOthers(t *testing.T) {
 	consumed := newRNGStreams(Seed(987654321))
 	baseline := newRNGStreams(Seed(987654321))
 	connectorState := consumed.connector.state
@@ -141,7 +141,7 @@ func TestConsumirUmStreamNaoAlteraOsDemais(t *testing.T) {
 	}
 
 	require.Equal(t, connectorState, consumed.connector.state,
-		"o stream de Connector deve poder ser recebido sem consumir sorteio")
+		"the Connector stream must be receivable without consuming a draw")
 	assert.Equal(t, baseline.connector.next(), consumed.connector.next())
 	assert.Equal(t, baseline.roomPlant.next(), consumed.roomPlant.next())
 	assert.Equal(t, baseline.roomGeometry.next(), consumed.roomGeometry.next())

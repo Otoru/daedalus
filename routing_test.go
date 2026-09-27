@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRoteamentoReproduzExemploDoApêndiceA(t *testing.T) {
+func TestRoutingReproducesAppendixAExample(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 2, 2),
 		placedRectangle(t, 1, Cell{X: 5, Y: 3}, 2, 2),
@@ -30,7 +30,7 @@ func TestRoteamentoReproduzExemploDoApêndiceA(t *testing.T) {
 	assert.Equal(t, []Cell{{X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}, {X: 5, Y: 2}}, route)
 }
 
-func TestRoteamentoEscolheParDeDoorsComMenorCorredor(t *testing.T) {
+func TestRoutingChoosesDoorPairWithShortestCorridor(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 2}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 5, Y: 2}, 1, 1),
@@ -49,7 +49,7 @@ func TestRoteamentoEscolheParDeDoorsComMenorCorredor(t *testing.T) {
 	assert.Equal(t, Door{ID: 1, RoomID: 1, At: Cell{X: 5, Y: 2}, Direction: DirectionWest, CorridorIDs: []CorridorID{0}}, doors[1])
 }
 
-func TestBFSDeterministicaDesviaDeRoomQueBloqueiaAsDuasRotasEmL(t *testing.T) {
+func TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 3}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 5, Y: 3}, 1, 1),
@@ -70,7 +70,7 @@ func TestBFSDeterministicaDesviaDeRoomQueBloqueiaAsDuasRotasEmL(t *testing.T) {
 	assert.Equal(t, []Cell{{X: 2, Y: 3}, {X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 4, Y: 3}}, route)
 }
 
-func TestCorridorOrderMudaCotoveloQuandoAmbasRotasEmLSãoVálidas(t *testing.T) {
+func TestCorridorOrderChangesBendWhenBothLRoutesAreValid(t *testing.T) {
 	occupancy := newPlacementOccupancy(5, 5)
 	search := newRoutingSearch(context.Background(), occupancy)
 	from := doorOpening{outside: Cell{X: 1, Y: 1}}
@@ -87,7 +87,7 @@ func TestCorridorOrderMudaCotoveloQuandoAmbasRotasEmLSãoVálidas(t *testing.T) 
 	assert.Equal(t, []Cell{{X: 1, Y: 1}, {X: 1, Y: 2}, {X: 1, Y: 3}, {X: 2, Y: 3}, {X: 3, Y: 3}}, yThenX)
 }
 
-func TestArestaSemRotaDescartaResultadoParcial(t *testing.T) {
+func TestUnroutableEdgeDiscardsPartialResult(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 0, Y: 2}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 4, Y: 2}, 1, 1),
@@ -110,7 +110,7 @@ func TestArestaSemRotaDescartaResultadoParcial(t *testing.T) {
 	assert.Nil(t, secondDoors)
 }
 
-func TestDuasArestasReutilizamDoorEOrdenamCorridorIDs(t *testing.T) {
+func TestTwoEdgesReuseDoorAndSortCorridorIDs(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 2}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 5, Y: 2}, 1, 1),
@@ -133,7 +133,7 @@ func TestDuasArestasReutilizamDoorEOrdenamCorridorIDs(t *testing.T) {
 	assert.Equal(t, []CorridorID{0, 1}, doors[corridors[0].ToDoorID].CorridorIDs)
 }
 
-func TestCorridorsPodemCompartilharCell(t *testing.T) {
+func TestCorridorsMayShareCell(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 3}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 5, Y: 3}, 1, 1),
@@ -152,7 +152,7 @@ func TestCorridorsPodemCompartilharCell(t *testing.T) {
 	assert.Contains(t, corridors[1].Cells, Cell{X: 3, Y: 3})
 }
 
-func TestRoomsAdjacentesQueSeEncaramProduzemCorridorVazio(t *testing.T) {
+func TestAdjacentFacingRoomsProduceEmptyCorridor(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 2, Y: 1}, 1, 1),
@@ -170,7 +170,7 @@ func TestRoomsAdjacentesQueSeEncaramProduzemCorridorVazio(t *testing.T) {
 	assert.Equal(t, DirectionWest, doors[corridors[0].ToDoorID].Direction)
 }
 
-func TestRoomsAdjacentesQueNãoSeEncaramNãoProduzemCorridorVazio(t *testing.T) {
+func TestAdjacentNonFacingRoomsDoNotProduceEmptyCorridor(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 2, Y: 1}, 1, 1),
@@ -190,7 +190,7 @@ func TestRoomsAdjacentesQueNãoSeEncaramNãoProduzemCorridorVazio(t *testing.T) 
 	assert.Equal(t, []Cell{{X: 1, Y: 0}, {X: 2, Y: 0}}, route)
 }
 
-func TestLimiteInferiorDoParDeAberturasContaCellsExternas(t *testing.T) {
+func TestOpeningPairLowerBoundCountsExternalCells(t *testing.T) {
 	tests := []struct {
 		name string
 		from doorOpening
@@ -198,19 +198,19 @@ func TestLimiteInferiorDoParDeAberturasContaCellsExternas(t *testing.T) {
 		want int64
 	}{
 		{
-			name: "aberturas que se encaram",
+			name: "openings that face each other",
 			from: doorOpening{at: Cell{X: 1, Y: 1}, direction: DirectionEast, outside: Cell{X: 2, Y: 1}},
 			to:   doorOpening{at: Cell{X: 2, Y: 1}, direction: DirectionWest, outside: Cell{X: 1, Y: 1}},
 			want: 0,
 		},
 		{
-			name: "mesma Cell externa",
+			name: "same external Cell",
 			from: doorOpening{outside: Cell{X: 3, Y: 4}},
 			to:   doorOpening{outside: Cell{X: 3, Y: 4}},
 			want: 1,
 		},
 		{
-			name: "distância Manhattan inclui ambas as extremidades",
+			name: "Manhattan distance includes both endpoints",
 			from: doorOpening{outside: Cell{X: 1, Y: 2}},
 			to:   doorOpening{outside: Cell{X: 4, Y: 6}},
 			want: 8,
@@ -224,12 +224,12 @@ func TestLimiteInferiorDoParDeAberturasContaCellsExternas(t *testing.T) {
 	}
 }
 
-func TestPodaMantémParQueAindaPodeEmpatarNoCusto(t *testing.T) {
+func TestPruningKeepsPairThatCanStillTieOnCost(t *testing.T) {
 	assert.True(t, openingPairCanBeatBest(7, 7))
 	assert.False(t, openingPairCanBeatBest(8, 7))
 }
 
-func TestDoorsDeFormasNãoRetangularesSaemDeCellsDeBorda(t *testing.T) {
+func TestNonRectangularShapeDoorsLeaveBoundaryCells(t *testing.T) {
 	tests := []struct {
 		name   string
 		shape  RoomShape
@@ -273,7 +273,7 @@ func TestDoorsDeFormasNãoRetangularesSaemDeCellsDeBorda(t *testing.T) {
 	}
 }
 
-func TestCorridorMantémCellsExternasESequênciaQuatroConexa(t *testing.T) {
+func TestCorridorKeepsExternalCellsAndFourConnectedSequence(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 2, 2),
 		placedRectangle(t, 1, Cell{X: 8, Y: 6}, 2, 2),
@@ -296,7 +296,7 @@ func TestCorridorMantémCellsExternasESequênciaQuatroConexa(t *testing.T) {
 	require.NotEmpty(t, corridor.Cells)
 	for index, cell := range corridor.Cells {
 		_, occupied := occupancy.ownerAt(cell)
-		assert.False(t, occupied, "Cell %v pertence a footprint", cell)
+		assert.False(t, occupied, "Cell %v belongs to a footprint", cell)
 		if index == 0 {
 			continue
 		}
@@ -310,7 +310,7 @@ func TestCorridorMantémCellsExternasESequênciaQuatroConexa(t *testing.T) {
 	assert.Contains(t, rooms[1].Cells, toDoor.At)
 }
 
-func TestBFSRepeteMesmaRotaEmTodasAsExecuções(t *testing.T) {
+func TestBFSRepeatsSameRouteOnEveryRun(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 3}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 5, Y: 3}, 1, 1),
@@ -333,7 +333,7 @@ func TestBFSRepeteMesmaRotaEmTodasAsExecuções(t *testing.T) {
 	}
 }
 
-func TestRoteamentoCanceladoNãoDevolveResultadoParcial(t *testing.T) {
+func TestCanceledRoutingReturnsNoPartialResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	rooms := []PlacedRoom{
@@ -373,7 +373,7 @@ func placedShape(t testing.TB, id RoomID, shape RoomShape, origin Cell, width, h
 	}
 }
 
-func BenchmarkRoteamento256Rooms(b *testing.B) {
+func BenchmarkRouting256Rooms(b *testing.B) {
 	config := Config{
 		Width: 256, Height: 256, Seed: 17,
 		MinDistance: 6, MaxAttempts: 30, MaxRooms: 256,
@@ -403,7 +403,7 @@ func BenchmarkRoteamento256Rooms(b *testing.B) {
 			context.Background(), config.Width, config.Height, config.CorridorOrder, rooms, connections,
 		)
 		if routeErr != nil || len(corridors) != len(connections) || len(doors) == 0 {
-			b.Fatalf("roteamento 256 Rooms inválido: corridors=%d doors=%d err=%v", len(corridors), len(doors), routeErr)
+			b.Fatalf("invalid routing of 256 Rooms: corridors=%d doors=%d err=%v", len(corridors), len(doors), routeErr)
 		}
 	}
 }

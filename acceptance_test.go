@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAC01LayoutBemSucedidoRespeitaTodasAsInvariantes(t *testing.T) {
+func TestAC01SuccessfulLayoutRespectsAllInvariants(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 101, MaxRooms: 24}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -23,7 +23,7 @@ func TestAC01LayoutBemSucedidoRespeitaTodasAsInvariantes(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestPropriedadeLayoutsOuErrosDaEspecificacao(t *testing.T) {
+func TestPropertyLayoutsOrSpecificationErrors(t *testing.T) {
 	const propertySeed int64 = 0x5eedf10
 	const caseCount = 48
 	random := rand.New(rand.NewSource(propertySeed))
@@ -31,26 +31,26 @@ func TestPropriedadeLayoutsOuErrosDaEspecificacao(t *testing.T) {
 
 	for caseIndex := 0; caseIndex < caseCount; caseIndex++ {
 		config := randomPropertyConfig(random, caseIndex)
-		name := fmt.Sprintf("caso_%02d_seed_%d", caseIndex, propertySeed)
+		name := fmt.Sprintf("case_%02d_seed_%d", caseIndex, propertySeed)
 		t.Run(name, func(t *testing.T) {
 			effective, normalizationErr := normalizeConfig(config)
 			layout, err := generator.GenerateContext(context.Background(), config)
 			if err != nil {
-				assert.Equal(t, Layout{}, layout, "seed da propriedade=%d", propertySeed)
-				assert.True(t, isSpecifiedGenerationError(err), "seed da propriedade=%d: erro fora da spec: %v", propertySeed, err)
+				assert.Equal(t, Layout{}, layout, "property seed=%d", propertySeed)
+				assert.True(t, isSpecifiedGenerationError(err), "property seed=%d: error outside the specification: %v", propertySeed, err)
 				if normalizationErr == nil {
-					assert.NotErrorIs(t, err, ErrInvalidConfig, "seed da propriedade=%d", propertySeed)
-					assert.NotErrorIs(t, err, ErrLimitExceeded, "seed da propriedade=%d", propertySeed)
+					assert.NotErrorIs(t, err, ErrInvalidConfig, "property seed=%d", propertySeed)
+					assert.NotErrorIs(t, err, ErrLimitExceeded, "property seed=%d", propertySeed)
 				}
 				return
 			}
-			require.NoError(t, normalizationErr, "seed da propriedade=%d", propertySeed)
+			require.NoError(t, normalizationErr, "property seed=%d", propertySeed)
 			assertLayoutInvariants(t, effective, layout)
 		})
 	}
 }
 
-func TestAC04MesmaConfigESeedProduzemLayoutInteiroIgual(t *testing.T) {
+func TestAC04SameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 40, Seed: 404, MaxRooms: 28, ExtraEdgeCount: 3,
 		RoomRoleRequests: []RoomRoleRequest{
@@ -65,11 +65,11 @@ func TestAC04MesmaConfigESeedProduzemLayoutInteiroIgual(t *testing.T) {
 	for repetition := 0; repetition < 4; repetition++ {
 		actual, generationErr := (Generator{}).Generate(config)
 		require.NoError(t, generationErr)
-		assert.Equal(t, baseline, actual, "repetição %d divergiu campo a campo", repetition)
+		assert.Equal(t, baseline, actual, "repetition %d differed field by field", repetition)
 	}
 }
 
-func TestAC05SolicitacoesConcorrentesSaoIsoladas(t *testing.T) {
+func TestAC05ConcurrentRequestsAreIsolated(t *testing.T) {
 	generator := Generator{}
 	config := Config{Width: 40, Height: 40, Seed: 505, MaxRooms: 24, ExtraEdgeCount: 2}
 	baseline, err := generator.Generate(config)
@@ -93,7 +93,7 @@ func TestAC05SolicitacoesConcorrentesSaoIsoladas(t *testing.T) {
 
 	for requestIndex := range results {
 		require.NoError(t, errs[requestIndex])
-		assert.Equal(t, baseline, results[requestIndex], "solicitação concorrente %d", requestIndex)
+		assert.Equal(t, baseline, results[requestIndex], "concurrent request %d", requestIndex)
 	}
 
 	mutated := results[0]
@@ -107,7 +107,7 @@ func TestAC05SolicitacoesConcorrentesSaoIsoladas(t *testing.T) {
 	}
 	fresh, err := generator.Generate(config)
 	require.NoError(t, err)
-	assert.Equal(t, baseline, fresh, "mutar um resultado não pode contaminar outra solicitação")
+	assert.Equal(t, baseline, fresh, "mutating one result must not contaminate another request")
 
 	canceledContext, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -131,7 +131,7 @@ func TestAC05SolicitacoesConcorrentesSaoIsoladas(t *testing.T) {
 	assert.Equal(t, baseline, independentLayout)
 }
 
-func TestAC07GridUmPorUmTemUmaRoomSemCorredorOuDoor(t *testing.T) {
+func TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor(t *testing.T) {
 	config := Config{Width: 1, Height: 1, Seed: 7, MinDistance: 6}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestAC07GridUmPorUmTemUmaRoomSemCorredorOuDoor(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestAC08GridPequenoEDistanciaAltaTerminamSemTruncar(t *testing.T) {
+func TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation(t *testing.T) {
 	first := fixedGeometryConfigForTest(2, 2, 10)
 	first.Seed = 80
 	first.MinDistance = 6
@@ -167,14 +167,14 @@ func TestAC08GridPequenoEDistanciaAltaTerminamSemTruncar(t *testing.T) {
 		effective, err := normalizeConfig(testCase.config)
 		require.NoError(t, err)
 		layout, err := (Generator{}).Generate(testCase.config)
-		require.NoError(t, err, "caso %d", caseIndex)
-		require.Len(t, layout.Rooms, 1, "caso %d", caseIndex)
-		assert.Equal(t, testCase.wantAt, layout.Rooms[0].At, "primeira Room mais próxima do centro no caso %d", caseIndex)
+		require.NoError(t, err, "case %d", caseIndex)
+		require.Len(t, layout.Rooms, 1, "case %d", caseIndex)
+		assert.Equal(t, testCase.wantAt, layout.Rooms[0].At, "first Room closest to the center in case %d", caseIndex)
 		assertLayoutInvariants(t, effective, layout)
 	}
 }
 
-func TestAC09aRegioesDeDensidadeUsamMaiorDistanciaLocal(t *testing.T) {
+func TestAC09aDensityRegionsUseGreaterLocalDistance(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 48, Seed: 9091, MinDistance: 3, MaxRooms: 36,
 		DensityRegions: []DensityRegion{
@@ -194,13 +194,13 @@ func TestAC09aRegioesDeDensidadeUsamMaiorDistanciaLocal(t *testing.T) {
 			requiredDistance := max(firstDistance, secondDistance)
 			distanceSquared := squaredCellDistance(layout.Rooms[first].At, layout.Rooms[second].At)
 			assert.GreaterOrEqual(t, float64(distanceSquared), requiredDistance*requiredDistance,
-				"par de âncoras %d/%d", first, second)
+				"anchor pair %d/%d", first, second)
 		}
 	}
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestAC09bRegioesVaziasNaoAlteramLayoutNemConsomemDraws(t *testing.T) {
+func TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
 	base := Config{Width: 40, Height: 32, Seed: 9092, MaxRooms: 24}
 	explicitlyEmpty := base
 	explicitlyEmpty.DensityRegions = []DensityRegion{}
@@ -212,36 +212,36 @@ func TestAC09bRegioesVaziasNaoAlteramLayoutNemConsomemDraws(t *testing.T) {
 	assert.Equal(t, baseline, actual)
 }
 
-func TestAC10CatalogoCompativelPreservaIDsTagsEDirecoes(t *testing.T) {
+func TestAC10CompatibleCatalogPreservesIDsTagsAndDirections(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 1010, MaxRooms: 16}
 	config.PlantCatalog = &PlantCatalog{
-		Rooms:     []RoomPlant{{ID: "sala", Tags: []string{"pedra"}, Weight: 1, DoorDirections: allDirectionsForTest()}},
-		Corridors: []CorridorPlant{{ID: "corredor", Tags: []string{"úmido"}, Weight: 1}},
+		Rooms:     []RoomPlant{{ID: "hall", Tags: []string{"stone"}, Weight: 1, DoorDirections: allDirectionsForTest()}},
+		Corridors: []CorridorPlant{{ID: "corridor", Tags: []string{"damp"}, Weight: 1}},
 	}
 	layout, err := (Generator{}).Generate(config)
 	require.NoError(t, err)
 	for roomIndex, room := range layout.Rooms {
-		assert.Equal(t, PlantID("sala"), room.PlantID, "Room %d", roomIndex)
-		assert.Equal(t, []string{"pedra"}, room.Tags, "Room %d", roomIndex)
+		assert.Equal(t, PlantID("hall"), room.PlantID, "Room %d", roomIndex)
+		assert.Equal(t, []string{"stone"}, room.Tags, "Room %d", roomIndex)
 	}
 	for corridorIndex, corridor := range layout.Corridors {
-		assert.Equal(t, PlantID("corredor"), corridor.PlantID, "Corridor %d", corridorIndex)
-		assert.Equal(t, []string{"úmido"}, corridor.Tags, "Corridor %d", corridorIndex)
+		assert.Equal(t, PlantID("corridor"), corridor.PlantID, "Corridor %d", corridorIndex)
+		assert.Equal(t, []string{"damp"}, corridor.Tags, "Corridor %d", corridorIndex)
 	}
 }
 
-func TestAC11CatalogoIncompativelFalhaSemLayoutParcial(t *testing.T) {
+func TestAC11IncompatibleCatalogFailsWithoutPartialLayout(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 1111, MaxRooms: 16}
 	config.PlantCatalog = &PlantCatalog{
-		Rooms:     []RoomPlant{{ID: "somente-norte", Weight: 1, DoorDirections: []Direction{DirectionNorth}}},
-		Corridors: []CorridorPlant{{ID: "corredor", Weight: 1}},
+		Rooms:     []RoomPlant{{ID: "north-only", Weight: 1, DoorDirections: []Direction{DirectionNorth}}},
+		Corridors: []CorridorPlant{{ID: "corridor", Weight: 1}},
 	}
 	layout, err := (Generator{}).Generate(config)
 	assert.ErrorIs(t, err, ErrNoCompatiblePlant)
 	assert.Equal(t, Layout{}, layout)
 }
 
-func TestAC12aAtalhosMantemGrafoConectadoEAcrescentamCiclos(t *testing.T) {
+func TestAC12aShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 2, 0),
@@ -261,7 +261,7 @@ func TestAC12aAtalhosMantemGrafoConectadoEAcrescentamCiclos(t *testing.T) {
 		{FromRoomID: 1, ToRoomID: 3},
 		{FromRoomID: 2, ToRoomID: 3},
 		{FromRoomID: 0, ToRoomID: 3},
-	}, connections, "os atalhos devem ser as primeiras arestas descartadas na ordem normativa")
+	}, connections, "shortcuts must be the first discarded edges in normative order")
 
 	config := Config{Width: 48, Height: 48, Seed: 121, MaxRooms: 24, ExtraEdgeCount: 3}
 	effective, err := normalizeConfig(config)
@@ -273,7 +273,7 @@ func TestAC12aAtalhosMantemGrafoConectadoEAcrescentamCiclos(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestAC12bSemAtalhosGrafoEArvore(t *testing.T) {
+func TestAC12bWithoutShortcutsGraphIsTree(t *testing.T) {
 	config := Config{Width: 48, Height: 48, Seed: 122, MaxRooms: 24, ExtraEdgeCount: 0}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -283,22 +283,22 @@ func TestAC12bSemAtalhosGrafoEArvore(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestAC12cPapeisRespeitamMSTERequiredTags(t *testing.T) {
+func TestAC12cRolesRespectMSTAndRequiredTags(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 48, Seed: 123, MaxRooms: 24,
 		RoomRoleRequests: []RoomRoleRequest{
-			{Role: RoomRoleStart, Count: 1, RequiredTags: []string{"inicio"}},
-			{Role: RoomRoleBoss, Count: 1, RequiredTags: []string{"chefe"}},
-			{Role: RoomRoleTreasure, Count: 2, RequiredTags: []string{"tesouro"}},
+			{Role: RoomRoleStart, Count: 1, RequiredTags: []string{"start"}},
+			{Role: RoomRoleBoss, Count: 1, RequiredTags: []string{"boss"}},
+			{Role: RoomRoleTreasure, Count: 2, RequiredTags: []string{"treasure"}},
 		},
 		PlantCatalog: &PlantCatalog{
 			Rooms: []RoomPlant{
-				{ID: "comum", Weight: 1, DoorDirections: allDirectionsForTest()},
-				{ID: "inicio", Tags: []string{"inicio"}, Weight: 1, DoorDirections: allDirectionsForTest()},
-				{ID: "chefe", Tags: []string{"chefe"}, Weight: 1, DoorDirections: allDirectionsForTest()},
-				{ID: "tesouro", Tags: []string{"tesouro"}, Weight: 1, DoorDirections: allDirectionsForTest()},
+				{ID: "common", Weight: 1, DoorDirections: allDirectionsForTest()},
+				{ID: "start", Tags: []string{"start"}, Weight: 1, DoorDirections: allDirectionsForTest()},
+				{ID: "boss", Tags: []string{"boss"}, Weight: 1, DoorDirections: allDirectionsForTest()},
+				{ID: "treasure", Tags: []string{"treasure"}, Weight: 1, DoorDirections: allDirectionsForTest()},
 			},
-			Corridors: []CorridorPlant{{ID: "corredor", Weight: 1}},
+			Corridors: []CorridorPlant{{ID: "corridor", Weight: 1}},
 		},
 	}
 	effective, err := normalizeConfig(config)
@@ -313,7 +313,7 @@ func TestAC12cPapeisRespeitamMSTERequiredTags(t *testing.T) {
 			continue
 		}
 		counts[*room.Role]++
-		requiredTag := map[RoomRole]string{RoomRoleStart: "inicio", RoomRoleBoss: "chefe", RoomRoleTreasure: "tesouro"}[*room.Role]
+		requiredTag := map[RoomRole]string{RoomRoleStart: "start", RoomRoleBoss: "boss", RoomRoleTreasure: "treasure"}[*room.Role]
 		assert.Contains(t, room.Tags, requiredTag, "Room %d", roomIndex)
 	}
 	assert.Equal(t, 1, counts[RoomRoleStart])
@@ -322,7 +322,7 @@ func TestAC12cPapeisRespeitamMSTERequiredTags(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestAC12dPapeisVaziosNaoAlteramLayoutNemConsomemDraws(t *testing.T) {
+func TestAC12dEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
 	base := Config{Width: 40, Height: 40, Seed: 124, MaxRooms: 20}
 	explicitlyEmpty := base
 	explicitlyEmpty.RoomRoleRequests = []RoomRoleRequest{}
@@ -336,7 +336,7 @@ func TestAC12dPapeisVaziosNaoAlteramLayoutNemConsomemDraws(t *testing.T) {
 	}
 }
 
-func TestAC12eOpcoesDesligadasPreservamLayoutRefinado(t *testing.T) {
+func TestAC12eDisabledOptionsPreserveRefinedLayout(t *testing.T) {
 	geometry := &RoomGeometry{
 		MinWidth: 3, MaxWidth: 7, MinHeight: 3, MaxHeight: 7,
 		MaxFootprintCells: 49, MinRoomGap: 1,
@@ -360,7 +360,7 @@ func TestAC12eOpcoesDesligadasPreservamLayoutRefinado(t *testing.T) {
 	assert.Equal(t, baseline, actual)
 }
 
-func TestAC14LimitesFalhamAntesDeGerarLayout(t *testing.T) {
+func TestAC14LimitsFailBeforeGeneratingLayout(t *testing.T) {
 	configs := []Config{
 		{Width: 257, Height: 1, Seed: 1},
 		{Width: 1, Height: 257, Seed: 1},
@@ -368,12 +368,12 @@ func TestAC14LimitesFalhamAntesDeGerarLayout(t *testing.T) {
 	}
 	for caseIndex, config := range configs {
 		layout, err := (Generator{Placer: panicAcceptancePlacer{}}).Generate(config)
-		assert.ErrorIs(t, err, ErrLimitExceeded, "caso %d", caseIndex)
-		assert.Equal(t, Layout{}, layout, "caso %d", caseIndex)
+		assert.ErrorIs(t, err, ErrLimitExceeded, "case %d", caseIndex)
+		assert.Equal(t, Layout{}, layout, "case %d", caseIndex)
 	}
 }
 
-func TestAC27NenhumaPosicaoCabeFalhaSemTruncarOuPublicarLayout(t *testing.T) {
+func TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T) {
 	geometry := &RoomGeometry{
 		MinWidth: 6, MaxWidth: 6, MinHeight: 6, MaxHeight: 6,
 		MaxFootprintCells: 36,
@@ -389,8 +389,8 @@ func TestAC27NenhumaPosicaoCabeFalhaSemTruncarOuPublicarLayout(t *testing.T) {
 	assert.Equal(t, []Cell{{X: 0, Y: 0}}, minimal.Rooms[0].Cells)
 }
 
-func TestAC29GeneratorRejeitaPlacersEConnectorsMentirosos(t *testing.T) {
-	placerModes := []string{"duplicada", "desconexa", "fora", "incompativel", "sobreposta"}
+func TestAC29GeneratorRejectsDishonestPlacersAndConnectors(t *testing.T) {
+	placerModes := []string{"duplicate", "disconnected", "out-of-bounds", "incompatible", "overlapping"}
 	for _, mode := range placerModes {
 		generator := Generator{Placer: lyingAcceptancePlacer{mode: mode}}
 		layout, err := generator.Generate(Config{Width: 16, Height: 16, Seed: 29})
@@ -398,7 +398,7 @@ func TestAC29GeneratorRejeitaPlacersEConnectorsMentirosos(t *testing.T) {
 		assert.Equal(t, Layout{}, layout, "Placer %q", mode)
 	}
 
-	connectorModes := []string{"propria", "duplicada", "desconhecida", "desconectada"}
+	connectorModes := []string{"self", "duplicate", "unknown", "disconnected"}
 	for _, mode := range connectorModes {
 		generator := Generator{Connector: lyingAcceptanceConnector{mode: mode}}
 		layout, err := generator.Generate(Config{Width: 64, Height: 64, Seed: 29, MaxRooms: 24})
@@ -407,7 +407,7 @@ func TestAC29GeneratorRejeitaPlacersEConnectorsMentirosos(t *testing.T) {
 	}
 }
 
-func TestVerificadorDeInvariantesApontaCaminhoEsperadoEReal(t *testing.T) {
+func TestInvariantCheckerReportsPathExpectedAndActual(t *testing.T) {
 	config := Config{Width: 24, Height: 24, Seed: 5010, MaxRooms: 12}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -417,7 +417,7 @@ func TestVerificadorDeInvariantesApontaCaminhoEsperadoEReal(t *testing.T) {
 
 	failures := layoutInvariantFailures(effective, layout)
 	require.NotEmpty(t, failures)
-	assert.Contains(t, strings.Join(failures, "\n"), "Layout.Grid.Cells[0].At: esperado {0 0}; real {99 99}")
+	assert.Contains(t, strings.Join(failures, "\n"), "Layout.Grid.Cells[0].At: expected {0 0}; actual {99 99}")
 }
 
 func randomPropertyConfig(random *rand.Rand, caseIndex int) Config {
@@ -479,7 +479,7 @@ func isSpecifiedGenerationError(err error) bool {
 type panicAcceptancePlacer struct{}
 
 func (panicAcceptancePlacer) Place(PlacementRequest) ([]RoomPlacement, error) {
-	panic("Placer não deveria ser chamado antes da validação")
+	panic("Placer must not be called before validation")
 }
 
 type lyingAcceptancePlacer struct {
@@ -489,32 +489,32 @@ type lyingAcceptancePlacer struct {
 func (placer lyingAcceptancePlacer) Place(PlacementRequest) ([]RoomPlacement, error) {
 	validMask := RoomShapeOffsets(RoomShapeRectangle, 3, 3)
 	switch placer.mode {
-	case "duplicada":
+	case "duplicate":
 		return []RoomPlacement{{
 			Shape: RoomShapeRectangle, Origin: Cell{X: 0, Y: 0}, Width: 2, Height: 2,
 			Cells: []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}},
 		}}, nil
-	case "desconexa":
+	case "disconnected":
 		return []RoomPlacement{{
 			Shape: RoomShapeRectangle, Origin: Cell{X: 0, Y: 0}, Width: 2, Height: 2,
 			Cells: []Cell{{X: 0, Y: 0}, {X: 1, Y: 1}},
 		}}, nil
-	case "fora":
+	case "out-of-bounds":
 		return []RoomPlacement{{
 			Shape: RoomShapeRectangle, Origin: Cell{X: -1, Y: -1}, Width: 3, Height: 3, Cells: validMask,
 		}}, nil
-	case "incompativel":
+	case "incompatible":
 		return []RoomPlacement{{
 			Shape: RoomShapeCircle, Origin: Cell{X: 0, Y: 0}, Width: 3, Height: 3,
 			Cells: []Cell{{X: 0, Y: 0}},
 		}}, nil
-	case "sobreposta":
+	case "overlapping":
 		return []RoomPlacement{
 			{Shape: RoomShapeRectangle, Origin: Cell{X: 0, Y: 0}, Width: 3, Height: 3, Cells: validMask},
 			{Shape: RoomShapeRectangle, Origin: Cell{X: 1, Y: 1}, Width: 3, Height: 3, Cells: validMask},
 		}, nil
 	default:
-		return nil, errors.New("modo de Placer desconhecido")
+		return nil, errors.New("unknown Placer mode")
 	}
 }
 
@@ -525,20 +525,20 @@ type lyingAcceptanceConnector struct {
 func (connector lyingAcceptanceConnector) Connect(request ConnectionRequest) ([]Connection, error) {
 	roomCount := len(request.Rooms)
 	if roomCount < 4 {
-		return nil, errors.New("caso de teste exige ao menos quatro Rooms")
+		return nil, errors.New("test case requires at least four Rooms")
 	}
 	edges := make([]Connection, 0, roomCount-1)
 	for roomIndex := 1; roomIndex < roomCount; roomIndex++ {
 		edges = append(edges, Connection{FromRoomID: RoomID(roomIndex - 1), ToRoomID: RoomID(roomIndex)})
 	}
 	switch connector.mode {
-	case "propria":
+	case "self":
 		edges[0] = Connection{FromRoomID: 0, ToRoomID: 0}
-	case "duplicada":
+	case "duplicate":
 		edges[1] = edges[0]
-	case "desconhecida":
+	case "unknown":
 		edges[0] = Connection{FromRoomID: 0, ToRoomID: RoomID(roomCount + 10)}
-	case "desconectada":
+	case "disconnected":
 		edges = []Connection{
 			{FromRoomID: 1, ToRoomID: 2},
 			{FromRoomID: 2, ToRoomID: 3},

@@ -1,178 +1,171 @@
 package daedalus
 
-// Limites v1 de produto (decisões D1 e D2 da especificação). Valem
-// igualmente para o SDK e para o serviço gRPC: uma Config que exceda Width,
-// Height, o produto de Cells ou MaxRooms falha com ErrLimitExceeded antes de
-// qualquer alocação, geração ou consumo de RNG, e nunca é truncada
-// silenciosamente.
+// V1 product limits (specification decisions D1 and D2). They apply equally to
+// the SDK and gRPC service: a Config exceeding Width, Height, the Cell product,
+// or MaxRooms fails with ErrLimitExceeded before any allocation, generation,
+// or RNG consumption and is never silently truncated.
 const (
-	// MaxCells é o produto máximo Width × Height de um Grid: 65.536 Cells,
-	// correspondente a um Grid de até 256 × 256.
+	// MaxCells is the maximum Width × Height product of a Grid: 65,536 Cells,
+	// corresponding to a Grid of up to 256 × 256.
 	MaxCells = 65536
-	// MaxRooms é a quantidade máxima de Rooms por Layout: 256. É proteção
-	// de latência para geração sob demanda, não pedido para preencher o
-	// Grid.
+	// MaxRooms is the maximum number of Rooms per Layout: 256. It protects
+	// on-demand generation latency; it is not a request to fill the Grid.
 	MaxRooms = 256
-	// MaxFootprintCells é a quantidade máxima de Cells ocupadas por uma Room.
+	// MaxFootprintCells is the maximum number of Cells occupied by one Room.
 	MaxFootprintCells = 4096
 )
 
-// Config é a entrada completa de uma solicitação de geração de dungeon.
-// Ela existe somente como valor Go passado ao SDK ou como mensagem protobuf
-// de uma solicitação gRPC; não há arquivo de configuração, JSON/YAML humano
-// nem presets.
+// Config is the complete input to a dungeon-generation request. It exists only
+// as a Go value passed to the SDK or as a protobuf message in a gRPC request;
+// there is no configuration file, human-authored JSON/YAML, or preset.
 //
-// Width, Height e Seed são obrigatórios e não têm defaults seguros. Os
-// demais campos têm defaults documentados por campo; o valor zero de Config
-// não é uma Config válida. Uma Config inválida falha com ErrInvalidConfig
-// (ou ErrLimitExceeded quando excede os limites de produto) antes de qualquer
-// geração.
+// Width, Height, and Seed are required and have no safe defaults. The other
+// fields have defaults documented per field; the zero Config is not valid. An
+// invalid Config fails with ErrInvalidConfig (or ErrLimitExceeded when it
+// exceeds product limits) before any generation.
 type Config struct {
-	// Width é a largura do Grid, em Cells: faixa 1..256, com
-	// Width × Height ≤ MaxCells. Obrigatório.
+	// Width is the Grid width in Cells: range 1..256, with Width × Height ≤
+	// MaxCells. Required.
 	Width uint32
-	// Height é a altura do Grid, em Cells: faixa 1..256, com
-	// Width × Height ≤ MaxCells. Obrigatório.
+	// Height is the Grid height in Cells: range 1..256, with Width × Height ≤
+	// MaxCells. Required.
 	Height uint32
-	// CellSize é o tamanho de uma Cell em unidades do chamador: finito e
-	// > 0. Padrão 1.0. É copiado para Layout somente; nenhum algoritmo o
-	// converte.
+	// CellSize is one Cell's size in caller-defined units: finite and > 0.
+	// Default 1.0. It is copied only to Layout; no algorithm converts it.
 	CellSize float64
-	// Seed é a fonte dos streams aleatórios da solicitação. Obrigatório;
-	// todos os valores uint64 são aceitos e zero não significa aleatório.
+	// Seed is the source of the request's random streams. Required; every uint64
+	// value is accepted, and zero does not mean random.
 	Seed Seed
-	// MinDistance é a distância euclidiana mínima, em Cells, entre centros
-	// de Rooms: finito e ≥ 1.0. Padrão 6.0.
+	// MinDistance is the minimum Euclidean distance, in Cells, between Room
+	// centers: finite and ≥ 1.0. Default 6.0.
 	MinDistance float64
-	// MaxAttempts é o máximo de candidatos Poisson por ponto ativo:
-	// faixa 1..1024. Padrão 30.
+	// MaxAttempts is the maximum number of Poisson candidates per active point:
+	// range 1..1024. Default 30.
 	MaxAttempts uint32
-	// MaxRooms é o máximo de Rooms aceitas: faixa 1..MaxRooms (limite de
-	// produto). Padrão 256. Encerra o posicionamento quando atingido.
+	// MaxRooms is the maximum number of accepted Rooms: range 1..MaxRooms
+	// (product limit). Default 256. Placement stops when it is reached.
 	MaxRooms uint32
-	// CorridorOrder escolhe o cotovelo L preferido do roteamento.
-	// Padrão CorridorOrderXThenY (valor zero).
+	// CorridorOrder selects the preferred L-route bend. Default
+	// CorridorOrderXThenY (the zero value).
 	CorridorOrder CorridorOrder
-	// ExtraEdgeCount é a quantidade máxima de arestas curtas descartadas
-	// reintroduzidas após o backbone: faixa 0..MaxRooms×(MaxRooms-1)/2.
-	// Padrão 0, que desliga ciclos e garante que o grafo é uma árvore.
+	// ExtraEdgeCount is the maximum number of discarded short edges reintroduced
+	// after the backbone: range 0..MaxRooms×(MaxRooms-1)/2. Default 0, which
+	// disables cycles and guarantees that the graph is a tree.
 	ExtraEdgeCount uint32
-	// RoomRoleRequests lista pedidos declarativos de papéis temáticos, no
-	// máximo uma entrada por RoomRole. Padrão vazio, que desliga Rooms
-	// temáticas e deixa Role ausente em todas as Rooms.
+	// RoomRoleRequests lists declarative thematic-role requests, at most one per
+	// RoomRole. The empty default disables thematic Rooms and leaves Role absent
+	// from every Room.
 	RoomRoleRequests []RoomRoleRequest
-	// DensityRegions lista retângulos de Grid que substituem MinDistance
-	// por uma distância local. As regiões devem ser não vazias, internas
-	// ao Grid e sem sobreposição de Cells. Padrão vazio, que usa
-	// MinDistance uniforme e desliga biomas.
+	// DensityRegions lists Grid rectangles that replace MinDistance with a local
+	// distance. Regions must be non-empty, contained in the Grid, and have no
+	// overlapping Cells. The empty default uses uniform MinDistance and disables
+	// biomes.
 	DensityRegions []DensityRegion
-	// RoomGeometry define a geometria das Rooms; nil solicita o perfil
-	// dinâmico padrão da especificação.
+	// RoomGeometry defines Room geometry; nil requests the specification's
+	// default dynamic profile.
 	RoomGeometry *RoomGeometry
-	// PlantCatalog é o catálogo opcional de metadados de assets, ou nil
-	// quando ausente; nesse caso PlantID e Tags ficam vazios no Layout.
+	// PlantCatalog is the optional asset-metadata catalog, or nil when absent; in
+	// that case PlantID and Tags remain empty in the Layout.
 	PlantCatalog *PlantCatalog
 }
 
-// RoomGeometry define dimensões, área, espaçamento e pesos das formas de
-// Room aceitas por uma solicitação.
+// RoomGeometry defines dimensions, area, spacing, and shape weights for Rooms
+// accepted by a request.
 type RoomGeometry struct {
-	// MinWidth é a menor largura permitida para a bounding box, em Cells.
+	// MinWidth is the minimum permitted bounding-box width in Cells.
 	MinWidth uint32
-	// MaxWidth é a maior largura permitida para a bounding box, em Cells.
+	// MaxWidth is the maximum permitted bounding-box width in Cells.
 	MaxWidth uint32
-	// MinHeight é a menor altura permitida para a bounding box, em Cells.
+	// MinHeight is the minimum permitted bounding-box height in Cells.
 	MinHeight uint32
-	// MaxHeight é a maior altura permitida para a bounding box, em Cells.
+	// MaxHeight is the maximum permitted bounding-box height in Cells.
 	MaxHeight uint32
-	// MaxFootprintCells limita as Cells ocupadas por uma única Room.
+	// MaxFootprintCells limits the Cells occupied by a single Room.
 	MaxFootprintCells uint32
-	// MinRoomGap é a quantidade mínima de camadas vazias entre footprints,
-	// medida pela distância de Chebyshev entre Cells ocupadas.
+	// MinRoomGap is the minimum number of empty layers between footprints,
+	// measured by Chebyshev distance between occupied Cells.
 	MinRoomGap uint32
-	// Shapes lista pesos positivos por forma, sem formas duplicadas.
+	// Shapes lists positive weights by shape, with no duplicate shapes.
 	Shapes []RoomShapeWeight
 }
 
-// RoomShapeWeight associa uma Shape a um peso de seleção positivo.
+// RoomShapeWeight associates a Shape with a positive selection weight.
 type RoomShapeWeight struct {
-	// Shape é uma das formas canônicas de Room.
+	// Shape is one of the canonical Room shapes.
 	Shape RoomShape
-	// Weight é o peso relativo positivo usado na seleção da forma.
+	// Weight is the positive relative weight used for shape selection.
 	Weight uint32
 }
 
-// RoomRoleRequest é um pedido declarativo de atribuição de um RoomRole e
-// das tags de Plant exigidas para as Rooms que o receberem.
+// RoomRoleRequest is a declarative request to assign a RoomRole and the Plant
+// tags required for Rooms receiving it.
 type RoomRoleRequest struct {
-	// Role é o papel temático solicitado: Start, Boss ou Treasure.
+	// Role is the requested thematic role: Start, Boss, or Treasure.
 	Role RoomRole
-	// Count é a quantidade de Rooms que recebem o papel: 1 para Start e
-	// Boss; 0..MaxRooms para Treasure. Boss exige uma solicitação Start na
-	// mesma Config, pois a distância sem origem não é definida.
+	// Count is the number of Rooms receiving the role: 1 for Start and Boss;
+	// 0..MaxRooms for Treasure. Boss requires a Start request in the same Config
+	// because distance without an origin is undefined.
 	Count uint32
-	// RequiredTags lista tags UTF-8 não vazias e sem duplicatas que a
-	// Plant selecionada precisa conter. Restringe a seleção de catálogo,
-	// mas não muda a escolha topológica da Room.
+	// RequiredTags lists non-empty, non-duplicate UTF-8 tags that the selected
+	// Plant must contain. It restricts catalog selection but does not change the
+	// topological Room choice.
 	RequiredTags []string
 }
 
-// DensityRegion é um retângulo de Grid que substitui Config.MinDistance por
-// uma distância local, permitindo biomas mais densos ou mais esparsos.
-// O retângulo é semiaberto: Min é inclusiva e Max é exclusiva, de modo que
-// a região cobre X em [Min.X, Max.X) e Y em [Min.Y, Max.Y). Logo Max pode
-// ser igual à dimensão do Grid, Max estritamente maior que ela é inválido, e
-// uma região de uma única Cell se escreve com Max = Min + (1,1). A
-// especificação declara apenas os dois campos; esta é a convenção normativa
-// adotada aqui, e o teste de pertinência do Placer usa exatamente a mesma.
+// DensityRegion is a Grid rectangle that replaces Config.MinDistance with a
+// local distance, allowing denser or sparser biomes. The rectangle is
+// half-open: Min is inclusive and Max is exclusive, so the region covers X in
+// [Min.X, Max.X) and Y in [Min.Y, Max.Y). Thus Max may equal the Grid
+// dimension, a strictly greater Max is invalid, and a single-Cell region is
+// written with Max = Min + (1,1). The specification declares only the two
+// fields; this is the normative convention adopted here, and the Placer's
+// membership test uses exactly the same convention.
 type DensityRegion struct {
-	// Min é o canto mínimo do retângulo, em Cells, inclusivo.
+	// Min is the inclusive minimum corner of the rectangle, in Cells.
 	Min Cell
-	// Max é o canto máximo do retângulo, em Cells, exclusivo. Deve ser
-	// estritamente maior que Min em ambos os eixos e interno ao Grid.
+	// Max is the exclusive maximum corner of the rectangle, in Cells. It must be
+	// strictly greater than Min on both axes and within the Grid.
 	Max Cell
-	// MinDistance é a distância euclidiana mínima local, em Cells: finita
-	// e ≥ 1.0.
+	// MinDistance is the local minimum Euclidean distance in Cells: finite and
+	// ≥ 1.0.
 	MinDistance float64
 }
 
-// PlantCatalog é o catálogo engine-agnóstico de metadados de assets. Ele
-// armazena somente dados: a resolução de PlantID para cena, prefab, tile ou
-// mesh pertence ao jogo chamador. Quando presente em Config, ambas as listas
-// devem ser não vazias, com IDs únicos.
+// PlantCatalog is the engine-agnostic asset-metadata catalog. It stores only
+// data: resolving PlantID to a scene, prefab, tile, or mesh belongs to the
+// calling game. When present in Config, both lists must be non-empty with
+// unique IDs.
 type PlantCatalog struct {
-	// Rooms lista as Plants disponíveis para Rooms; não vazia quando o
-	// catálogo está presente.
+	// Rooms lists Plants available for Rooms; non-empty when the catalog is present.
 	Rooms []RoomPlant
-	// Corridors lista as Plants disponíveis para Corridors; não vazia
-	// quando o catálogo está presente.
+	// Corridors lists Plants available for Corridors; non-empty when the catalog
+	// is present.
 	Corridors []CorridorPlant
 }
 
-// RoomPlant descreve os metadados de uma Plant de Room do catálogo.
+// RoomPlant describes metadata for a catalog Room Plant.
 type RoomPlant struct {
-	// ID é o identificador opaco do asset: obrigatório, UTF-8 não vazio e
-	// único dentro do catálogo.
+	// ID is the opaque asset identifier: required, non-empty UTF-8, and unique
+	// within the catalog.
 	ID PlantID
-	// Tags lista tags UTF-8 não vazias, sem duplicatas; pode ser vazia.
+	// Tags lists non-empty, non-duplicate UTF-8 tags; it may be empty.
 	Tags []string
-	// Weight é o peso relativo de seleção ponderada: faixa 1..2^32-1.
+	// Weight is the relative weighted-selection weight: range 1..2^32-1.
 	Weight uint32
-	// DoorDirections declara as Directions de abertura que o asset
-	// suporta: não vazio, sem duplicatas. Uma RoomPlant é compatível com
-	// uma Room somente quando DoorDirections é superconjunto das
-	// Directions usadas pelas Doors daquela Room.
+	// DoorDirections declares the opening Directions supported by the asset:
+	// non-empty, with no duplicates. A RoomPlant is compatible with a Room only
+	// when DoorDirections is a superset of the Directions used by that Room's Doors.
 	DoorDirections []Direction
 }
 
-// CorridorPlant descreve os metadados de uma Plant de Corridor do catálogo.
-// Não declara geometria local porque ela deriva de Corridor.Cells.
+// CorridorPlant describes metadata for a catalog Corridor Plant. It declares
+// no local geometry because that derives from Corridor.Cells.
 type CorridorPlant struct {
-	// ID é o identificador opaco do asset: obrigatório, UTF-8 não vazio e
-	// único dentro do catálogo.
+	// ID is the opaque asset identifier: required, non-empty UTF-8, and unique
+	// within the catalog.
 	ID PlantID
-	// Tags lista tags UTF-8 não vazias, sem duplicatas; pode ser vazia.
+	// Tags lists non-empty, non-duplicate UTF-8 tags; it may be empty.
 	Tags []string
-	// Weight é o peso relativo de seleção ponderada: faixa 1..2^32-1.
+	// Weight is the relative weighted-selection weight: range 1..2^32-1.
 	Weight uint32
 }

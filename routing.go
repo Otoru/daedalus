@@ -7,19 +7,19 @@ import (
 )
 
 const (
-	// routingForwardStep e routingBackwardStep são os deslocamentos unitários
-	// de uma sequência 4-conexa sobre um eixo do Grid.
+	// routingForwardStep and routingBackwardStep are the unit offsets of a
+	// 4-connected sequence along one Grid axis.
 	routingForwardStep  int64 = 1
 	routingBackwardStep int64 = -1
-	// routingDirectionCount é a quantidade fixa de direções cardinais da v1.
+	// routingDirectionCount is the fixed number of v1 cardinal directions.
 	routingDirectionCount = 4
-	// routingFirstGeneration reserva zero para uma Cell ainda não visitada.
+	// routingFirstGeneration reserves zero for a Cell not yet visited.
 	routingFirstGeneration uint32 = 1
-	// routingNoParent marca a raiz da BFS, que não possui predecessor.
+	// routingNoParent marks the BFS root, which has no predecessor.
 	routingNoParent int64 = -1
-	// routingCancellationInterval limita o trabalho entre consultas ao Context.
+	// routingCancellationInterval limits work between Context checks.
 	routingCancellationInterval uint64 = 256
-	// routingEndpointCellCount inclui a Cell externa final no limite Manhattan.
+	// routingEndpointCellCount includes the final external Cell in the Manhattan bound.
 	routingEndpointCellCount int64 = 1
 )
 
@@ -63,9 +63,9 @@ func newRoutingSearch(ctx context.Context, occupancy *placementOccupancy) *routi
 	}
 }
 
-// routeCorridors roteia as Connections na ordem recebida. Todos os buffers e
-// índices de ocupação pertencem à solicitação; nenhuma Cell de Corridor vira
-// obstáculo para uma aresta posterior.
+// routeCorridors routes Connections in received order. Every buffer and
+// occupancy index belongs to the request; no Corridor Cell becomes an obstacle
+// for a later edge.
 func routeCorridors(
 	ctx context.Context,
 	width uint32,
@@ -111,7 +111,7 @@ func routeCorridors(
 		}
 		if !found {
 			return nil, nil, fmt.Errorf(
-				"%w: RoomID %d para RoomID %d",
+				"%w: RoomID %d to RoomID %d",
 				ErrUnroutableEdge, connection.FromRoomID, connection.ToRoomID,
 			)
 		}
@@ -183,8 +183,8 @@ func selectRoutedConnection(
 	var best routedConnection
 	found := false
 	for _, pair := range pairs {
-		// A poda precisa ser estrita: um par com limite igual ao custo atual
-		// ainda pode vencer pelos desempates canônicos da seção 9.1.
+		// Pruning must be strict: a pair whose bound equals the current cost may
+		// still win through the canonical section 9.1 tie-breaks.
 		if found && !openingPairCanBeatBest(pair.lowerBound, len(best.cells)) {
 			break
 		}
@@ -244,10 +244,10 @@ func routeOpeningPair(
 	if cells, ok := lRoute(from.outside, to.outside, alternateCorridorOrder(order), search.occupancy, buffer); ok {
 		return cells, true, nil
 	}
-	// A seção 9.2 chama o fallback de multi-origem/multi-destino, enquanto a
-	// seleção da seção 9.1 compara cada par de Doors. A leitura conservadora,
-	// explicitada pelo F08, executa uma BFS por par; cada chamada abaixo é o
-	// caso degenerado de uma origem e um destino e preserva o desempate global.
+	// Section 9.2 calls the fallback multi-source/multi-destination, while
+	// section 9.1 selection compares each Door pair. The conservative reading,
+	// made explicit by F08, runs one BFS per pair; each call below is the
+	// degenerate one-source, one-destination case and preserves the global tie-break.
 	cells, ok, err := search.breadthFirstRoute(from.outside, to.outside, buffer)
 	return cells, ok, err
 }
@@ -288,8 +288,8 @@ func (search *routingSearch) breadthFirstRoute(from, to Cell, buffer []Cell) ([]
 			if !free || search.visited[int(neighborIndex)] == search.generation {
 				continue
 			}
-			// A marcação ocorre na inserção, conforme o comportamento congelado
-			// da seção 10.2; assim o primeiro parent nunca é substituído.
+			// Marking occurs on insertion, matching the behavior frozen by section
+			// 10.2; therefore the first parent is never replaced.
 			search.visited[int(neighborIndex)] = search.generation
 			search.parents[int(neighborIndex)] = currentIndex
 			search.queue = append(search.queue, neighborIndex)
@@ -417,9 +417,9 @@ func getOrCreateDoor(doors *[]Door, opening doorOpening, corridorID CorridorID) 
 	return doorID
 }
 
-// lRoute materializa um cotovelo entre duas Cells externas, incluindo ambas
-// as extremidades. O buffer pertence à solicitação e pode ser reutilizado na
-// próxima tentativa depois que o chamador copiar uma rota vencedora.
+// lRoute materializes a bend between two external Cells, including both
+// endpoints. The buffer belongs to the request and may be reused on the next
+// attempt after the caller copies a winning route.
 func lRoute(
 	from Cell,
 	to Cell,

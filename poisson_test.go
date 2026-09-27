@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPoissonGridUmPorUmProduzRetanguloUnitario(t *testing.T) {
+func TestPoissonSingleCellGridProducesUnitRectangle(t *testing.T) {
 	req := mustPlacementRequest(t, Config{Width: 1, Height: 1, Seed: 7})
 
 	placements, err := (poissonDiskRoomsPlacer{}).Place(req)
@@ -25,7 +25,7 @@ func TestPoissonGridUmPorUmProduzRetanguloUnitario(t *testing.T) {
 	}, placements[0])
 }
 
-func TestPoissonCanceladoNaoDevolveResultadoParcial(t *testing.T) {
+func TestCanceledPoissonReturnsNoPartialResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req := mustPlacementRequest(t, Config{Width: 32, Height: 32, Seed: 11})
@@ -37,7 +37,7 @@ func TestPoissonCanceladoNaoDevolveResultadoParcial(t *testing.T) {
 	assert.Nil(t, placements)
 }
 
-func TestPoissonRespeitaTetoEInvariantesDosPlacements(t *testing.T) {
+func TestPoissonRespectsLimitAndPlacementInvariants(t *testing.T) {
 	const maximumRooms = uint32(20)
 	geometry := unitRectangleGeometry(1)
 	req := mustPlacementRequest(t, Config{
@@ -53,7 +53,7 @@ func TestPoissonRespeitaTetoEInvariantesDosPlacements(t *testing.T) {
 	assertPlacementInvariants(t, req, placements)
 }
 
-func TestPoissonDistanciaAcimaDaDiagonalTerminaComPrimeiraRoom(t *testing.T) {
+func TestPoissonDistanceAboveDiagonalEndsWithFirstRoom(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
 	req := mustPlacementRequest(t, Config{
 		Width: 8, Height: 8, Seed: 99,
@@ -66,10 +66,10 @@ func TestPoissonDistanciaAcimaDaDiagonalTerminaComPrimeiraRoom(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, placements, 1)
 	assert.Equal(t, Cell{X: 3, Y: 3}, placements[0].Origin,
-		"em empate no Grid par, a ordem Y/X escolhe a primeira Cell")
+		"on a tie in an even Grid, Y/X order chooses the first Cell")
 }
 
-func TestPoissonRegioesUsamMaiorDistanciaLocal(t *testing.T) {
+func TestPoissonRegionsUseGreaterLocalDistance(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
 	req := mustPlacementRequest(t, Config{
 		Width: 40, Height: 24, Seed: 2026,
@@ -87,7 +87,7 @@ func TestPoissonRegioesUsamMaiorDistanciaLocal(t *testing.T) {
 	assertPlacementInvariants(t, req, placements)
 }
 
-func TestPoissonRegioesVaziasPreservamSequencia(t *testing.T) {
+func TestEmptyPoissonRegionsPreserveSequence(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
 	config := Config{
 		Width: 24, Height: 24, Seed: 314159,
@@ -106,7 +106,7 @@ func TestPoissonRegioesVaziasPreservamSequencia(t *testing.T) {
 	assert.Equal(t, first, second)
 }
 
-func TestPoissonMesmaConfiguracaoReproduzGeometriaCampoACampo(t *testing.T) {
+func TestPoissonSameConfigurationReproducesGeometryFieldByField(t *testing.T) {
 	req := mustPlacementRequest(t, Config{
 		Width: 48, Height: 48, Seed: 424242,
 		MinDistance: 6, MaxAttempts: 30, MaxRooms: 32,
@@ -119,11 +119,11 @@ func TestPoissonMesmaConfiguracaoReproduzGeometriaCampoACampo(t *testing.T) {
 	require.NoError(t, secondErr)
 	require.NotEmpty(t, first)
 	assert.Equal(t, first, second)
-	assert.Greater(t, len(first[0].Cells), 1, "o perfil padrão produz footprint dinâmico")
+	assert.Greater(t, len(first[0].Cells), 1, "the default profile produces a dynamic footprint")
 	assertPlacementInvariants(t, req, first)
 }
 
-func TestPoissonMaxAttemptsAlteraRemocaoDoPontoAtivo(t *testing.T) {
+func TestPoissonMaxAttemptsChangesActivePointRemoval(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
 	foundDifference := false
 	for seed := Seed(0); seed < 256 && !foundDifference; seed++ {
@@ -140,10 +140,10 @@ func TestPoissonMaxAttemptsAlteraRemocaoDoPontoAtivo(t *testing.T) {
 		foundDifference = !assert.ObjectsAreEqual(oneAttempt, twoAttempts)
 	}
 	assert.True(t, foundDifference,
-		"o limite por ponto ativo precisa encerrar a iteração após a quantidade configurada")
+		"the per-active-point limit must end the iteration after the configured count")
 }
 
-func TestPoissonChamadasConcorrentesSaoIdenticas(t *testing.T) {
+func TestConcurrentPoissonCallsAreIdentical(t *testing.T) {
 	geometry := unitRectangleGeometry(1)
 	req := mustPlacementRequest(t, Config{
 		Width: 32, Height: 32, Seed: 271828,
@@ -172,7 +172,7 @@ func TestPoissonChamadasConcorrentesSaoIdenticas(t *testing.T) {
 	}
 }
 
-func TestPoissonCellsAceitasNaoCompartilhamScratchNemResultados(t *testing.T) {
+func TestAcceptedPoissonCellsShareNeitherScratchNorResults(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
 	req := mustPlacementRequest(t, Config{
 		Width: 16, Height: 16, Seed: 17,
@@ -190,11 +190,11 @@ func TestPoissonCellsAceitasNaoCompartilhamScratchNemResultados(t *testing.T) {
 	otherResultCell := second[0].Cells[0]
 	first[0].Cells[0] = Cell{X: -1, Y: -1}
 
-	assert.Equal(t, secondPlacementCell, first[1].Cells[0], "placements aceitos não compartilham o scratch")
-	assert.Equal(t, otherResultCell, second[0].Cells[0], "chamadas distintas não compartilham Cells")
+	assert.Equal(t, secondPlacementCell, first[1].Cells[0], "accepted placements do not share the scratch")
+	assert.Equal(t, otherResultCell, second[0].Cells[0], "distinct calls do not share Cells")
 }
 
-func TestGradeAceleracaoReutilizaBufferDeVizinhos(t *testing.T) {
+func TestAccelerationGridReusesNeighbourBuffer(t *testing.T) {
 	grid := &anchorAccelerationGrid{
 		side: 1, columns: 1, rows: 1,
 		buckets: [][]int{{0}},
@@ -207,12 +207,12 @@ func TestGradeAceleracaoReutilizaBufferDeVizinhos(t *testing.T) {
 		nearby = grid.nearbyInto(Cell{}, accepted, buffer[:0])
 	})
 
-	assert.Zero(t, allocations, "a consulta quente precisa reutilizar o buffer da solicitação")
+	assert.Zero(t, allocations, "the hot query must reuse the request buffer")
 	require.Len(t, nearby, 1)
 	assert.Equal(t, accepted[0], nearby[0])
 }
 
-func TestAmostragemDoAnelRepeteRejeicaoInternamente(t *testing.T) {
+func TestAnnulusSamplingRepeatsRejectionInternally(t *testing.T) {
 	const radius = 4.0
 	stream := newSplitMix64(123)
 	reference := newSplitMix64(123)
@@ -220,17 +220,17 @@ func TestAmostragemDoAnelRepeteRejeicaoInternamente(t *testing.T) {
 	offsetX, offsetY := sampleUniformAnnulusByRejection(&stream, radius)
 	wantX, wantY := sampleUniformAnnulusReference(&reference, radius)
 
-	assert.Equal(t, wantX, offsetX, "a transformação congelada é uniform01*4r-2r")
-	assert.Equal(t, wantY, offsetY, "a transformação congelada é uniform01*4r-2r")
-	assert.Equal(t, reference.state, stream.state, "pares rejeitados são repetidos dentro do amostrador")
+	assert.Equal(t, wantX, offsetX, "the frozen transform is uniform01*4r-2r")
+	assert.Equal(t, wantY, offsetY, "the frozen transform is uniform01*4r-2r")
+	assert.Equal(t, reference.state, stream.state, "rejected pairs are repeated inside the sampler")
 	xSquared := offsetX * offsetX
 	ySquared := offsetY * offsetY
 	distanceSquared := xSquared + ySquared
 	radiusSquared := radius * radius
 	outerRadius := radius * 2
 	outerSquared := outerRadius * outerRadius
-	assert.GreaterOrEqual(t, distanceSquared, radiusSquared, "o limite interno é inclusivo")
-	assert.Less(t, distanceSquared, outerSquared, "o limite externo é exclusivo")
+	assert.GreaterOrEqual(t, distanceSquared, radiusSquared, "the inner bound is inclusive")
+	assert.Less(t, distanceSquared, outerSquared, "the outer bound is exclusive")
 }
 
 func sampleUniformAnnulusReference(stream *splitMix64, radius float64) (float64, float64) {

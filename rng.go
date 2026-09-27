@@ -1,49 +1,49 @@
 package daedalus
 
 const (
-	// splitMixGamma é o incremento ímpar fixado pelo algoritmo SplitMix64.
+	// splitMixGamma is the odd increment fixed by the SplitMix64 algorithm.
 	splitMixGamma uint64 = 0x9E3779B97F4A7C15
-	// splitMixFirstMultiplier é o primeiro multiplicador da finalização SplitMix64.
+	// splitMixFirstMultiplier is the first SplitMix64 finalization multiplier.
 	splitMixFirstMultiplier uint64 = 0xBF58476D1CE4E5B9
-	// splitMixSecondMultiplier é o segundo multiplicador da finalização SplitMix64.
+	// splitMixSecondMultiplier is the second SplitMix64 finalization multiplier.
 	splitMixSecondMultiplier uint64 = 0x94D049BB133111EB
-	// splitMixFirstShift é o primeiro deslocamento lógico da finalização SplitMix64.
+	// splitMixFirstShift is the first logical shift in SplitMix64 finalization.
 	splitMixFirstShift = 30
-	// splitMixSecondShift é o segundo deslocamento lógico da finalização SplitMix64.
+	// splitMixSecondShift is the second logical shift in SplitMix64 finalization.
 	splitMixSecondShift = 27
-	// splitMixFinalShift é o último deslocamento lógico da finalização SplitMix64.
+	// splitMixFinalShift is the last logical shift in SplitMix64 finalization.
 	splitMixFinalShift = 31
 
-	// placementStreamSalt separa o stream de posicionamento dos demais streams.
+	// placementStreamSalt separates the placement stream from the other streams.
 	placementStreamSalt uint64 = 0xA0B1C2D3E4F56789
-	// connectorStreamSalt separa o stream de conexão dos demais streams.
+	// connectorStreamSalt separates the connection stream from the other streams.
 	connectorStreamSalt uint64 = 0x1F2E3D4C5B6A7988
-	// roomPlantStreamSalt separa o stream de Plant de Room dos demais streams.
-	// O valor coincide com splitMixGamma por determinação da seção 10.3, que
-	// lista esta constante para RoomPlantSeed. A repetição é intencional e
-	// congelada: trocá-la por outro valor mudaria todos os Layouts.
+	// roomPlantStreamSalt separates the Room Plant stream from the other streams.
+	// Its value matches splitMixGamma as required by section 10.3, which lists
+	// this constant for RoomPlantSeed. The repetition is intentional and frozen:
+	// replacing it with another value would change every Layout.
 	roomPlantStreamSalt uint64 = 0x9E3779B97F4A7C15
-	// roomGeometryStreamSalt separa o stream de geometria de Room dos demais streams.
+	// roomGeometryStreamSalt separates the Room geometry stream from the other streams.
 	roomGeometryStreamSalt uint64 = 0x6C8E9CF570932BD5
-	// corridorPlantStreamSalt separa o stream de Plant de Corridor dos demais streams.
+	// corridorPlantStreamSalt separates the Corridor Plant stream from the other streams.
 	corridorPlantStreamSalt uint64 = 0xD1B54A32D192ED03
 
-	// uniformMantissaBits é a quantidade de bits aleatórios exatamente
-	// representáveis na mantissa usada por uniform01.
+	// uniformMantissaBits is the number of random bits exactly representable in
+	// the mantissa used by uniform01.
 	uniformMantissaBits = 53
-	// uniformDiscardedBits remove os bits inferiores que excedem a mantissa.
+	// uniformDiscardedBits removes low bits exceeding the mantissa.
 	uniformDiscardedBits = 64 - uniformMantissaBits
-	// uniformDenominator é 2^53 e mantém o limite superior de uniform01 exclusivo.
+	// uniformDenominator is 2^53 and keeps uniform01's upper bound exclusive.
 	uniformDenominator = float64(uint64(1) << uniformMantissaBits)
 )
 
-// splitMix64 é um stream mutável e privado de uma única solicitação.
-// Instâncias não devem ser compartilhadas entre goroutines.
+// splitMix64 is a mutable stream private to a single request. Instances must not
+// be shared between goroutines.
 type splitMix64 struct {
 	state uint64
 }
 
-// rngStreams contém os cinco streams independentes de uma solicitação.
+// rngStreams contains a request's five independent streams.
 type rngStreams struct {
 	placement     splitMix64
 	connector     splitMix64
@@ -52,8 +52,8 @@ type rngStreams struct {
 	corridorPlant splitMix64
 }
 
-// mix64 aplica a finalização SplitMix64 congelada pela especificação. A
-// aritmética uint64 faz wraparound módulo 2^64 de forma definida pelo Go.
+// mix64 applies the SplitMix64 finalization frozen by the specification. Uint64
+// arithmetic wraps modulo 2^64 as defined by Go.
 func mix64(value uint64) uint64 {
 	value += splitMixGamma
 	value = (value ^ (value >> splitMixFirstShift)) * splitMixFirstMultiplier
@@ -65,7 +65,7 @@ func newSplitMix64(seed uint64) splitMix64 {
 	return splitMix64{state: seed}
 }
 
-// newRNGStreams deriva todos os streams diretamente da Seed da solicitação.
+// newRNGStreams derives every stream directly from the request Seed.
 func newRNGStreams(seed Seed) rngStreams {
 	seedValue := uint64(seed)
 	return rngStreams{
@@ -77,24 +77,24 @@ func newRNGStreams(seed Seed) rngStreams {
 	}
 }
 
-// next devolve o próximo valor do stream e avança seu estado uma única vez.
+// next returns the stream's next value and advances its state exactly once.
 func (stream *splitMix64) next() uint64 {
 	value := mix64(stream.state)
 	stream.state += splitMixGamma
 	return value
 }
 
-// uniform01 devolve um valor uniformemente distribuído no intervalo [0, 1).
+// uniform01 returns a value uniformly distributed in the interval [0, 1).
 func (stream *splitMix64) uniform01() float64 {
 	value := stream.next() >> uniformDiscardedBits
 	return float64(value) / uniformDenominator
 }
 
-// uniformInt devolve um inteiro uniformemente distribuído entre lower e
-// upper, inclusive. A rejeição do prefixo incompleto elimina viés de módulo.
+// uniformInt returns an integer uniformly distributed between lower and upper,
+// inclusive. Rejecting the incomplete prefix eliminates modulo bias.
 func (stream *splitMix64) uniformInt(lower, upper uint64) uint64 {
 	if lower > upper {
-		panic("limite inferior maior que o limite superior em uniformInt")
+		panic("uniformInt lower bound exceeds upper bound")
 	}
 	if lower == upper {
 		return lower
@@ -102,15 +102,14 @@ func (stream *splitMix64) uniformInt(lower, upper uint64) uint64 {
 
 	rangeSize := upper - lower + 1
 	if rangeSize == 0 {
-		// O overflow representa exatamente todo o domínio uint64.
+		// Overflow represents exactly the entire uint64 domain.
 		return stream.next()
 	}
 
-	// Em aritmética uint64, -rangeSize é 2^64-rangeSize, portanto esta
-	// expressão calcula 2^64 mod rangeSize: a quantidade de valores do
-	// início do domínio que precisam ser descartados para que o restante
-	// seja múltiplo exato de rangeSize. Sem esse descarte, os menores
-	// valores sairiam com probabilidade maior.
+	// In uint64 arithmetic, -rangeSize is 2^64-rangeSize, so this expression
+	// computes 2^64 mod rangeSize: the number of values at the start of the
+	// domain that must be discarded so the remainder is an exact multiple of
+	// rangeSize. Without this rejection, lower values would be more probable.
 	rejectionThreshold := -rangeSize % rangeSize
 	for {
 		value := stream.next()

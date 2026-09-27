@@ -8,32 +8,32 @@ import (
 )
 
 var (
-	errGeneratorNoRooms   = errors.New("gerador não recebeu nenhuma Room válida")
+	errGeneratorNoRooms   = errors.New("generator received no valid Room")
 	errGeneratorInvariant = errors.New("invariante interna do gerador violada")
-	errInvalidConnection  = errors.New("Connector devolveu uma conexão inválida")
+	errInvalidConnection  = errors.New("Connector returned an invalid connection")
 )
 
 const weightedSelectionFirstTicket uint64 = 1
 
-// Generator coordena as fases de geração de um Layout. Placer e Connector
-// podem ser fornecidos pelo chamador; campos nil selecionam os algoritmos
-// embutidos. O valor zero é o Generator padrão e pode ser usado
-// simultaneamente por múltiplas goroutines.
+// Generator coordinates the phases that generate a Layout. Callers may supply
+// Placer and Connector; nil fields select the built-in algorithms. The zero
+// value is the default Generator and may be used simultaneously by multiple
+// goroutines.
 type Generator struct {
 	Placer    Placer
 	Connector Connector
 }
 
-// Generate gera um Layout usando um Context sem cancelamento explícito.
+// Generate creates a Layout using a Context with no explicit cancellation.
 func (generator Generator) Generate(config Config) (Layout, error) {
 	return generator.GenerateContext(context.Background(), config)
 }
 
-// GenerateContext gera um Layout preservando o cancelamento e o deadline do
-// Context recebido. O Layout zero é devolvido em qualquer falha.
+// GenerateContext creates a Layout while preserving cancellation and deadline
+// from the supplied Context. The zero Layout is returned on every failure.
 func (generator Generator) GenerateContext(ctx context.Context, config Config) (Layout, error) {
-	// A especificação não define Context nil. A leitura conservadora acompanha
-	// os algoritmos embutidos e o trata como ausência de cancelamento.
+	// The specification does not define a nil Context. The conservative reading
+	// follows the built-in algorithms and treats it as no cancellation.
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -127,7 +127,7 @@ func validateAndMaterializePlacements(
 		return nil, nil, errGeneratorNoRooms
 	}
 	if uint64(len(placements)) > uint64(effective.maxRooms) {
-		return nil, nil, fmt.Errorf("%w: quantidade de Rooms excede MaxRooms", errGeneratorInvariant)
+		return nil, nil, fmt.Errorf("%w: Room count exceeds MaxRooms", errGeneratorInvariant)
 	}
 
 	occupancy := newPlacementOccupancy(effective.width, effective.height)
@@ -143,7 +143,7 @@ func validateAndMaterializePlacements(
 			effective.minDistance, effective.densityRegions, accepted, occupancy,
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("placement %d inválido: %w", index, err)
+			return nil, nil, fmt.Errorf("invalid placement %d: %w", index, err)
 		}
 		roomID := RoomID(index)
 		roomCells := footprint
@@ -167,7 +167,7 @@ func validateConnections(rooms []PlacedRoom, connections []Connection, extraEdge
 	maximumEdges := uint64(minimumEdges) + uint64(extraEdgeCount)
 	if len(connections) < minimumEdges || uint64(len(connections)) > maximumEdges {
 		return fmt.Errorf(
-			"%w: Connector deve devolver entre %d e %d arestas",
+			"%w: Connector must return between %d and %d edges",
 			errInvalidConnection, minimumEdges, maximumEdges,
 		)
 	}
@@ -177,10 +177,10 @@ func validateConnections(rooms []PlacedRoom, connections []Connection, extraEdge
 		from := int(connection.FromRoomID)
 		to := int(connection.ToRoomID)
 		if from < 0 || from >= roomCount || to < 0 || to >= roomCount {
-			return fmt.Errorf("%w: aresta %d referencia RoomID desconhecido", errInvalidConnection, index)
+			return fmt.Errorf("%w: edge %d references unknown RoomID", errInvalidConnection, index)
 		}
 		if from == to {
-			return fmt.Errorf("%w: aresta %d é própria", errInvalidConnection, index)
+			return fmt.Errorf("%w: edge %d is a self-edge", errInvalidConnection, index)
 		}
 		first := connection.FromRoomID
 		second := connection.ToRoomID
@@ -189,7 +189,7 @@ func validateConnections(rooms []PlacedRoom, connections []Connection, extraEdge
 		}
 		key := [2]RoomID{first, second}
 		if _, exists := seen[key]; exists {
-			return fmt.Errorf("%w: aresta %d é duplicada", errInvalidConnection, index)
+			return fmt.Errorf("%w: edge %d is duplicated", errInvalidConnection, index)
 		}
 		seen[key] = struct{}{}
 		adjacency[from] = append(adjacency[from], to)
@@ -211,7 +211,7 @@ func validateConnections(rooms []PlacedRoom, connections []Connection, extraEdge
 	}
 	for _, reached := range visited {
 		if !reached {
-			return fmt.Errorf("%w: grafo desconectado", errInvalidConnection)
+			return fmt.Errorf("%w: disconnected graph", errInvalidConnection)
 		}
 	}
 	return nil
@@ -231,11 +231,11 @@ func applyGeneratorTopologyOptions(
 		)
 	}
 
-	// A seção 6 admite que um Connector customizado devolva até
-	// n-1+ExtraEdgeCount arestas, enquanto a seção 8.1 exige calcular papéis
-	// sobre uma árvore. A interpretação conservadora mantém a ordem de criação
-	// do plugin e escolhe a primeira floresta de união que alcança todas as
-	// Rooms; arestas que fecham ciclo já consomem o orçamento de atalhos.
+	// Section 6 allows a custom Connector to return up to n-1+ExtraEdgeCount
+	// edges, while section 8.1 requires roles to be computed over a tree. The
+	// conservative interpretation preserves the plugin's creation order and
+	// chooses the first union forest that reaches every Room; cycle-closing edges
+	// already consume the shortcut budget.
 	roleBackbone := connectorSpanningTree(len(rooms), connections)
 	roles, err := assignRoomRoles(ctx, rooms, roleBackbone, effective.roomRoleRequests)
 	if err != nil {

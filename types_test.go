@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMascaraCanonicaReutilizaBufferDaSolicitacao(t *testing.T) {
+func TestCanonicalMaskReusesRequestBuffer(t *testing.T) {
 	buffer := make([]Cell, 0, 25)
 	var offsets []Cell
 
@@ -15,35 +15,35 @@ func TestMascaraCanonicaReutilizaBufferDaSolicitacao(t *testing.T) {
 		offsets = roomShapeOffsetsInto(RoomShapeCross, 5, 5, buffer[:0])
 	})
 
-	assert.Zero(t, allocations, "a máscara quente precisa reutilizar o buffer da solicitação")
+	assert.Zero(t, allocations, "the hot mask must reuse the request buffer")
 	assert.Equal(t, RoomShapeOffsets(RoomShapeCross, 5, 5), offsets)
 }
 
-func TestMascaraRetangulo(t *testing.T) {
+func TestRectangleMask(t *testing.T) {
 	got := RoomShapeOffsets(RoomShapeRectangle, 3, 2)
 	want := []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 0, Y: 1}, {X: 1, Y: 1}, {X: 2, Y: 1}}
-	verificarCellsIguais(t, got, want)
+	assertCellsEqual(t, got, want)
 }
 
-func TestMascaraL(t *testing.T) {
+func TestLMask(t *testing.T) {
 	got := RoomShapeOffsets(RoomShapeL, 3, 3)
 	want := []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 0, Y: 1}, {X: 0, Y: 2}}
-	verificarCellsIguais(t, got, want)
+	assertCellsEqual(t, got, want)
 }
 
-func TestMascaraT(t *testing.T) {
+func TestTMask(t *testing.T) {
 	got := RoomShapeOffsets(RoomShapeT, 5, 3)
 	want := []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 3, Y: 0}, {X: 4, Y: 0}, {X: 2, Y: 1}, {X: 2, Y: 2}}
-	verificarCellsIguais(t, got, want)
+	assertCellsEqual(t, got, want)
 }
 
-func TestMascaraCross(t *testing.T) {
+func TestCrossMask(t *testing.T) {
 	got := RoomShapeOffsets(RoomShapeCross, 5, 5)
 	want := []Cell{{X: 2, Y: 0}, {X: 2, Y: 1}, {X: 0, Y: 2}, {X: 1, Y: 2}, {X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 2, Y: 3}, {X: 2, Y: 4}}
-	verificarCellsIguais(t, got, want)
+	assertCellsEqual(t, got, want)
 }
 
-func TestMascaraCircleD5ED7(t *testing.T) {
+func TestCircleMaskD5AndD7(t *testing.T) {
 	tests := []struct {
 		diameter uint32
 		want     []Cell
@@ -52,11 +52,11 @@ func TestMascaraCircleD5ED7(t *testing.T) {
 		{7, []Cell{{X: 3, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}, {X: 1, Y: 2}, {X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 5, Y: 2}, {X: 0, Y: 3}, {X: 1, Y: 3}, {X: 2, Y: 3}, {X: 3, Y: 3}, {X: 4, Y: 3}, {X: 5, Y: 3}, {X: 6, Y: 3}, {X: 1, Y: 4}, {X: 2, Y: 4}, {X: 3, Y: 4}, {X: 4, Y: 4}, {X: 5, Y: 4}, {X: 1, Y: 5}, {X: 2, Y: 5}, {X: 3, Y: 5}, {X: 4, Y: 5}, {X: 5, Y: 5}, {X: 3, Y: 6}}},
 	}
 	for _, tc := range tests {
-		verificarCellsIguais(t, RoomShapeOffsets(RoomShapeCircle, tc.diameter, tc.diameter), tc.want)
+		assertCellsEqual(t, RoomShapeOffsets(RoomShapeCircle, tc.diameter, tc.diameter), tc.want)
 	}
 }
 
-func TestRoomShapeTemOrdemCanonica(t *testing.T) {
+func TestRoomShapeHasCanonicalOrder(t *testing.T) {
 	assert.Equal(t, RoomShape(0), RoomShapeRectangle)
 	assert.Equal(t, RoomShape(1), RoomShapeL)
 	assert.Equal(t, RoomShape(2), RoomShapeT)
@@ -64,7 +64,7 @@ func TestRoomShapeTemOrdemCanonica(t *testing.T) {
 	assert.Equal(t, RoomShape(4), RoomShapeCircle)
 }
 
-func TestMascaraValidaEConexa(t *testing.T) {
+func TestMaskIsValidAndConnected(t *testing.T) {
 	shapes := []RoomShape{RoomShapeRectangle, RoomShapeL, RoomShapeT, RoomShapeCross, RoomShapeCircle}
 	for _, shape := range shapes {
 		for width := uint32(1); width <= 9; width++ {
@@ -72,13 +72,13 @@ func TestMascaraValidaEConexa(t *testing.T) {
 				if !ValidRoomShapeDimensions(shape, width, height) {
 					continue
 				}
-				verificarMascaraSemDuplicatasEConexa(t, shape, width, height)
+				assertMaskHasNoDuplicatesAndIsConnected(t, shape, width, height)
 			}
 		}
 	}
 }
 
-func TestMascaraOrdenadaEPrimeiroOffset(t *testing.T) {
+func TestMaskOrderAndFirstOffset(t *testing.T) {
 	tests := []struct {
 		shape         RoomShape
 		width, height uint32
@@ -92,13 +92,13 @@ func TestMascaraOrdenadaEPrimeiroOffset(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := RoomShapeOffsets(tc.shape, tc.width, tc.height)
-		verificarOrdemCanonica(t, got)
+		assertCanonicalCellOrder(t, got)
 		assert.Equal(t, tc.want, RoomShapeFirstOffset(tc.shape, tc.width, tc.height),
-			"primeiro offset de %v", tc.shape)
+			"first offset of %v", tc.shape)
 	}
 }
 
-func TestDimensoesDeMascaraInvalidas(t *testing.T) {
+func TestInvalidMaskDimensions(t *testing.T) {
 	invalid := []struct {
 		shape         RoomShape
 		width, height uint32
@@ -111,26 +111,26 @@ func TestDimensoesDeMascaraInvalidas(t *testing.T) {
 	}
 	for _, tc := range invalid {
 		assert.False(t, ValidRoomShapeDimensions(tc.shape, tc.width, tc.height),
-			"dimensões deveriam ser inválidas: shape=%v width=%d height=%d", tc.shape, tc.width, tc.height)
+			"dimensions should be invalid: shape=%v width=%d height=%d", tc.shape, tc.width, tc.height)
 		assert.Nil(t, RoomShapeOffsets(tc.shape, tc.width, tc.height))
 	}
 }
 
-func verificarCellsIguais(t *testing.T, got, want []Cell) {
+func assertCellsEqual(t *testing.T, got, want []Cell) {
 	t.Helper()
-	require.Len(t, got, len(want), "quantidade de Cells")
+	require.Len(t, got, len(want), "Cell count")
 	assert.Equal(t, want, got)
 }
 
-func verificarMascaraSemDuplicatasEConexa(t *testing.T, shape RoomShape, width, height uint32) {
+func assertMaskHasNoDuplicatesAndIsConnected(t *testing.T, shape RoomShape, width, height uint32) {
 	t.Helper()
 	got := RoomShapeOffsets(shape, width, height)
 	seen := make(map[Cell]bool, len(got))
 	for _, cell := range got {
-		assert.False(t, seen[cell], "máscara %v %dx%d contém duplicata em %+v", shape, width, height, cell)
+		assert.False(t, seen[cell], "mask %v %dx%d contains a duplicate at %+v", shape, width, height, cell)
 		seen[cell] = true
 	}
-	require.NotEmpty(t, got, "máscara válida %v %dx%d vazia", shape, width, height)
+	require.NotEmpty(t, got, "valid mask %v %dx%d is empty", shape, width, height)
 
 	visited := map[Cell]bool{got[0]: true}
 	queue := []Cell{got[0]}
@@ -146,21 +146,21 @@ func verificarMascaraSemDuplicatasEConexa(t *testing.T, shape RoomShape, width, 
 			}
 		}
 	}
-	assert.Len(t, visited, len(got), "máscara %v %dx%d não é 4-conexa", shape, width, height)
+	assert.Len(t, visited, len(got), "mask %v %dx%d is not 4-connected", shape, width, height)
 }
 
-func verificarOrdemCanonica(t *testing.T, cells []Cell) {
+func assertCanonicalCellOrder(t *testing.T, cells []Cell) {
 	t.Helper()
 	for i := 1; i < len(cells); i++ {
 		previous, current := cells[i-1], cells[i]
 		assert.False(t, current.Y < previous.Y || current.Y == previous.Y && current.X <= previous.X,
-			"ordem não canônica entre %+v e %+v", previous, current)
+			"non-canonical order between %+v and %+v", previous, current)
 	}
 }
 
-// TestDirectionDeltaEspelhaVetoresCardinais fixa o mapeamento normativo da
-// especificação: North=(0,-1), East=(1,0), South=(0,1), West=(-1,0).
-func TestDirectionDeltaEspelhaVetoresCardinais(t *testing.T) {
+// TestDirectionDeltaMatchesCardinalVectors fixes the specification's normative
+// mapping: North=(0,-1), East=(1,0), South=(0,1), West=(-1,0).
+func TestDirectionDeltaMatchesCardinalVectors(t *testing.T) {
 	cases := []struct {
 		direction Direction
 		want      Cell
@@ -172,22 +172,22 @@ func TestDirectionDeltaEspelhaVetoresCardinais(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if got := tc.direction.Delta(); got != tc.want {
-			t.Errorf("Delta de %d: obteve %+v, esperava %+v", tc.direction, got, tc.want)
+			t.Errorf("Delta of %d: got %+v, want %+v", tc.direction, got, tc.want)
 		}
 	}
 }
 
-// TestDirectionOrdemCanonica fixa a ordem canônica North, East, South, West
-// como valores crescentes a partir de zero.
-func TestDirectionOrdemCanonica(t *testing.T) {
+// TestDirectionCanonicalOrder fixes the canonical order North, East, South, West
+// as increasing values starting at zero.
+func TestDirectionCanonicalOrder(t *testing.T) {
 	if DirectionNorth != 0 || DirectionEast != 1 || DirectionSouth != 2 || DirectionWest != 3 {
-		t.Errorf("ordem canônica violada: North=%d East=%d South=%d West=%d",
+		t.Errorf("canonical order violated: North=%d East=%d South=%d West=%d",
 			DirectionNorth, DirectionEast, DirectionSouth, DirectionWest)
 	}
 }
 
-// TestDirectionOpposite fixa os pares opostos North/South e East/West usados
-// na derivação de Doors de extremidade.
+// TestDirectionOpposite fixes the opposite pairs North/South and East/West used
+// when deriving endpoint Doors.
 func TestDirectionOpposite(t *testing.T) {
 	cases := []struct {
 		direction Direction
@@ -200,10 +200,10 @@ func TestDirectionOpposite(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if got := tc.direction.Opposite(); got != tc.want {
-			t.Errorf("Opposite de %d: obteve %d, esperava %d", tc.direction, got, tc.want)
+			t.Errorf("Opposite of %d: got %d, want %d", tc.direction, got, tc.want)
 		}
 		if got := tc.direction.Opposite().Opposite(); got != tc.direction {
-			t.Errorf("Opposite duplo de %d: obteve %d, esperava identidade", tc.direction, got)
+			t.Errorf("double Opposite of %d: got %d, want identity", tc.direction, got)
 		}
 	}
 }

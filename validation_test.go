@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNormalizacaoAplicaDefaults(t *testing.T) {
+func TestNormalizationAppliesDefaults(t *testing.T) {
 	effective, err := normalizeConfig(Config{Width: 16, Height: 12, Seed: 0})
 	require.NoError(t, err)
 
@@ -25,7 +25,7 @@ func TestNormalizacaoAplicaDefaults(t *testing.T) {
 	assert.Nil(t, effective.plantCatalog)
 }
 
-func TestNormalizacaoDoGridUmPorUmMantemRetangulo(t *testing.T) {
+func TestSingleCellGridNormalizationKeepsRectangle(t *testing.T) {
 	effective, err := normalizeConfig(Config{Width: 1, Height: 1})
 	require.NoError(t, err)
 
@@ -41,7 +41,7 @@ func TestNormalizacaoDoGridUmPorUmMantemRetangulo(t *testing.T) {
 	assert.Equal(t, []roomGeometryCombination{{shape: RoomShapeRectangle, width: 1, height: 1}}, effective.geometryCombinations)
 }
 
-func TestNormalizacaoPadraoUsaPerfilDinamico(t *testing.T) {
+func TestDefaultNormalizationUsesDynamicProfile(t *testing.T) {
 	effective, err := normalizeConfig(Config{Width: 16, Height: 16})
 	require.NoError(t, err)
 
@@ -59,7 +59,7 @@ func TestNormalizacaoPadraoUsaPerfilDinamico(t *testing.T) {
 	assert.Contains(t, effective.geometryCombinations, roomGeometryCombination{shape: RoomShapeCircle, width: 5, height: 5})
 }
 
-func TestNormalizacaoPadraoFiltraFormasSemDimensaoValida(t *testing.T) {
+func TestDefaultNormalizationFiltersShapesWithoutValidDimensions(t *testing.T) {
 	effective, err := normalizeConfig(Config{Width: 2, Height: 2})
 	require.NoError(t, err)
 
@@ -73,7 +73,7 @@ func TestNormalizacaoPadraoFiltraFormasSemDimensaoValida(t *testing.T) {
 	}
 }
 
-func TestNormalizacaoEnumeraCombinacoesEmOrdemCanonica(t *testing.T) {
+func TestNormalizationEnumeratesCombinationsInCanonicalOrder(t *testing.T) {
 	config := Config{
 		Width:  7,
 		Height: 7,
@@ -103,24 +103,24 @@ func TestNormalizacaoEnumeraCombinacoesEmOrdemCanonica(t *testing.T) {
 		ordered := previous.shape < current.shape ||
 			previous.shape == current.shape && previous.width < current.width ||
 			previous.shape == current.shape && previous.width == current.width && previous.height < current.height
-		assert.True(t, ordered, "combinações fora da ordem: %+v antes de %+v", previous, current)
+		assert.True(t, ordered, "combinations out of order: %+v before %+v", previous, current)
 	}
 }
 
-func TestValidacaoDistingueConfigInvalidaDeLimiteExcedido(t *testing.T) {
+func TestValidationDistinguishesInvalidConfigFromExceededLimit(t *testing.T) {
 	invalidCases := []struct {
 		name   string
 		change func(*Config)
 	}{
-		{"largura ausente", func(config *Config) { config.Width = 0 }},
-		{"altura ausente", func(config *Config) { config.Height = 0 }},
-		{"CellSize negativo", func(config *Config) { config.CellSize = -1 }},
-		{"CellSize infinito", func(config *Config) { config.CellSize = math.Inf(1) }},
-		{"MinDistance abaixo do minimo", func(config *Config) { config.MinDistance = 0.5 }},
+		{"missing width", func(config *Config) { config.Width = 0 }},
+		{"missing height", func(config *Config) { config.Height = 0 }},
+		{"negative CellSize", func(config *Config) { config.CellSize = -1 }},
+		{"infinite CellSize", func(config *Config) { config.CellSize = math.Inf(1) }},
+		{"MinDistance below the minimum", func(config *Config) { config.MinDistance = 0.5 }},
 		{"MinDistance NaN", func(config *Config) { config.MinDistance = math.NaN() }},
-		{"MaxAttempts excedido", func(config *Config) { config.MaxAttempts = 1025 }},
-		{"CorridorOrder invalido", func(config *Config) { config.CorridorOrder = CorridorOrder(9) }},
-		{"ExtraEdgeCount excedido", func(config *Config) { config.MaxRooms = 2; config.ExtraEdgeCount = 2 }},
+		{"MaxAttempts exceeded", func(config *Config) { config.MaxAttempts = 1025 }},
+		{"invalid CorridorOrder", func(config *Config) { config.CorridorOrder = CorridorOrder(9) }},
+		{"ExtraEdgeCount exceeded", func(config *Config) { config.MaxRooms = 2; config.ExtraEdgeCount = 2 }},
 	}
 	for _, tc := range invalidCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,9 +136,9 @@ func TestValidacaoDistingueConfigInvalidaDeLimiteExcedido(t *testing.T) {
 		name   string
 		change func(*Config)
 	}{
-		{"largura excedida", func(config *Config) { config.Width = 257 }},
-		{"altura excedida", func(config *Config) { config.Height = 257 }},
-		{"MaxRooms excedido", func(config *Config) { config.MaxRooms = MaxRooms + 1 }},
+		{"width exceeded", func(config *Config) { config.Width = 257 }},
+		{"height exceeded", func(config *Config) { config.Height = 257 }},
+		{"MaxRooms exceeded", func(config *Config) { config.MaxRooms = MaxRooms + 1 }},
 	}
 	for _, tc := range limitCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestValidacaoDistingueConfigInvalidaDeLimiteExcedido(t *testing.T) {
 	}
 }
 
-func TestValidacaoRejeitaGeometriaSemCombinacaoDeAreaValida(t *testing.T) {
+func TestValidationRejectsGeometryWithoutValidAreaCombination(t *testing.T) {
 	config := Config{Width: 8, Height: 8, RoomGeometry: &RoomGeometry{
 		MinWidth: 2, MaxWidth: 2, MinHeight: 2, MaxHeight: 2,
 		MaxFootprintCells: 1,
@@ -162,7 +162,7 @@ func TestValidacaoRejeitaGeometriaSemCombinacaoDeAreaValida(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidConfig)
 }
 
-func TestValidacaoRejeitaSomaDePesosComOverflow(t *testing.T) {
+func TestValidationRejectsOverflowingWeightSum(t *testing.T) {
 	config := Config{Width: 8, Height: 8, RoomGeometry: &RoomGeometry{
 		MinWidth: 3, MaxWidth: 3, MinHeight: 3, MaxHeight: 3,
 		MaxFootprintCells: 9,
@@ -176,7 +176,7 @@ func TestValidacaoRejeitaSomaDePesosComOverflow(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidConfig)
 }
 
-func TestValidacaoRejeitaRegioesDeDensidadeSobrepostas(t *testing.T) {
+func TestValidationRejectsOverlappingDensityRegions(t *testing.T) {
 	config := Config{Width: 10, Height: 10, DensityRegions: []DensityRegion{
 		{Min: Cell{X: 1, Y: 1}, Max: Cell{X: 5, Y: 5}, MinDistance: 2},
 		{Min: Cell{X: 4, Y: 4}, Max: Cell{X: 8, Y: 8}, MinDistance: 3},
@@ -186,7 +186,7 @@ func TestValidacaoRejeitaRegioesDeDensidadeSobrepostas(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidConfig)
 }
 
-func TestValidacaoRejeitaBossSemStart(t *testing.T) {
+func TestValidationRejectsBossWithoutStart(t *testing.T) {
 	config := Config{Width: 8, Height: 8, RoomRoleRequests: []RoomRoleRequest{
 		{Role: RoomRoleBoss, Count: 1},
 	}}
@@ -195,7 +195,7 @@ func TestValidacaoRejeitaBossSemStart(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidConfig)
 }
 
-func TestValidacaoRejeitaCamposInvalidosDeGeometria(t *testing.T) {
+func TestValidationRejectsInvalidGeometryFields(t *testing.T) {
 	base := RoomGeometry{
 		MinWidth: 1, MaxWidth: 4, MinHeight: 1, MaxHeight: 4,
 		MaxFootprintCells: 16,
@@ -206,16 +206,16 @@ func TestValidacaoRejeitaCamposInvalidosDeGeometria(t *testing.T) {
 		change func(*RoomGeometry)
 		want   error
 	}{
-		{"largura minima ausente", func(geometry *RoomGeometry) { geometry.MinWidth = 0 }, ErrInvalidConfig},
-		{"largura maxima menor", func(geometry *RoomGeometry) { geometry.MaxWidth = 0 }, ErrInvalidConfig},
-		{"altura acima do Grid", func(geometry *RoomGeometry) { geometry.MaxHeight = 9 }, ErrInvalidConfig},
-		{"area ausente", func(geometry *RoomGeometry) { geometry.MaxFootprintCells = 0 }, ErrInvalidConfig},
-		{"area acima do teto", func(geometry *RoomGeometry) { geometry.MaxFootprintCells = MaxFootprintCells + 1 }, ErrLimitExceeded},
-		{"gap acima do teto", func(geometry *RoomGeometry) { geometry.MinRoomGap = 257 }, ErrInvalidConfig},
-		{"formas vazias", func(geometry *RoomGeometry) { geometry.Shapes = nil }, ErrInvalidConfig},
-		{"forma duplicada", func(geometry *RoomGeometry) { geometry.Shapes = append(geometry.Shapes, geometry.Shapes[0]) }, ErrInvalidConfig},
-		{"forma invalida", func(geometry *RoomGeometry) { geometry.Shapes[0].Shape = RoomShape(99) }, ErrInvalidConfig},
-		{"peso ausente", func(geometry *RoomGeometry) { geometry.Shapes[0].Weight = 0 }, ErrInvalidConfig},
+		{"missing minimum width", func(geometry *RoomGeometry) { geometry.MinWidth = 0 }, ErrInvalidConfig},
+		{"maximum width smaller", func(geometry *RoomGeometry) { geometry.MaxWidth = 0 }, ErrInvalidConfig},
+		{"height above the Grid", func(geometry *RoomGeometry) { geometry.MaxHeight = 9 }, ErrInvalidConfig},
+		{"missing area", func(geometry *RoomGeometry) { geometry.MaxFootprintCells = 0 }, ErrInvalidConfig},
+		{"area above the ceiling", func(geometry *RoomGeometry) { geometry.MaxFootprintCells = MaxFootprintCells + 1 }, ErrLimitExceeded},
+		{"gap above the ceiling", func(geometry *RoomGeometry) { geometry.MinRoomGap = 257 }, ErrInvalidConfig},
+		{"empty shapes", func(geometry *RoomGeometry) { geometry.Shapes = nil }, ErrInvalidConfig},
+		{"duplicate shape", func(geometry *RoomGeometry) { geometry.Shapes = append(geometry.Shapes, geometry.Shapes[0]) }, ErrInvalidConfig},
+		{"invalid shape", func(geometry *RoomGeometry) { geometry.Shapes[0].Shape = RoomShape(99) }, ErrInvalidConfig},
+		{"missing weight", func(geometry *RoomGeometry) { geometry.Shapes[0].Weight = 0 }, ErrInvalidConfig},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -228,17 +228,17 @@ func TestValidacaoRejeitaCamposInvalidosDeGeometria(t *testing.T) {
 	}
 }
 
-func TestValidacaoRejeitaPapeisInvalidos(t *testing.T) {
+func TestValidationRejectsInvalidRoles(t *testing.T) {
 	cases := []struct {
 		name     string
 		requests []RoomRoleRequest
 	}{
-		{"papel invalido", []RoomRoleRequest{{Role: RoomRole(99), Count: 1}}},
-		{"papel duplicado", []RoomRoleRequest{{Role: RoomRoleStart, Count: 1}, {Role: RoomRoleStart, Count: 1}}},
-		{"Count de Start invalido", []RoomRoleRequest{{Role: RoomRoleStart, Count: 2}}},
-		{"Count de Treasure excedido", []RoomRoleRequest{{Role: RoomRoleTreasure, Count: 9}}},
-		{"tag vazia", []RoomRoleRequest{{Role: RoomRoleStart, Count: 1, RequiredTags: []string{""}}}},
-		{"tag duplicada", []RoomRoleRequest{{Role: RoomRoleStart, Count: 1, RequiredTags: []string{"chave", "chave"}}}},
+		{"invalid role", []RoomRoleRequest{{Role: RoomRole(99), Count: 1}}},
+		{"duplicate role", []RoomRoleRequest{{Role: RoomRoleStart, Count: 1}, {Role: RoomRoleStart, Count: 1}}},
+		{"invalid Start Count", []RoomRoleRequest{{Role: RoomRoleStart, Count: 2}}},
+		{"Treasure Count exceeded", []RoomRoleRequest{{Role: RoomRoleTreasure, Count: 9}}},
+		{"empty tag", []RoomRoleRequest{{Role: RoomRoleStart, Count: 1, RequiredTags: []string{""}}}},
+		{"duplicate tag", []RoomRoleRequest{{Role: RoomRoleStart, Count: 1, RequiredTags: []string{"key", "key"}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -248,16 +248,16 @@ func TestValidacaoRejeitaPapeisInvalidos(t *testing.T) {
 	}
 }
 
-func TestValidacaoRejeitaRegioesDeDensidadeInvalidas(t *testing.T) {
+func TestValidationRejectsInvalidDensityRegions(t *testing.T) {
 	cases := []struct {
 		name   string
 		region DensityRegion
 	}{
-		{"retangulo vazio", DensityRegion{Min: Cell{X: 2, Y: 2}, Max: Cell{X: 2, Y: 3}, MinDistance: 1}},
-		{"coordenada negativa", DensityRegion{Min: Cell{X: -1, Y: 0}, Max: Cell{X: 2, Y: 2}, MinDistance: 1}},
-		{"fora do Grid", DensityRegion{Min: Cell{}, Max: Cell{X: 9, Y: 2}, MinDistance: 1}},
-		{"distancia abaixo do minimo", DensityRegion{Min: Cell{}, Max: Cell{X: 2, Y: 2}, MinDistance: 0.5}},
-		{"distancia nao finita", DensityRegion{Min: Cell{}, Max: Cell{X: 2, Y: 2}, MinDistance: math.NaN()}},
+		{"empty rectangle", DensityRegion{Min: Cell{X: 2, Y: 2}, Max: Cell{X: 2, Y: 3}, MinDistance: 1}},
+		{"negative coordinate", DensityRegion{Min: Cell{X: -1, Y: 0}, Max: Cell{X: 2, Y: 2}, MinDistance: 1}},
+		{"outside the Grid", DensityRegion{Min: Cell{}, Max: Cell{X: 9, Y: 2}, MinDistance: 1}},
+		{"distance below the minimum", DensityRegion{Min: Cell{}, Max: Cell{X: 2, Y: 2}, MinDistance: 0.5}},
+		{"non-finite distance", DensityRegion{Min: Cell{}, Max: Cell{X: 2, Y: 2}, MinDistance: math.NaN()}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,7 +267,7 @@ func TestValidacaoRejeitaRegioesDeDensidadeInvalidas(t *testing.T) {
 	}
 }
 
-func TestValidacaoRejeitaCatalogoInvalido(t *testing.T) {
+func TestValidationRejectsInvalidCatalog(t *testing.T) {
 	valid := PlantCatalog{
 		Rooms:     []RoomPlant{{ID: "room", Weight: 1, DoorDirections: []Direction{DirectionNorth}}},
 		Corridors: []CorridorPlant{{ID: "corridor", Weight: 1}},
@@ -276,20 +276,20 @@ func TestValidacaoRejeitaCatalogoInvalido(t *testing.T) {
 		name   string
 		change func(*PlantCatalog)
 	}{
-		{"Rooms vazias", func(catalog *PlantCatalog) { catalog.Rooms = nil }},
-		{"Corridors vazios", func(catalog *PlantCatalog) { catalog.Corridors = nil }},
-		{"Room ID vazio", func(catalog *PlantCatalog) { catalog.Rooms[0].ID = "" }},
-		{"Room ID duplicado", func(catalog *PlantCatalog) { catalog.Rooms = append(catalog.Rooms, catalog.Rooms[0]) }},
-		{"Corridor ID duplicado", func(catalog *PlantCatalog) { catalog.Corridors = append(catalog.Corridors, catalog.Corridors[0]) }},
-		{"Room Weight ausente", func(catalog *PlantCatalog) { catalog.Rooms[0].Weight = 0 }},
-		{"Corridor Weight ausente", func(catalog *PlantCatalog) { catalog.Corridors[0].Weight = 0 }},
-		{"Directions vazias", func(catalog *PlantCatalog) { catalog.Rooms[0].DoorDirections = nil }},
-		{"Direction duplicada", func(catalog *PlantCatalog) {
+		{"empty Rooms", func(catalog *PlantCatalog) { catalog.Rooms = nil }},
+		{"empty Corridors", func(catalog *PlantCatalog) { catalog.Corridors = nil }},
+		{"empty Room ID", func(catalog *PlantCatalog) { catalog.Rooms[0].ID = "" }},
+		{"duplicate Room ID", func(catalog *PlantCatalog) { catalog.Rooms = append(catalog.Rooms, catalog.Rooms[0]) }},
+		{"duplicate Corridor ID", func(catalog *PlantCatalog) { catalog.Corridors = append(catalog.Corridors, catalog.Corridors[0]) }},
+		{"missing Room Weight", func(catalog *PlantCatalog) { catalog.Rooms[0].Weight = 0 }},
+		{"missing Corridor Weight", func(catalog *PlantCatalog) { catalog.Corridors[0].Weight = 0 }},
+		{"empty Directions", func(catalog *PlantCatalog) { catalog.Rooms[0].DoorDirections = nil }},
+		{"duplicate Direction", func(catalog *PlantCatalog) {
 			catalog.Rooms[0].DoorDirections = []Direction{DirectionNorth, DirectionNorth}
 		}},
-		{"Direction invalida", func(catalog *PlantCatalog) { catalog.Rooms[0].DoorDirections = []Direction{Direction(9)} }},
-		{"tag de Room vazia", func(catalog *PlantCatalog) { catalog.Rooms[0].Tags = []string{""} }},
-		{"tag de Corridor duplicada", func(catalog *PlantCatalog) { catalog.Corridors[0].Tags = []string{"pedra", "pedra"} }},
+		{"invalid Direction", func(catalog *PlantCatalog) { catalog.Rooms[0].DoorDirections = []Direction{Direction(9)} }},
+		{"empty Room tag", func(catalog *PlantCatalog) { catalog.Rooms[0].Tags = []string{""} }},
+		{"duplicate Corridor tag", func(catalog *PlantCatalog) { catalog.Corridors[0].Tags = []string{"stone", "stone"} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

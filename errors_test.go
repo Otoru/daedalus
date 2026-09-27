@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// TestErrosSentinelaSuportamErrorsIs garante que cada categoria de erro do
-// contrato (Apêndice B da especificação) pode ser reconhecida com errors.Is
-// mesmo depois de envolvida com contexto via fmt.Errorf e %w.
-func TestErrosSentinelaSuportamErrorsIs(t *testing.T) {
+// TestSentinelErrorsSupportErrorsIs ensures that each contract error category
+// (specification Appendix B) can be recognized with errors.Is even after being
+// wrapped with context via fmt.Errorf and %w.
+func TestSentinelErrorsSupportErrorsIs(t *testing.T) {
 	sentinels := []struct {
 		name string
 		err  error
@@ -22,16 +22,16 @@ func TestErrosSentinelaSuportamErrorsIs(t *testing.T) {
 	for _, tc := range sentinels {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.err == nil {
-				t.Fatalf("%s é nil", tc.name)
+				t.Fatalf("%s is nil", tc.name)
 			}
-			wrapped := fmt.Errorf("gerar layout: %w", tc.err)
+			wrapped := fmt.Errorf("generate layout: %w", tc.err)
 			if !errors.Is(wrapped, tc.err) {
-				t.Errorf("errors.Is não reconheceu %s após envelopamento", tc.name)
+				t.Errorf("errors.Is did not recognize %s after wrapping", tc.name)
 			}
 		})
 	}
 
 	if errors.Is(ErrLimitExceeded, ErrInvalidConfig) {
-		t.Error("sentinelas distintos não podem ser equivalentes entre si")
+		t.Error("distinct sentinels must not be equivalent")
 	}
 }

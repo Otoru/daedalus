@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPrimQuantidadeMinimaDeRooms(t *testing.T) {
+func TestPrimMinimumRoomCount(t *testing.T) {
 	connector := primRoomsConnector{}
 
 	for _, testCase := range []struct {
@@ -20,10 +20,10 @@ func TestPrimQuantidadeMinimaDeRooms(t *testing.T) {
 		rooms []PlacedRoom
 		want  []Connection
 	}{
-		{name: "nenhuma Room", rooms: nil, want: []Connection{}},
-		{name: "uma Room", rooms: []PlacedRoom{placedRoomAt(0, 4, 7)}, want: []Connection{}},
+		{name: "no Room", rooms: nil, want: []Connection{}},
+		{name: "one Room", rooms: []PlacedRoom{placedRoomAt(0, 4, 7)}, want: []Connection{}},
 		{
-			name:  "duas Rooms",
+			name:  "two Rooms",
 			rooms: []PlacedRoom{placedRoomAt(0, 1, 2), placedRoomAt(1, 8, 9)},
 			want:  []Connection{{FromRoomID: 0, ToRoomID: 1}},
 		},
@@ -41,7 +41,7 @@ func TestPrimQuantidadeMinimaDeRooms(t *testing.T) {
 	}
 }
 
-func TestPrimQuantidadeMinimaIgnoraContextCancelado(t *testing.T) {
+func TestPrimMinimumRoomCountIgnoresCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -53,7 +53,7 @@ func TestPrimQuantidadeMinimaIgnoraContextCancelado(t *testing.T) {
 	}
 }
 
-func TestPrimResultadoEhArvore(t *testing.T) {
+func TestPrimResultIsTree(t *testing.T) {
 	rooms := randomPlacedRooms(20, 91, 32, false)
 
 	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
@@ -66,7 +66,7 @@ func TestPrimResultadoEhArvore(t *testing.T) {
 	assertConnectionsFormTree(t, rooms, edges)
 }
 
-func TestPrimTemPesoMinimoContraKruskal(t *testing.T) {
+func TestPrimHasMinimumWeightAgainstKruskal(t *testing.T) {
 	for caseIndex := int64(0); caseIndex < 40; caseIndex++ {
 		roomCount := 2 + int(caseIndex%23)
 		rooms := randomPlacedRooms(roomCount, 1000+caseIndex, 48, false)
@@ -76,11 +76,11 @@ func TestPrimTemPesoMinimoContraKruskal(t *testing.T) {
 
 		wantWeight := kruskalWeight(rooms)
 		gotWeight := connectionsWeight(rooms, edges)
-		assert.InDelta(t, wantWeight, gotWeight, 1e-12, "caso aleatório %d", caseIndex)
+		assert.InDelta(t, wantWeight, gotWeight, 1e-12, "random case %d", caseIndex)
 	}
 }
 
-func TestPrimDesempataPorIDsNaOrdemCongelada(t *testing.T) {
+func TestPrimBreaksTiesByIDsInFrozenOrder(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 2, 0),
@@ -97,11 +97,11 @@ func TestPrimDesempataPorIDsNaOrdemCongelada(t *testing.T) {
 	for repetition := 0; repetition < 50; repetition++ {
 		edges, err := connector.Connect(ConnectionRequest{Context: context.Background(), Rooms: rooms})
 		require.NoError(t, err)
-		assert.Equal(t, want, edges, "repetição %d", repetition)
+		assert.Equal(t, want, edges, "repetition %d", repetition)
 	}
 }
 
-func TestComparadorPrimUsaCellDeDestinoComoUltimoDesempate(t *testing.T) {
+func TestPrimComparatorUsesDestinationCellAsLastTieBreak(t *testing.T) {
 	first := primEdgeCandidate{
 		connection:    Connection{FromRoomID: 1, ToRoomID: 2},
 		squaredWeight: 9,
@@ -113,13 +113,13 @@ func TestComparadorPrimUsaCellDeDestinoComoUltimoDesempate(t *testing.T) {
 	second := first
 	second.destination = Cell{X: 2, Y: 4}
 
-	assert.True(t, primEdgeLess(first, second), "Y menor deve vencer antes de X")
+	assert.True(t, primEdgeLess(first, second), "smaller Y must win before X")
 	assert.False(t, primEdgeLess(second, first))
 	second.destination = Cell{X: 9, Y: 3}
-	assert.True(t, primEdgeLess(first, second), "com Y igual, X menor deve vencer")
+	assert.True(t, primEdgeLess(first, second), "with equal Y, smaller X must win")
 }
 
-func TestPrimOtimizadoEquivaleAoPseudocodigoIngenuo(t *testing.T) {
+func TestOptimizedPrimMatchesNaivePseudocode(t *testing.T) {
 	for caseIndex := int64(0); caseIndex < 80; caseIndex++ {
 		roomCount := 2 + int(caseIndex%31)
 		manyTies := caseIndex%2 == 0
@@ -129,11 +129,11 @@ func TestPrimOtimizadoEquivaleAoPseudocodigoIngenuo(t *testing.T) {
 		require.NoError(t, err)
 		want := referencePrim(rooms)
 
-		assert.Equal(t, want, got, "caso aleatório %d", caseIndex)
+		assert.Equal(t, want, got, "random case %d", caseIndex)
 	}
 }
 
-func TestPrimUsaCentroDaBoundingBoxEmRoomsMultiCell(t *testing.T) {
+func TestPrimUsesBoundingBoxCenterForMultiCellRooms(t *testing.T) {
 	rooms := []PlacedRoom{
 		{
 			ID: 0, At: Cell{X: 0, Y: 0}, Shape: RoomShapeRectangle,
@@ -149,10 +149,10 @@ func TestPrimUsaCentroDaBoundingBoxEmRoomsMultiCell(t *testing.T) {
 	assert.Equal(t, []Connection{
 		{FromRoomID: 0, ToRoomID: 1},
 		{FromRoomID: 0, ToRoomID: 2},
-	}, edges, "a métrica por âncoras escolheria 0→2 e depois 2→1")
+	}, edges, "the anchor metric would choose 0→2 and then 2→1")
 }
 
-func TestPrimSeedNaoAlteraResultadoNemConsomeStream(t *testing.T) {
+func TestPrimSeedChangesNeitherResultNorStream(t *testing.T) {
 	rooms := randomPlacedRooms(16, 77, 20, false)
 	connector := primRoomsConnector{}
 
@@ -164,7 +164,7 @@ func TestPrimSeedNaoAlteraResultadoNemConsomeStream(t *testing.T) {
 	assert.Equal(t, first, second)
 }
 
-func TestPrimCanceladoNaoDevolveResultadoParcial(t *testing.T) {
+func TestCanceledPrimReturnsNoPartialResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -177,7 +177,7 @@ func TestPrimCanceladoNaoDevolveResultadoParcial(t *testing.T) {
 	assert.Nil(t, edges)
 }
 
-func TestPrimChamadasConcorrentesSaoIdenticas(t *testing.T) {
+func TestConcurrentPrimCallsAreIdentical(t *testing.T) {
 	rooms := randomPlacedRooms(64, 8080, 30, true)
 	req := ConnectionRequest{Context: context.Background(), Rooms: rooms, Seed: 44}
 	connector := primRoomsConnector{}
@@ -320,16 +320,16 @@ func assertConnectionsFormTree(t *testing.T, rooms []PlacedRoom, edges []Connect
 			pair[0], pair[1] = pair[1], pair[0]
 		}
 		_, duplicate := seen[pair]
-		assert.False(t, duplicate, "aresta duplicada: %v", pair)
+		assert.False(t, duplicate, "duplicate edge: %v", pair)
 		seen[pair] = struct{}{}
 		firstRoot := findRoot(parent, int(edge.FromRoomID))
 		secondRoot := findRoot(parent, int(edge.ToRoomID))
-		assert.NotEqual(t, firstRoot, secondRoot, "uma aresta não pode fechar ciclo")
+		assert.NotEqual(t, firstRoot, secondRoot, "an edge must not close a cycle")
 		parent[firstRoot] = secondRoot
 	}
 	wantRoot := findRoot(parent, 0)
 	for index := range rooms {
-		assert.Equal(t, wantRoot, findRoot(parent, index), "Room %d precisa ser alcançável", index)
+		assert.Equal(t, wantRoot, findRoot(parent, index), "Room %d must be reachable", index)
 	}
 }
 

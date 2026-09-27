@@ -1,63 +1,60 @@
 package daedalus
 
-// Seed é a fonte de todos os streams aleatórios determinísticos de uma
-// solicitação de geração. É um inteiro sem sinal de 64 bits e todos os
-// valores são aceitos: zero é válido e não significa "aleatório". A mesma
-// Seed combinada à mesma Config efetiva produz o mesmo Layout durante toda
-// a major v1, em qualquer plataforma suportada.
+// Seed is the source of all deterministic random streams for a generation
+// request. It is an unsigned 64-bit integer and all values are accepted: zero
+// is valid and does not mean "random". The same Seed combined with the same
+// effective Config produces the same Layout throughout major version v1 on
+// every supported platform.
 type Seed uint64
 
-// RoomID identifica uma Room dentro de um Layout. IDs são índices estáveis
-// na ordem de criação, iniciando em 0, e sua ordem canônica é numérica
-// ascendente.
+// RoomID identifies a Room within a Layout. IDs are stable indices in creation
+// order, starting at 0, and their canonical order is ascending numeric order.
 type RoomID uint32
 
-// CorridorID identifica um Corridor dentro de um Layout. IDs são índices
-// estáveis na ordem de criação, iniciando em 0, e sua ordem canônica é
-// numérica ascendente.
+// CorridorID identifies a Corridor within a Layout. IDs are stable indices in
+// creation order, starting at 0, and their canonical order is ascending numeric
+// order.
 type CorridorID uint32
 
-// DoorID identifica uma Door dentro de um Layout. IDs são índices estáveis
-// na ordem de criação, iniciando em 0, e sua ordem canônica é numérica
-// ascendente.
+// DoorID identifies a Door within a Layout. IDs are stable indices in creation
+// order, starting at 0, and their canonical order is ascending numeric order.
 type DoorID uint32
 
-// PlantID é um identificador opaco de asset resolvido pelo jogo chamador;
-// Daedalus nunca o interpreta. É uma string UTF-8 não vazia quando presente,
-// comparada byte a byte e sensível a maiúsculas. O valor zero (string vazia)
-// significa ausência de Plant associada.
+// PlantID is an opaque asset identifier resolved by the calling game; Daedalus
+// never interprets it. When present, it is a non-empty UTF-8 string compared
+// byte by byte and case-sensitively. The zero value (an empty string) means no
+// associated Plant.
 type PlantID string
 
-// Cell é uma coordenada inteira (X, Y) do Grid, nunca uma posição em pixel.
-// Uma Cell é válida somente dentro de um Grid: 0 ≤ X < Width e
-// 0 ≤ Y < Height. A ordem canônica de Cell é Y e depois X.
+// Cell is an integer (X, Y) Grid coordinate, never a pixel position. A Cell is
+// valid only within a Grid: 0 ≤ X < Width and 0 ≤ Y < Height. The canonical
+// Cell order is Y then X.
 type Cell struct {
-	// X é a coordenada horizontal da Cell, em Cells, a partir de zero.
+	// X is the zero-based horizontal Cell coordinate.
 	X int32
-	// Y é a coordenada vertical da Cell, em Cells, a partir de zero.
+	// Y is the zero-based vertical Cell coordinate.
 	Y int32
 }
 
-// Direction é uma das quatro direções cardinais do Grid. Diagonais são
-// inválidas. A ordem canônica é North, East, South, West, com valores
-// crescentes a partir de zero; o valor zero é portanto DirectionNorth.
+// Direction is one of the Grid's four cardinal directions. Diagonals are
+// invalid. The canonical order is North, East, South, West, with values
+// increasing from zero; the zero value is therefore DirectionNorth.
 type Direction int
 
 const (
-	// DirectionNorth aponta para Y decrescente: vetor (0, -1).
+	// DirectionNorth points toward decreasing Y: vector (0, -1).
 	DirectionNorth Direction = iota
-	// DirectionEast aponta para X crescente: vetor (1, 0).
+	// DirectionEast points toward increasing X: vector (1, 0).
 	DirectionEast
-	// DirectionSouth aponta para Y crescente: vetor (0, 1).
+	// DirectionSouth points toward increasing Y: vector (0, 1).
 	DirectionSouth
-	// DirectionWest aponta para X decrescente: vetor (-1, 0).
+	// DirectionWest points toward decreasing X: vector (-1, 0).
 	DirectionWest
 )
 
-// Delta devolve o vetor unitário da Direction em coordenadas de Cell:
-// North=(0,-1), East=(1,0), South=(0,1), West=(-1,0). Uma Direction fora
-// dos valores declarados devolve a Cell zero; o chamador deve usar somente
-// as quatro constantes do tipo.
+// Delta returns the Direction's unit vector in Cell coordinates: North=(0,-1),
+// East=(1,0), South=(0,1), West=(-1,0). A Direction outside the declared values
+// returns the zero Cell; callers must use only the type's four constants.
 func (d Direction) Delta() Cell {
 	switch d {
 	case DirectionNorth:
@@ -72,10 +69,9 @@ func (d Direction) Delta() Cell {
 	return Cell{}
 }
 
-// Opposite devolve a Direction oposta: North↔South e East↔West. Aplicada
-// duas vezes, devolve a Direction original. Uma Direction fora dos valores
-// declarados devolve DirectionNorth; o chamador deve usar somente as quatro
-// constantes do tipo.
+// Opposite returns the opposite Direction: North↔South and East↔West. Applied
+// twice, it returns the original Direction. A Direction outside the declared
+// values returns DirectionNorth; callers must use only the type's four constants.
 func (d Direction) Opposite() Direction {
 	switch d {
 	case DirectionNorth:
@@ -90,63 +86,59 @@ func (d Direction) Opposite() Direction {
 	return DirectionNorth
 }
 
-// CellKind é o estado físico de uma Cell do Grid. O valor zero é
-// CellKindEmpty.
+// CellKind is the physical state of a Grid Cell. The zero value is CellKindEmpty.
 type CellKind int
 
 const (
-	// CellKindEmpty marca uma Cell livre, sem Room nem Corridor.
+	// CellKindEmpty marks a free Cell with no Room or Corridor.
 	CellKindEmpty CellKind = iota
-	// CellKindRoom marca uma Cell ocupada por exatamente uma Room.
+	// CellKindRoom marks a Cell occupied by exactly one Room.
 	CellKindRoom
-	// CellKindCorridor marca uma Cell interna de um ou mais Corridors.
+	// CellKindCorridor marks an internal Cell of one or more Corridors.
 	CellKindCorridor
 )
 
-// CellState é o estado físico de uma Cell do Grid gerado.
+// CellState is the physical state of a Cell in the generated Grid.
 type CellState struct {
-	// At é a coordenada desta Cell no Grid.
+	// At is this Cell's coordinate in the Grid.
 	At Cell
-	// Kind é o estado físico da Cell: Empty, Room ou Corridor.
+	// Kind is the Cell's physical state: Empty, Room, or Corridor.
 	Kind CellKind
-	// RoomID referencia a Room que ocupa a Cell. É não nil se e somente se
-	// Kind == CellKindRoom; nos demais casos é nil e não deve ser lido.
+	// RoomID references the Room occupying the Cell. It is non-nil if and only
+	// if Kind == CellKindRoom; otherwise it is nil and must not be read.
 	RoomID *RoomID
-	// CorridorIDs lista, em ordem crescente, todos os Corridors que
-	// contêm esta Cell. É não vazio se e somente se Kind ==
-	// CellKindCorridor; uma Cell de Corridor pode ser compartilhada por
-	// mais de um Corridor.
+	// CorridorIDs lists, in ascending order, all Corridors containing this Cell.
+	// It is non-empty if and only if Kind == CellKindCorridor; a Corridor Cell
+	// may be shared by more than one Corridor.
 	CorridorIDs []CorridorID
 }
 
-// CorridorOrder escolhe o cotovelo preferido do traçado ortogonal em L de
-// um Corridor. O valor zero é CorridorOrderXThenY, que é também o padrão
-// de Config.
+// CorridorOrder selects the preferred bend for a Corridor's orthogonal L-route.
+// The zero value is CorridorOrderXThenY, which is also the Config default.
 type CorridorOrder int
 
 const (
-	// CorridorOrderXThenY traça primeiro o eixo X e depois o eixo Y: para
-	// uma conexão de A a B, o cotovelo é (B.X, A.Y).
+	// CorridorOrderXThenY traces the X axis first and then the Y axis: for a
+	// connection from A to B, the bend is (B.X, A.Y).
 	CorridorOrderXThenY CorridorOrder = iota
-	// CorridorOrderYThenX traça primeiro o eixo Y e depois o eixo X: para
-	// uma conexão de A a B, o cotovelo é (A.X, B.Y).
+	// CorridorOrderYThenX traces the Y axis first and then the X axis: for a
+	// connection from A to B, the bend is (A.X, B.Y).
 	CorridorOrderYThenX
 )
 
-// RoomRole é o papel temático opcional de uma Room, atribuído
-// deterministicamente sobre a árvore de backbone a partir de
-// Config.RoomRoleRequests.
+// RoomRole is a Room's optional thematic role, assigned deterministically over
+// the backbone tree from Config.RoomRoleRequests.
 type RoomRole int
 
 const (
-	// RoomRoleStart marca a Room inicial. Recebe sempre RoomID 0, a
-	// primeira Room aceita pelo posicionamento.
+	// RoomRoleStart marks the starting Room. It always receives RoomID 0, the
+	// first Room accepted by placement.
 	RoomRoleStart RoomRole = iota
-	// RoomRoleBoss marca a Room de chefe: a Room não atribuída mais
-	// distante de Start pela distância de caminho ponderado na árvore.
-	// Exige uma solicitação RoomRoleStart na mesma Config.
+	// RoomRoleBoss marks the boss Room: the unassigned Room farthest from Start
+	// by weighted path distance in the tree. It requires a RoomRoleStart request
+	// in the same Config.
 	RoomRoleBoss
-	// RoomRoleTreasure marca Rooms de tesouro: as Rooms ainda não
-	// atribuídas mais distantes de Start, em ordem, até Count.
+	// RoomRoleTreasure marks treasure Rooms: the still-unassigned Rooms farthest
+	// from Start, in order, up to Count.
 	RoomRoleTreasure
 )
