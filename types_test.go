@@ -7,6 +7,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMascaraCanonicaReutilizaBufferDaSolicitacao(t *testing.T) {
+	buffer := make([]Cell, 0, 25)
+	var offsets []Cell
+
+	allocations := testing.AllocsPerRun(100, func() {
+		offsets = roomShapeOffsetsInto(RoomShapeCross, 5, 5, buffer[:0])
+	})
+
+	assert.Zero(t, allocations, "a máscara quente precisa reutilizar o buffer da solicitação")
+	assert.Equal(t, RoomShapeOffsets(RoomShapeCross, 5, 5), offsets)
+}
+
 func TestMascaraRetangulo(t *testing.T) {
 	got := RoomShapeOffsets(RoomShapeRectangle, 3, 2)
 	want := []Cell{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 0, Y: 1}, {X: 1, Y: 1}, {X: 2, Y: 1}}

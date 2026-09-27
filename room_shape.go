@@ -52,11 +52,17 @@ func ValidRoomShapeDimensions(shape RoomShape, width, height uint32) bool {
 // RoomShapeOffsets devolve os offsets locais canônicos da máscara, relativos
 // à Origin e ordenados por Y e depois X. Dimensões inválidas devolvem nil.
 func RoomShapeOffsets(shape RoomShape, width, height uint32) []Cell {
+	return roomShapeOffsetsInto(shape, width, height, nil)
+}
+
+// roomShapeOffsetsInto materializa a máscara no buffer privado informado.
+// O wrapper público preserva slices próprios ao chamar sem buffer.
+func roomShapeOffsetsInto(shape RoomShape, width, height uint32, buffer []Cell) []Cell {
 	if !ValidRoomShapeDimensions(shape, width, height) {
 		return nil
 	}
 
-	offsets := make([]Cell, 0)
+	offsets := buffer[:0]
 	centerX := int64(width-1) / int64(roomShapeParity)
 	centerY := int64(height-1) / int64(roomShapeParity)
 	radiusSquared := centerX * centerX

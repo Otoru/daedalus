@@ -61,6 +61,15 @@ type PlacementRequest struct {
 	MaxRooms uint32
 	// Seed é a fonte do stream aleatório de posicionamento da solicitação.
 	Seed Seed
+	// geometryCombinations preserva a lista normalizada e canonicamente
+	// ordenada pela validação da Config. O Placer embutido a recebe do
+	// Generator sem recalcular combinações nem depender de iteração de map.
+	//
+	// O campo é privado de propósito: um Placer escrito pelo jogo não
+	// precisa dele, porque RoomGeometry já chega normalizada e as
+	// combinações são deriváveis dela. Só os algoritmos embutidos usam
+	// esse atalho, e só o Generator o preenche.
+	geometryCombinations []roomGeometryCombination
 }
 
 // Connector é o algoritmo que escolhe as arestas Room-a-Room de uma

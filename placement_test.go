@@ -41,6 +41,21 @@ func TestDerivacaoDaAncoraReconstroiMascarasCanonicas(t *testing.T) {
 	}
 }
 
+func TestFootprintAbsolutoReutilizaBufferDaSolicitacao(t *testing.T) {
+	placement := buildPlacementFromAt(Cell{X: 10, Y: 12}, RoomShapeRectangle, 4, 3)
+	buffer := make([]Cell, 0, len(placement.Cells))
+	var footprint []Cell
+	var ok bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		footprint, ok = absoluteFootprintInto(placement, buffer[:0])
+	})
+
+	require.True(t, ok)
+	assert.Zero(t, allocations, "a materialização quente precisa reutilizar o buffer da solicitação")
+	assert.Equal(t, Cell{X: 10, Y: 12}, footprint[0])
+}
+
 func TestAncoraNaBordaPodeGerarOrigemNegativa(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeCross, 5, 5)
 
