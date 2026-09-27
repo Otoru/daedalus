@@ -8,9 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRoutingReproducesAppendixAExample covers AC-06 and AC-23: the Appendix A
-// route is an orthogonal sequence of Cells between two multi-Cell Rooms.
-func TestRoutingReproducesAppendixAExample(t *testing.T) {
+// TestRoutingReproducesWorkedLRoute checks the worked L-route between two 2×2
+// Rectangles. From the Cell east of a Door at (2,1) to the Cell north of a Door
+// at (5,3), XThenY yields [(3,1), (4,1), (5,1), (5,2)]: an orthogonal sequence
+// that stays outside both footprints and meets the endpoint Doors.
+func TestRoutingReproducesWorkedLRoute(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 2, 2),
 		placedRectangle(t, 1, Cell{X: 5, Y: 3}, 2, 2),
@@ -51,8 +53,10 @@ func TestRoutingChoosesDoorPairWithShortestCorridor(t *testing.T) {
 	assert.Equal(t, Door{ID: 1, RoomID: 1, At: Cell{X: 5, Y: 2}, Direction: DirectionWest, CorridorIDs: []CorridorID{0}}, doors[1])
 }
 
-// TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes covers AC-28: when
+// TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes checks that when
 // both L-routes are blocked, deterministic BFS still finds an exterior route.
+// The search expands North, East, South, West, uses a FIFO queue, marks a Cell
+// on insertion, takes the parent from first discovery, and stores row-major.
 func TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 3}, 1, 1),
@@ -91,9 +95,9 @@ func TestCorridorOrderChangesBendWhenBothLRoutesAreValid(t *testing.T) {
 	assert.Equal(t, []Cell{{X: 1, Y: 1}, {X: 1, Y: 2}, {X: 1, Y: 3}, {X: 2, Y: 3}, {X: 3, Y: 3}}, yThenX)
 }
 
-// TestUnroutableEdgeDiscardsPartialResult covers AC-12 and AC-28: a blocked
-// pair returns the same ErrUnroutableEdge on every run and discards the
-// partial Corridors and Doors.
+// TestUnroutableEdgeDiscardsPartialResult checks that a blocked pair returns
+// the same ErrUnroutableEdge on every run and discards the partial Corridors
+// and Doors.
 func TestUnroutableEdgeDiscardsPartialResult(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 0, Y: 2}, 1, 1),
@@ -117,8 +121,8 @@ func TestUnroutableEdgeDiscardsPartialResult(t *testing.T) {
 	assert.Nil(t, secondDoors)
 }
 
-// TestTwoEdgesReuseDoorAndSortCorridorIDs covers AC-24: two routes that share
-// an opening keep a single Door per (RoomID, At, Direction), and CorridorIDs
+// TestTwoEdgesReuseDoorAndSortCorridorIDs checks that two routes sharing an
+// opening keep a single Door per (RoomID, At, Direction), and that CorridorIDs
 // lists every edge in ascending order.
 func TestTwoEdgesReuseDoorAndSortCorridorIDs(t *testing.T) {
 	rooms := []PlacedRoom{
@@ -283,9 +287,9 @@ func TestNonRectangularShapeDoorsLeaveBoundaryCells(t *testing.T) {
 	}
 }
 
-// TestCorridorKeepsExternalCellsAndFourConnectedSequence covers AC-06 and
-// AC-23: between multi-Cell Rooms the Corridor stays outside every footprint,
-// each step is orthogonal, and the endpoint Doors sit on the two Rooms.
+// TestCorridorKeepsExternalCellsAndFourConnectedSequence checks that between
+// multi-Cell Rooms the Corridor stays outside every footprint, each step is
+// orthogonal, and the endpoint Doors sit on the two Rooms.
 func TestCorridorKeepsExternalCellsAndFourConnectedSequence(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 2, 2),

@@ -13,17 +13,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBinaryEmitsExactlyOneLineOnRealStdout covers AC-16 on the real process
-// stdout: exactly one handshake line, so logs cannot land there.
+// TestBinaryEmitsExactlyOneLineOnRealStdout checks the real process stdout:
+// startup writes exactly one handshake line, so logs cannot land there.
 //
 // It runs the actual subprocess, and not an fx composition with an injected
 // writer.
 //
 // The other tests in this package pass a bytes.Buffer to newApp and prove
-// that *that* writer receives a single line. This does not cover the contract
-// of section 2.1, which is about the process stdout: a fmt.Println at any
-// point in the binary writes directly to os.Stdout and escapes the injected
-// buffer, breaking the handshake for the client without failing any test.
+// that *that* writer receives a single line. That does not prove the process
+// contract. Stdout is the wire the client reads before it connects, and a
+// fmt.Println anywhere in the binary writes directly to os.Stdout and escapes
+// the injected buffer, breaking the handshake without failing a buffer-injected
+// test.
 func TestBinaryEmitsExactlyOneLineOnRealStdout(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "daedalus-contract")
 	build := exec.Command("go", "build", "-o", binary, ".")

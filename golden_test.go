@@ -41,10 +41,11 @@ func (connections goldenConnector) Connect(ConnectionRequest) ([]Connection, err
 	return append([]Connection(nil), connections...), nil
 }
 
-// TestFrozenGoldenLayouts covers AC-13: named Seeds match the frozen fixtures
-// exactly. A mismatch reports the field path, not only a hash. This test does
-// not cover AC-18 or AC-25; those require the same suite on native amd64 and
-// arm64 runners.
+// TestFrozenGoldenLayouts checks that named Seeds match the frozen fixtures
+// exactly. A mismatch reports the field path, the expected and actual scalars,
+// and the changed Cells, not only a hash. Running the suite on one machine does
+// not prove the same bytes on native amd64 and arm64; that takes the same suite
+// and the same fixtures on both runners.
 func TestFrozenGoldenLayouts(t *testing.T) {
 	for _, testCase := range goldenCases() {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -52,8 +53,9 @@ func TestFrozenGoldenLayouts(t *testing.T) {
 			require.NoError(t, err)
 			testCase.check(t, layout)
 
-			// Layout is already produced in normative canonical order; keeping it
-			// whole in the fixture also freezes Empty Cells and row-major order.
+			// The Layout is already in field order, with Grid.Cells stored row-major
+			// (Y, then X). Keeping the whole value in the fixture freezes Empty
+			// Cells and that order.
 			normalized := layout
 			fixturePath := filepath.Join("testdata", "golden", testCase.fixture+".json")
 			if *updateGoldens {
@@ -274,7 +276,7 @@ func checkPoissonGolden(t *testing.T, layout Layout) {
 			foundDenseRegion = true
 		}
 	}
-	assert.True(t, foundDenseRegion, "the case must materialize the half-open DensityRegion")
+	assert.True(t, foundDenseRegion, "DensityRegion is half-open [Min, Max): an anchor with X in [0, 10) materializes the region")
 }
 
 func corridorTurnCount(cells []Cell) int {
@@ -308,9 +310,9 @@ func readGoldenFixture(t *testing.T, path string) Layout {
 	return layout
 }
 
-// TestGoldenDiagnosticPointsToFirstChangedCell covers AC-13: the diagnostic
-// names the first divergent Cell path, the expected and actual scalars, and
-// the changed Cells.
+// TestGoldenDiagnosticPointsToFirstChangedCell checks that the diagnostic names
+// the first divergent Cell path, the expected and actual scalars, and the
+// changed Cells.
 func TestGoldenDiagnosticPointsToFirstChangedCell(t *testing.T) {
 	expected := Layout{Rooms: []Room{{ID: 0, Cells: []Cell{{X: 2, Y: 3}}}}}
 	actual := Layout{Rooms: []Room{{ID: 0, Cells: []Cell{{X: 9, Y: 3}}}}}

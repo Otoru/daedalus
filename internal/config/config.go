@@ -22,7 +22,10 @@ const (
 
 	// DefaultTCPAddr requests an ephemeral port on loopback.
 	DefaultTCPAddr = "127.0.0.1:0"
-	// DefaultHTTPDebugAddr is the normative address from section 2.3.
+	// DefaultHTTPDebugAddr is the opt-in debug bind: literal loopback IP
+	// 127.0.0.1 and port 8090. It is read only when the HTTP debug server
+	// is enabled. A wildcard, a non-loopback IP, a hostname, or port 0 is
+	// rejected.
 	DefaultHTTPDebugAddr = "127.0.0.1:8090"
 
 	minimumTCPPort = 1
@@ -41,9 +44,10 @@ type Config struct {
 // Default returns the default process configuration.
 func Default() Config {
 	return Config{
-		// The specification does not fix a default transport/address. TCP on
-		// loopback with an ephemeral port is the conservative reading: it works
-		// on every supported system and does not expose the service remotely.
+		// No default gRPC transport or address is fixed. TCP on loopback
+		// with an ephemeral port works on every supported system and does
+		// not expose the service remotely. HTTP debug stays off: enabling
+		// or disabling it does not change the handshake.
 		Transport:                TransportTCP,
 		Addr:                     DefaultTCPAddr,
 		MaxConcurrentGenerations: runtime.NumCPU(),

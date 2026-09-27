@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-// TestSentinelErrorsSupportErrorsIs ensures that each contract error category
-// (specification Appendix B) can be recognized with errors.Is even after being
-// wrapped with context via fmt.Errorf and %w.
+// TestSentinelErrorsSupportErrorsIs ensures that each named error category —
+// invalid config, a breached limit, no compatible plant, and an unroutable
+// edge — can be recognized with errors.Is even after being wrapped with
+// context via fmt.Errorf and %w.
 func TestSentinelErrorsSupportErrorsIs(t *testing.T) {
 	sentinels := []struct {
 		name string

@@ -40,9 +40,8 @@ type weightedRoomNeighbor struct {
 	weight    float64
 }
 
-// applyTopologyOptions fixes the normative section 8.1 order: roles are
-// projected onto the backbone tree before any shortcut is added. Neither phase
-// receives or consumes a random stream.
+// applyTopologyOptions assigns roles on the backbone tree before any shortcut
+// is added. Neither phase receives or consumes a random stream.
 func applyTopologyOptions(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -62,10 +61,9 @@ func applyTopologyOptions(
 }
 
 // assignRoomRoles assigns roles in declared order, reserving RoomID 0 for Start
-// when that request exists. Early reservation is the conservative reading of
-// section 8.1: Start receives RoomID 0 even when its entry appears after Boss or
-// Treasure; the remaining entries preserve caller order and can never occupy
-// that Room.
+// when that request exists. Start receives RoomID 0 even when its entry appears
+// after Boss or Treasure; the remaining entries preserve caller order and can
+// never occupy that Room.
 func assignRoomRoles(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -95,12 +93,11 @@ func assignRoomRoles(
 		roles[startIndex] = roomRolePointer(RoomRoleStart)
 	}
 
-	// Section 8.1 measures Treasure as "farthest from Start" but requires Start
-	// only for Boss; Config validation accepts Treasure alone. In that case the
-	// origin remains RoomID 0, the first accepted Room, exactly the Room Start
-	// would occupy. This conservative reading becomes a frozen contract: without
-	// it, "farthest from Start" would have no reference and assignment would be
-	// undefined.
+	// Treasure is the unassigned Room farthest from Start. Boss is the only role
+	// that requires a Start request; Treasure alone is accepted. The distance
+	// origin is then RoomID 0, the first accepted Room, the same Room Start would
+	// occupy. Without that origin, farthest-from-Start would have no reference
+	// and the assignment would be undefined.
 	var distances []float64
 	if summary.needsDistances {
 		var err error
@@ -271,7 +268,7 @@ func roomRolePointer(role RoomRole) *RoomRole {
 
 // addExtraConnections adds the shortest complete-graph edges not belonging to
 // the backbone. With a zero count, it returns immediately without forming,
-// sorting, or traversing the discarded set, as specified by section 8.1.
+// sorting, or traversing the discarded set.
 func addExtraConnections(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -336,8 +333,9 @@ func backbonePairFlags(rooms []PlacedRoom, backbone []Connection) ([]bool, error
 }
 
 // nonBackboneEdgeCandidates lists complete-graph edges absent from the
-// backbone, oriented from the lower RoomID to the higher one. Section 8.1
-// selects the shortest of these after roles have been assigned.
+// backbone, oriented from the lower RoomID to the higher one. The shortest of
+// these, under the same Prim tie-break, are appended after roles have been
+// assigned, and only up to ExtraEdgeCount.
 func nonBackboneEdgeCandidates(
 	ctx context.Context,
 	rooms []PlacedRoom,

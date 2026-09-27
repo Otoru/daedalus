@@ -174,8 +174,9 @@ func selectRoutedConnection(
 	var best routedConnection
 	found := false
 	for _, pair := range pairs {
-		// Pruning must be strict: a pair whose bound equals the current cost may
-		// still win through the canonical section 9.1 tie-breaks.
+		// Prune only when the lower bound is strictly greater than the best cost.
+		// A pair whose bound equals that cost can still tie and win on the origin
+		// Door (At.Y, At.X, Direction), so greater-or-equal must not stop the search.
 		if found && !openingPairCanBeatBest(pair.lowerBound, len(best.cells)) {
 			break
 		}
@@ -258,10 +259,11 @@ func routeOpeningPair(
 	if cells, ok := lRoute(from.outside, to.outside, alternateCorridorOrder(order), search.occupancy, buffer); ok {
 		return cells, true, nil
 	}
-	// Section 9.2 calls the fallback multi-source/multi-destination, while
-	// section 9.1 selection compares each Door pair. The conservative reading,
-	// made explicit by F08, runs one BFS per pair; each call below is the
-	// degenerate one-source, one-destination case and preserves the global tie-break.
+	// Both L-routes are tried first. The fallback is one breadth-first search per
+	// Door pair, from that pair's exterior Cell to the other, rather than one
+	// multi-source search over every opening. Selection compares pairs, and the
+	// tie-break is source Door, destination Door, then the route; one search per
+	// pair keeps the parent from first discovery inside that pair.
 	cells, ok, err := search.breadthFirstRoute(from.outside, to.outside, buffer)
 	return cells, ok, err
 }
@@ -297,8 +299,10 @@ func (search *routingSearch) breadthFirstRoute(from, to Cell, buffer []Cell) ([]
 	return search.cellsFromParents(toIndex, buffer), true, nil
 }
 
-// enqueueCardinalNeighbors expands the current Cell in order North, East, South, West.
-// A neighbor is appended to the FIFO queue at most once.
+// enqueueCardinalNeighbors expands North, East, South, West into a FIFO queue.
+// A Cell is marked on insertion, not on removal, so the parent is the first
+// discovery and is never replaced. The index is row-major, Y*width+X, with no
+// map, so the path does not depend on hash order.
 func (search *routingSearch) enqueueCardinalNeighbors(currentIndex, toIndex int64) bool {
 	current := search.cellAt(currentIndex)
 	for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
@@ -314,8 +318,7 @@ func (search *routingSearch) enqueueCardinalNeighbors(currentIndex, toIndex int6
 		if !free || search.visited[int(neighborIndex)] == search.generation {
 			continue
 		}
-		// Marking occurs on insertion, matching the behavior frozen by section
-		// 10.2; therefore the first parent is never replaced.
+		// Mark on insertion. The first parent is never replaced.
 		search.visited[int(neighborIndex)] = search.generation
 		search.parents[int(neighborIndex)] = currentIndex
 		search.queue = append(search.queue, neighborIndex)

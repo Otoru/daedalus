@@ -1,5 +1,10 @@
 // Package httpdebug implements the optional local HTTP development
-// server of the Daedalus subprocess.
+// server. It is off unless enabled, binds only to a literal loopback
+// address, has no CORS and no authentication, and shares the gRPC
+// admission limit instead of keeping its own queue. It uses the same
+// generator as gRPC, keeps no state between requests, and does not write
+// Layouts to disk. UI assets are embedded; the handler does not fetch
+// remote resources, load plugins, or read user files.
 package httpdebug
 
 import (
@@ -28,20 +33,23 @@ import (
 )
 
 const (
-	// MaxHTTPDebugBodyBytes is the normative 1 MiB limit from section 2.3.
+	// MaxHTTPDebugBodyBytes is 1 MiB. The limit is applied before the body
+	// is read into memory; a larger body is rejected with 413.
 	MaxHTTPDebugBodyBytes = 1 << 20
 
 	requestIDBytes = 16
 	debugIndexPath = "assets/index.html"
 	debugCSSPath   = "assets/styles.css"
 	debugJSPath    = "assets/app.js"
-	// contentTypeHeader and jsonMediaType are the header and media type
-	// section 2.3 requires on debug JSON requests and responses.
+	// Debug JSON requests and responses use Content-Type application/json.
+	// A successful generate response is 200 with the full Layout. Errors
+	// are JSON with code, an English message, and an opaque request_id,
+	// and they carry no stack trace and no sensitive data.
 	contentTypeHeader = "Content-Type"
 	jsonMediaType     = "application/json"
-	// The specification does not define the status of a request whose client
-	// canceled the connection. The conservative reading uses the conventional
-	// code 499, without turning it into an internal 500 failure.
+	// No status is defined for a request whose client canceled the
+	// connection. The response uses the conventional 499 so a client
+	// cancel is not reported as an internal 500 failure.
 	clientClosedRequestStatus = 499
 )
 
@@ -94,6 +102,8 @@ func (server *Server) observeAndRestrict(next http.Handler) http.Handler {
 			request.Context(), requestIDContextKey{}, requestID,
 		))
 		defer func() {
+			// Logs record request_id, status, and duration. The body,
+			// Config, and Seed are never written.
 			server.logger.Info(
 				"debug HTTP request completed",
 				zap.String("request_id", requestID),
@@ -103,9 +113,11 @@ func (server *Server) observeAndRestrict(next http.Handler) http.Handler {
 		}()
 
 		if err := validateLocalRequest(request); err != nil {
-			// Section 2.3 requires refusing non-local access, but does not
-			// fix the status. The conservative interpretation uses 403 so
-			// authentication is not implied to make the origin supported.
+			// Access is loopback only. RemoteAddr must be loopback even
+			// behind a local proxy, and there is no CORS middleware and no
+			// authentication: the bind is the restriction. The refusal
+			// status is not fixed; 403 rejects the origin without implying
+			// that credentials would make a remote client allowed.
 			writeError(observed, request, http.StatusForbidden, "access_denied", "local access refused")
 			return
 		}
@@ -113,6 +125,9 @@ func (server *Server) observeAndRestrict(next http.Handler) http.Handler {
 	})
 }
 
+// health answers GET /healthz with 200 application/json while the
+// service is accepting work, and 503 during shutdown. It does not
+// start a generation.
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Set(contentTypeHeader, jsonMediaType)
 	statusText := "ok"
@@ -129,8 +144,9 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (server *Server) root(writer http.ResponseWriter, request *http.Request) {
-	// Section 2.3 requires a redirect, but does not choose the code. The
-	// conservative interpretation uses 307, which does not rewrite the method.
+	// GET / redirects to /debug/ on the same origin. The redirect code is
+	// not fixed; 307 keeps the original method, so a non-GET is not
+	// rewritten into a GET of the debug page.
 	http.Redirect(writer, request, "/debug/", http.StatusTemporaryRedirect)
 }
 
@@ -148,9 +164,10 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 		assetPath = debugJSPath
 		contentType = "text/javascript; charset=utf-8"
 	default:
-		// Section 2.3 does not define a fallback for unknown asset
-		// paths. The conservative reading returns 404 instead of
-		// masking a missing resource with the page HTML.
+		// /debug/ serves only the embedded page, stylesheet, and script,
+		// with no CDN and no external resource. An unknown path has no
+		// defined fallback; 404 is returned instead of filling the gap
+		// with the page HTML.
 		http.NotFound(writer, request)
 		return
 	}
@@ -165,8 +182,11 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (server *Server) generate(writer http.ResponseWriter, request *http.Request) {
-	// Optional MIME parameters, such as charset, do not change the media type
-	// application/json required by section 2.3.
+	// Optional MIME parameters, such as charset, do not change the required
+	// media type application/json. The body is canonical ProtoJSON:
+	// snake_case names, the same presence rules as protobuf, and a uint64
+	// such as Seed written as a decimal string. Missing required fields
+	// are rejected; they are not filled in with defaults.
 	mediaType, _, err := mime.ParseMediaType(request.Header.Get(contentTypeHeader))
 	if err != nil || mediaType != jsonMediaType {
 		writeError(
@@ -353,6 +373,13 @@ func validateLocalRequest(request *http.Request) error {
 	return nil
 }
 
+// mapServiceError is the debug HTTP status mapping. Invalid JSON or
+// Config is 400, a body or resource limit is 413, no compatible plant
+// or an unroutable edge is 422, a deadline is 504, and any other
+// generation failure is 500. A client cancel is 499 and shutdown is 503.
+// Invalid JSON and an oversized body are rejected before this function,
+// as 400 and 413. Messages stay in English and omit stack traces and
+// sensitive data.
 func mapServiceError(err error) (int, string, string) {
 	switch status.Code(err) {
 	case codes.InvalidArgument:

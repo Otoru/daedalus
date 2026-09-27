@@ -32,8 +32,8 @@ const (
 	testVersion           = "v0.1.0-test"
 )
 
-// TestBasicRoutesServeHealthRedirectAndLocalAsset covers AC-31: GET /healthz
-// and GET /debug/ respond from the embedded page, with no external URL.
+// TestBasicRoutesServeHealthRedirectAndLocalAsset checks that GET /healthz and
+// GET /debug/ respond from the embedded page, with no external URL.
 func TestBasicRoutesServeHealthRedirectAndLocalAsset(t *testing.T) {
 	t.Parallel()
 
@@ -61,7 +61,7 @@ func TestBasicRoutesServeHealthRedirectAndLocalAsset(t *testing.T) {
 	assert.Zero(t, generations.Load(), "GET routes must not start generation")
 }
 
-// TestUIAssetsAreEmbeddedLocalAndCORSFree covers AC-40: the debug UI is
+// TestUIAssetsAreEmbeddedLocalAndCORSFree checks that the debug UI is
 // same-origin, ships no CORS allow-origin header and references no external host.
 func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 	t.Parallel()
@@ -95,8 +95,8 @@ func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 	}
 }
 
-// TestAllEmbeddedAssetsDoNotReferenceAnExternalHost covers AC-31 and AC-40:
-// every embedded HTML, CSS and JavaScript file is free of an external host.
+// TestAllEmbeddedAssetsDoNotReferenceAnExternalHost checks that every embedded
+// HTML, CSS and JavaScript file is free of an external host.
 func TestAllEmbeddedAssetsDoNotReferenceAnExternalHost(t *testing.T) {
 	t.Parallel()
 
@@ -125,8 +125,8 @@ func TestAllEmbeddedAssetsDoNotReferenceAnExternalHost(t *testing.T) {
 	assert.GreaterOrEqual(t, checked, 3, "HTML, CSS and JavaScript must be checked")
 }
 
-// TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout covers
-// AC-32: a valid ProtoJSON POST returns the same Layout the SDK Generate
+// TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout checks
+// that a valid ProtoJSON POST returns the same Layout the SDK Generate
 // produces for that Config and Seed, using proto field names.
 func TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout(t *testing.T) {
 	t.Parallel()
@@ -178,9 +178,9 @@ func TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout(t *te
 	assert.Contains(t, response.Body.String(), `"seed":"18446744073709551615"`)
 }
 
-// TestGenerateRequiresCanonicalProtoJSONAndRequiredFields covers AC-34: invalid
+// TestGenerateRequiresCanonicalProtoJSONAndRequiredFields checks that invalid
 // JSON, Content-Type or Config returns a structured 400, with no panic and no
-// Layout. Messages are English, so the Portuguese-wording clause is not asserted.
+// Layout. Error text is English; this test does not scan message wording.
 func TestGenerateRequiresCanonicalProtoJSONAndRequiredFields(t *testing.T) {
 	t.Parallel()
 
@@ -235,7 +235,7 @@ func TestGenerateRequiresCanonicalProtoJSONAndRequiredFields(t *testing.T) {
 	assertStructuredError(t, invalidConfig)
 }
 
-// TestGenerateRejectsOversizedBodyBeforeGeneration covers AC-35: a body above
+// TestGenerateRejectsOversizedBodyBeforeGeneration checks that a body above
 // 1 MiB returns 413 before generation runs.
 func TestGenerateRejectsOversizedBodyBeforeGeneration(t *testing.T) {
 	t.Parallel()
@@ -256,8 +256,8 @@ func TestGenerateRejectsOversizedBodyBeforeGeneration(t *testing.T) {
 	assert.Zero(t, generations.Load())
 }
 
-// TestGenerateMapsErrorCategoriesWithoutLeakingDetails covers AC-35 for a Grid
-// or Room limit: ErrLimitExceeded is mapped to 413, and the body stays free of
+// TestGenerateMapsErrorCategoriesWithoutLeakingDetails checks a Grid or Room
+// limit: ErrLimitExceeded is mapped to 413, and the body stays free of
 // internal detail.
 func TestGenerateMapsErrorCategoriesWithoutLeakingDetails(t *testing.T) {
 	t.Parallel()
@@ -294,7 +294,7 @@ func TestGenerateMapsErrorCategoriesWithoutLeakingDetails(t *testing.T) {
 	}
 }
 
-// TestHTTPAndRPCShareTheSameAdmission covers AC-37: HTTP and gRPC share one
+// TestHTTPAndRPCShareTheSameAdmission checks that HTTP and gRPC share one
 // MaxConcurrentGenerations admission slot.
 func TestHTTPAndRPCShareTheSameAdmission(t *testing.T) {
 	t.Parallel()
@@ -342,7 +342,7 @@ func TestHTTPAndRPCShareTheSameAdmission(t *testing.T) {
 	require.NoError(t, <-rpcDone)
 }
 
-// TestClientCancellationReachesTheHTTPGenerator covers AC-36: cancelling the
+// TestClientCancellationReachesTheHTTPGenerator checks that cancelling the
 // POST is observed by the generation context.
 func TestClientCancellationReachesTheHTTPGenerator(t *testing.T) {
 	t.Parallel()
@@ -385,8 +385,8 @@ func TestClientCancellationReachesTheHTTPGenerator(t *testing.T) {
 	<-done
 }
 
-// TestSecurityRejectsRemoteOriginAndLogsOnlyMetadata covers AC-40: a remote
-// Host or a mismatched Origin is rejected, and the request body does not
+// TestSecurityRejectsRemoteOriginAndLogsOnlyMetadata checks that a remote Host
+// or a mismatched Origin is rejected, and that the request body does not
 // appear in the logs.
 func TestSecurityRejectsRemoteOriginAndLogsOnlyMetadata(t *testing.T) {
 	t.Parallel()
@@ -424,8 +424,8 @@ func TestSecurityRejectsRemoteOriginAndLogsOnlyMetadata(t *testing.T) {
 	assert.Contains(t, logs.String(), "duration")
 }
 
-// TestHealthBecomesUnavailableDuringShutdown covers AC-39: once shutdown
-// begins, GET /healthz returns 503.
+// TestHealthBecomesUnavailableDuringShutdown checks that once shutdown begins,
+// GET /healthz returns 503.
 func TestHealthBecomesUnavailableDuringShutdown(t *testing.T) {
 	t.Parallel()
 

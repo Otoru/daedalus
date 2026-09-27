@@ -14,7 +14,8 @@ const (
 	// centers of the first and last Cells.
 	boundingBoxCellAdjustment = 1.0
 	// primCancellationUpdateInterval limits the interval between Context checks
-	// during best-key updates, as specified by section 11.
+	// during best-key updates. Built-ins recheck Context at phase boundaries and
+	// at least every 256 candidate attempts or Prim key updates.
 	primCancellationUpdateInterval uint64 = 256
 )
 
@@ -128,9 +129,8 @@ func (search *primSearch) updateKeys(fromIndex int) error {
 			},
 			toIndex:       toIndex,
 			squaredWeight: squaredCenterDistance(search.centers[fromIndex], search.centers[toIndex]),
-			// Section 8's "destination Cell" is interpreted as the destination
-			// Room's At anchor, the Cell supplied by the PlacedRoom contract for
-			// canonical tie-breaks.
+			// Equal weights break ties by FromRoomID, then ToRoomID, then this
+			// destination anchor (At) in canonical Y-then-X order.
 			destination: to.At,
 		}
 		if !search.hasKey[toIndex] || primEdgeLess(candidate, search.bestKeys[toIndex]) {
@@ -160,10 +160,9 @@ func (search *primSearch) selectNextEdge() primEdgeCandidate {
 // boundingBoxCenter returns the bounding-box center as the centroid of its
 // Cells, that is, Origin + (dimension-1)/2. The alternative would be the area
 // center, Origin + dimension/2, and the two produce different trees because the
-// offset depends on each Room's dimension. Section 8 resolves the ambiguity by
-// stating that, for 1×1 Rooms, the weight "matches the distance between
-// anchors": that is true only with (dimension-1)/2, which makes the offset zero
-// when the dimension is 1.
+// offset depends on each Room's dimension. A 1×1 Room weighs the same as the
+// distance between anchors only with (dimension-1)/2, which makes the offset
+// zero when the dimension is 1.
 func boundingBoxCenter(room PlacedRoom) roomCenter {
 	width := float64(room.Width)
 	widthSpan := width - boundingBoxCellAdjustment
@@ -180,6 +179,9 @@ func boundingBoxCenter(room PlacedRoom) roomCenter {
 	return roomCenter{x: centerX, y: centerY}
 }
 
+// squaredCenterDistance keeps each product in its own statement. An expression
+// of the form a*b+c may become a fused multiply-add on arm64 and must not on
+// amd64, which would change the weight and every tie that depends on it.
 func squaredCenterDistance(first, second roomCenter) float64 {
 	deltaX := float64(first.x) - float64(second.x)
 	deltaY := float64(first.y) - float64(second.y)
@@ -189,7 +191,7 @@ func squaredCenterDistance(first, second roomCenter) float64 {
 }
 
 func primEdgeLess(first, second primEdgeCandidate) bool {
-	// Section 8 defines Euclidean weight. Because sqrt is strictly increasing for
+	// Edge weight is Euclidean. Because sqrt is strictly increasing for
 	// non-negative values, comparing the square preserves exactly the same order
 	// without introducing another rounding operation into the frozen path.
 	if first.squaredWeight != second.squaredWeight {
@@ -203,9 +205,8 @@ func primEdgeLess(first, second primEdgeCandidate) bool {
 	}
 
 	// In a simple graph, FromRoomID and ToRoomID already identify the edge and
-	// make this third level unreachable in Prim. Section 8 freezes it because the
-	// same comparator is reused to select discarded edges in the cycle phase;
-	// therefore we preserve Cell Y/X order.
+	// make this third level unreachable in Prim. The same comparator selects
+	// discarded edges in the cycle phase, so Cell Y/X order stays.
 	if first.destination.Y != second.destination.Y {
 		return first.destination.Y < second.destination.Y
 	}

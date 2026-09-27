@@ -1,4 +1,6 @@
 // Package logging configures subprocess logs exclusively on stderr.
+// stdout carries exactly one line, the handshake JSON, and a log must
+// never be written there.
 package logging
 
 import (

@@ -36,6 +36,10 @@ const (
 // Version receives the release value via -ldflags "-X main.Version=vX.Y.Z".
 var Version = developmentVersion
 
+// handshake is the only bytes ever written to stdout: one JSON object
+// with transport, addr, pid and version, followed by a newline. The
+// client reads that line before connecting. Logs, flag errors, and
+// diagnostics go to stderr.
 type handshake struct {
 	Transport string `json:"transport"`
 	Addr      string `json:"addr"`
@@ -103,6 +107,8 @@ func newApp(processConfig config.Config, stdout, stderr io.Writer) *fx.App {
 		stderr = io.Discard
 	}
 	return fx.New(
+		// fx logs would be a second stdout write and break the handshake.
+		// The null logger keeps that stream to the single JSON line.
 		fx.WithLogger(func() fxevent.Logger { return fxevent.NopLogger }),
 		fx.Supply(
 			processConfig,
@@ -155,6 +161,9 @@ func newGRPCRuntime(
 }
 
 func (runtime *grpcRuntime) start(context.Context) error {
+	// Failing to bind any requested listener aborts startup completely.
+	// The handshake is written only after every requested listener is
+	// open, so a partial service is never announced.
 	listener, err := transport.Listen(runtime.processConfig)
 	if err != nil {
 		return err
@@ -164,6 +173,8 @@ func (runtime *grpcRuntime) start(context.Context) error {
 	if runtime.processConfig.HTTPDebugEnabled {
 		httpListener, err = net.Listen("tcp", runtime.processConfig.HTTPDebugAddr)
 		if err != nil {
+			// The gRPC listener is already open. Close it before returning
+			// so startup failure leaves no listening socket behind.
 			_ = listener.Close()
 			return fmt.Errorf("open HTTP debug listener: %w", err)
 		}
@@ -223,6 +234,9 @@ func (runtime *grpcRuntime) start(context.Context) error {
 	return nil
 }
 
+// stop marks the service as not serving, stops admission, lets in-flight
+// work observe cancellation, and shuts gRPC down gracefully. When HTTP
+// debug is enabled it is closed in the same lifecycle, alongside gRPC.
 func (runtime *grpcRuntime) stop(ctx context.Context) error {
 	if runtime.grpcServer == nil {
 		return nil

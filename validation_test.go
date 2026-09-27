@@ -41,7 +41,7 @@ func TestSingleCellGridNormalizationKeepsRectangle(t *testing.T) {
 	assert.Equal(t, []roomGeometryCombination{{shape: RoomShapeRectangle, width: 1, height: 1}}, effective.geometryCombinations)
 }
 
-// TestDefaultNormalizationUsesDynamicProfile covers AC-19: a Config with no
+// TestDefaultNormalizationUsesDynamicProfile checks that a Config with no
 // RoomGeometry normalizes to the default dynamic profile, including Circle.
 func TestDefaultNormalizationUsesDynamicProfile(t *testing.T) {
 	effective, err := normalizeConfig(Config{Width: 16, Height: 16})
@@ -197,9 +197,9 @@ func TestValidationRejectsBossWithoutStart(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidConfig)
 }
 
-// TestValidationRejectsInvalidGeometryFields covers AC-26: invalid
-// RoomGeometry fails in normalizeConfig, the step Generate runs before any
-// placement draw or partial Layout.
+// TestValidationRejectsInvalidGeometryFields checks that invalid RoomGeometry
+// fails in normalizeConfig, the step Generate runs before any placement draw
+// or partial Layout.
 func TestValidationRejectsInvalidGeometryFields(t *testing.T) {
 	base := RoomGeometry{
 		MinWidth: 1, MaxWidth: 4, MinHeight: 1, MaxHeight: 4,

@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNewWritesLogsOnlyToProvidedWriter covers the AC-16 clause that logs stay
-// off stdout: the logger writes only to the injected writer.
+// TestNewWritesLogsOnlyToProvidedWriter checks that logs stay off stdout: the
+// logger writes only to the injected writer.
 func TestNewWritesLogsOnlyToProvidedWriter(t *testing.T) {
 	t.Parallel()
 

@@ -46,7 +46,7 @@ func TestStatusErrorMapsSDKCategories(t *testing.T) {
 	}
 }
 
-// TestGenerateRejectsLimitsBeforeInvokingTheGenerator covers AC-35: a Grid or
+// TestGenerateRejectsLimitsBeforeInvokingTheGenerator checks that a Grid or
 // Room limit returns ResourceExhausted before the generator is called.
 func TestGenerateRejectsLimitsBeforeInvokingTheGenerator(t *testing.T) {
 	t.Parallel()
@@ -242,7 +242,7 @@ func TestAdmissionSerializesExcessGenerations(t *testing.T) {
 	assert.Equal(t, int32(1), maximum.Load())
 }
 
-// TestAdmissionHonorsDeadlineBeforeEntry covers AC-36: an expired deadline is
+// TestAdmissionHonorsDeadlineBeforeEntry checks that an expired deadline is
 // reported as DeadlineExceeded and does not disturb the request already admitted.
 func TestAdmissionHonorsDeadlineBeforeEntry(t *testing.T) {
 	t.Parallel()
@@ -300,7 +300,7 @@ func TestGeneratePropagatesClientCancellation(t *testing.T) {
 	assert.Equal(t, codes.Canceled, status.Code(err))
 }
 
-// TestBeginShutdownCancelsWorkAndStopsAdmission covers AC-39: shutdown cancels
+// TestBeginShutdownCancelsWorkAndStopsAdmission checks that shutdown cancels
 // the generation in progress and stops admitting new work.
 func TestBeginShutdownCancelsWorkAndStopsAdmission(t *testing.T) {
 	t.Parallel()

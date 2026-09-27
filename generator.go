@@ -32,8 +32,7 @@ func (generator Generator) Generate(config Config) (Layout, error) {
 // GenerateContext creates a Layout while preserving cancellation and deadline
 // from the supplied Context. The zero Layout is returned on every failure.
 func (generator Generator) GenerateContext(ctx context.Context, config Config) (Layout, error) {
-	// The specification does not define a nil Context. The conservative reading
-	// follows the built-in algorithms and treats it as no cancellation.
+	// A nil Context means no cancellation.
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -261,11 +260,10 @@ func applyGeneratorTopologyOptions(
 		)
 	}
 
-	// Section 6 allows a custom Connector to return up to n-1+ExtraEdgeCount
-	// edges, while section 8.1 requires roles to be computed over a tree. The
-	// conservative interpretation preserves the plugin's creation order and
-	// chooses the first union forest that reaches every Room; cycle-closing edges
-	// already consume the shortcut budget.
+	// A custom Connector may return up to n-1+ExtraEdgeCount edges. Roles are
+	// computed on a tree, before shortcuts. The plugin's creation order is kept:
+	// the first edges that reach every Room form that tree, and edges that close
+	// a cycle already consume the shortcut budget.
 	roleBackbone := connectorSpanningTree(len(rooms), connections)
 	roles, err := assignRoomRoles(ctx, rooms, roleBackbone, effective.roomRoleRequests)
 	if err != nil {

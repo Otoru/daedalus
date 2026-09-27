@@ -12,9 +12,12 @@ type generationBenchmark struct {
 	config Config
 }
 
-// BenchmarkGenerate records the three section 11 loads. It does not cover
-// AC-15: nothing here asserts p95 or p99, and this machine is not the
-// reference hardware of the release SLA.
+// BenchmarkGenerate records the three runtime loads and nothing more. Small is
+// 64×64 with MinDistance 6, MaxAttempts 30 and MaxRooms 128. Typical is 128×128
+// with the same distance and attempts and MaxRooms 256. Maximum v1 is 256×256
+// with MinDistance 1, MaxAttempts 1024, MaxRooms 256, dynamic RoomGeometry, a
+// gap, cycles, roles and density regions. Nothing here asserts p95 or p99, and
+// this machine is not the reference hardware of the release SLA.
 func BenchmarkGenerate(b *testing.B) {
 	for _, benchmark := range generationBenchmarks() {
 		b.Run(benchmark.name, func(b *testing.B) {

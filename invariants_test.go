@@ -9,12 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// layoutInvariantFailures is the single oracle for the section 5.2 Layout
-// invariants. Each diagnostic contains a field path, expected value, and actual
-// value so a regression cannot hide behind a hash comparison.
+// layoutInvariantFailures is the single oracle for a successful Layout: Grid
+// dimensions and Cell count, footprints that match the declared mask and stay
+// inside the Grid without overlap or a MinRoomGap breach, Corridors that stay
+// outside every footprint and connect the Rooms (a tree when there are no extra
+// edges), Doors on the border, and Roles only when they were requested. Each
+// diagnostic contains a field path, expected value, and actual value so a
+// regression cannot hide behind a hash comparison.
 //
 // The helpers below append to the same failure list, in this order. A new
-// check belongs at the end of its section: tests assert on the first path.
+// check belongs at the end of its group: tests assert on the first path.
 func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string {
 	state := &layoutInvariantCheck{
 		effective: effective,
@@ -33,8 +37,8 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 	return state.failures
 }
 
-// layoutInvariantCheck accumulates section 5.2 diagnostics and the indexes
-// later sections need: footprint ownership, corridor cells, and door links.
+// layoutInvariantCheck accumulates Layout diagnostics and the indexes the
+// later checks need: footprint ownership, corridor cells, and door links.
 type layoutInvariantCheck struct {
 	effective effectiveConfig
 	layout    Layout

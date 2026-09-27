@@ -2,11 +2,10 @@ package daedalus
 
 import "errors"
 
-// Sentinel errors for the SDK failure categories (Appendix B of the
-// specification). They define categories, not the concrete representation:
-// the generator and validation return them wrapped with context via fmt.Errorf
-// and %w, and callers must test them exclusively with errors.Is. No failure
-// returns a partial Layout.
+// Sentinel errors name the SDK failure categories. They define categories, not
+// the concrete representation: the generator and validation return them wrapped
+// with context via fmt.Errorf and %w, and callers must test them exclusively
+// with errors.Is. No failure returns a partial Layout.
 //
 // In the gRPC service, the mapping is: ErrInvalidConfig → InvalidArgument,
 // ErrLimitExceeded → ResourceExhausted, ErrNoCompatiblePlant,

@@ -43,8 +43,9 @@ func TestCrossMask(t *testing.T) {
 	assertCellsEqual(t, got, want)
 }
 
-// TestCircleMaskD5AndD7 covers AC-20a: a Circle with odd Width=Height of 5 or
-// 7 is exactly the Cells inside the integer radius.
+// TestCircleMaskD5AndD7 checks that a Circle with odd Width=Height of 5 or 7
+// is exactly the Cells inside the integer radius: with r=(D-1)/2 and centre
+// (r, r), a Cell is occupied when (x-r)²+(y-r)² ≤ r², compared in integers.
 func TestCircleMaskD5AndD7(t *testing.T) {
 	tests := []struct {
 		diameter uint32
@@ -66,9 +67,8 @@ func TestRoomShapeHasCanonicalOrder(t *testing.T) {
 	assert.Equal(t, RoomShape(4), RoomShapeCircle)
 }
 
-// TestMaskIsValidAndConnected covers AC-20a and AC-21 at mask level: every
-// valid Shape, including Circle, is non-empty, free of duplicate Cells and
-// 4-connected.
+// TestMaskIsValidAndConnected checks every valid Shape, including Circle: the
+// mask is non-empty, free of duplicate Cells and 4-connected.
 func TestMaskIsValidAndConnected(t *testing.T) {
 	shapes := []RoomShape{RoomShapeRectangle, RoomShapeL, RoomShapeT, RoomShapeCross, RoomShapeCircle}
 	for _, shape := range shapes {
@@ -103,8 +103,8 @@ func TestMaskOrderAndFirstOffset(t *testing.T) {
 	}
 }
 
-// TestInvalidMaskDimensions covers AC-20a: a Circle whose Width and Height
-// differ, are even, or are below 5 is not a valid mask.
+// TestInvalidMaskDimensions checks that a Circle whose Width and Height differ,
+// are even, or are below 5 is not a valid mask.
 func TestInvalidMaskDimensions(t *testing.T) {
 	invalid := []struct {
 		shape         RoomShape
@@ -165,8 +165,8 @@ func assertCanonicalCellOrder(t *testing.T, cells []Cell) {
 	}
 }
 
-// TestDirectionDeltaMatchesCardinalVectors fixes the specification's normative
-// mapping: North=(0,-1), East=(1,0), South=(0,1), West=(-1,0).
+// TestDirectionDeltaMatchesCardinalVectors fixes the cardinal vectors:
+// North=(0,-1), East=(1,0), South=(0,1), West=(-1,0).
 func TestDirectionDeltaMatchesCardinalVectors(t *testing.T) {
 	cases := []struct {
 		direction Direction

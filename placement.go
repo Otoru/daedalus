@@ -170,10 +170,10 @@ func buildPlacementFromAtInto(
 	width, height uint32,
 	scratch []Cell,
 ) RoomPlacement {
-	// The specification defines this derivation only for valid dimensions. Under
-	// the conservative reading, invalid dimensions preserve the supplied data
-	// and follow the canonical helpers' contract: zero offset and nil mask; the
-	// first validation step rejects the result.
+	// Origin is the anchor minus the first occupied offset of the mask. That
+	// derivation is defined for valid dimensions. Invalid dimensions keep the
+	// supplied width and height, use a zero offset and a nil mask, and the first
+	// validation step rejects the result.
 	firstOffset := RoomShapeFirstOffset(shape, width, height)
 	originX := int64(at.X) - int64(firstOffset.X)
 	originY := int64(at.Y) - int64(firstOffset.Y)
@@ -252,9 +252,10 @@ func placementWithinArea(placement RoomPlacement, maxFootprintCells uint32) bool
 	return uint64(len(placement.Cells)) <= uint64(maxFootprintCells)
 }
 
-// footprintsOverlap and footprintsRespectGap are literal translations of the
-// section 7 rule, comparing every pair. The production path uses the much
-// cheaper occupancy grid; these two remain as the reference oracle in
+// footprintsOverlap reports a shared Cell. footprintsRespectGap requires
+// Chebyshev distance, max(|dx|, |dy|) > MinRoomGap, between every pair of
+// occupied Cells from different Rooms. Both compare every pair. The production
+// path uses the occupancy grid; these two remain the reference oracle in
 // equivalence tests. Do not remove them as apparent dead code: the optimization
 // is verified against them.
 func footprintsOverlap(first, second []Cell) bool {
@@ -290,8 +291,8 @@ func footprintsRespectGap(first, second []Cell, minRoomGap uint32) bool {
 
 func localMinDistance(cell Cell, defaultDistance float64, regions []DensityRegion) float64 {
 	for _, region := range regions {
-		// The convention frozen in F02 is half-open: inclusive Min and exclusive
-		// Max, as stated in DensityRegion's public documentation.
+		// Half-open rectangle: inclusive Min and exclusive Max, the same test
+		// DensityRegion documents.
 		if cell.X >= region.Min.X && cell.X < region.Max.X && cell.Y >= region.Min.Y && cell.Y < region.Max.Y {
 			return region.MinDistance
 		}
@@ -323,10 +324,11 @@ func anchorsRespectDistance(first, second Cell, defaultDistance float64, regions
 	return float64(squaredDistance) >= requiredSquared
 }
 
-// placementAcceptance carries the request-scoped inputs of the section 7
-// acceptance checks. Build it once per request and pass it by value; only the
-// accepted slice header changes between attempts, so the hot loop does not
-// allocate a fresh value.
+// placementAcceptance carries the request-scoped inputs of the acceptance
+// checks: canonical mask, bounds inside the Grid, area at most
+// MaxFootprintCells, anchor distance, no overlap, then MinRoomGap. Build it
+// once per request and pass it by value; only the accepted slice header
+// changes between attempts, so the hot loop does not allocate a fresh value.
 type placementAcceptance struct {
 	gridWidth         uint32
 	gridHeight        uint32
@@ -338,9 +340,9 @@ type placementAcceptance struct {
 	occupancy         *placementOccupancy
 }
 
-// validatePlacementForAcceptance centralizes the normative section 7 order. It
-// only reads rules.accepted; the caller appends after nil, keeping every
-// rejected attempt atomic.
+// validatePlacementForAcceptance checks that order and only reads
+// rules.accepted; the caller appends after nil, keeping every rejected attempt
+// atomic.
 func validatePlacementForAcceptance(candidate RoomPlacement, rules placementAcceptance) error {
 	_, err := validatePlacementAndMaterialize(candidate, rules)
 	return err
@@ -357,9 +359,10 @@ func validatePlacementAndMaterialize(candidate RoomPlacement, rules placementAcc
 	return footprint, nil
 }
 
-// validatePlacementAndMaterializeInto preserves the normative validation order
-// but materializes into the request's private scratch space. On an error after
-// materialization, it returns the scratch so the Poisson loop can reuse it.
+// validatePlacementAndMaterializeInto keeps that same order — mask, bounds,
+// area, anchor distance, overlap, then gap — but materializes into the
+// request's private scratch space. On an error after materialization, it
+// returns the scratch so the Poisson loop can reuse it.
 func validatePlacementAndMaterializeInto(
 	candidate RoomPlacement,
 	rules placementAcceptance,
@@ -379,8 +382,8 @@ func validatePlacementAndMaterializeInto(
 	if !ok {
 		return scratch[:0], errPlacementOutOfBounds
 	}
-	// Without the grid, overlap and gap could not be checked and the normative
-	// sequence would be silently incomplete. Calling with accepted Rooms and no
+	// Without the grid, overlap and gap could not be checked and that order
+	// would be silently incomplete. Calling with accepted Rooms and no
 	// grid is a programming error, not user input.
 	if len(rules.accepted) > 0 && rules.occupancy == nil {
 		panic("occupancy grid is missing with already accepted placements")

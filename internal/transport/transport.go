@@ -22,6 +22,9 @@ type Listener struct {
 }
 
 // Listen opens the configured transport without announcing the process.
+// A bind failure returns an error and leaves nothing for a handshake to
+// advertise. Announcement happens only after every requested listener
+// has bound.
 func Listen(processConfig config.Config) (*Listener, error) {
 	if err := processConfig.Validate(); err != nil {
 		return nil, err

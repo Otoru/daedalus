@@ -8,8 +8,12 @@ import (
 
 var errAdmissionStopped = errors.New("generation admission stopped")
 
-// Admission limits concurrent generations and may be shared by the
-// gRPC and HTTP transports. Each process must create exactly one instance.
+// Admission limits concurrent generations to MaxConcurrentGenerations,
+// which defaults to the number of logical CPUs. gRPC and the HTTP debug
+// server share this one limiter; HTTP does not keep its own queue.
+// Callers beyond the limit wait while their Context is alive. A deadline
+// that expires before a slot is taken returns DeadlineExceeded. Each
+// process creates exactly one instance.
 type Admission struct {
 	tokens    chan struct{}
 	stopped   chan struct{}

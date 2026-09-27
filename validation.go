@@ -7,12 +7,12 @@ import (
 )
 
 const (
-	// Fixed v1 Config defaults and limits, defined in section 5.3.
+	// Fixed v1 Config defaults. CellSize is 1. MinDistance defaults to 6.
 	defaultCellSize    = 1.0
 	defaultMinDistance = 6.0
-	// Section 5.3 MinDistance floor, in Cells. It is an invariant in its own
-	// right and must not be confused with defaultCellSize, which happens to have
-	// the same value but describes a different quantity.
+	// MinDistance floor, in Cells. It is an invariant in its own right and must
+	// not be confused with defaultCellSize, which happens to have the same value
+	// but describes a different quantity.
 	minimumMinDistance       = 1.0
 	defaultMaxAttempts       = 30
 	maximumMaxAttempts       = 1024
@@ -335,10 +335,11 @@ func defaultRoomGeometry(gridWidth, gridHeight uint32) RoomGeometry {
 
 // enumerateGeometryCombinations materializes, in canonical Shape, Width, and
 // Height order, every dimension pair that produces a valid mask within the
-// area. Section 7 requires this ordered list so SampleGeometry draws without
-// map iteration. In the worst permitted case (geometry 1..256 in both
-// dimensions, five shapes), there are about 2.1×10^5 combinations, around
-// 2.5 MB; this is the cost of detecting unsatisfiable geometry before any draw.
+// area. The geometry draw indexes this stable slice instead of iterating a
+// map, which would make the generated Layout depend on Go's map ordering.
+// In the worst permitted case (geometry 1..256 in both dimensions, five
+// shapes), there are about 2.1×10^5 combinations, around 2.5 MB; this is the
+// cost of detecting unsatisfiable geometry before any draw.
 func enumerateGeometryCombinations(geometry RoomGeometry) []roomGeometryCombination {
 	combinations := make([]roomGeometryCombination, 0)
 	for _, shape := range canonicalRoomShapes {
@@ -431,11 +432,10 @@ func validateRoomRoleRequests(requests []RoomRoleRequest, maxRooms uint32) ([]Ro
 	return validated, nil
 }
 
-// validateRoleCount enforces the singular Start and Boss requests from section
-// 8.1 ("it receives RoomID 0", "the farthest unassigned Room") and the v1 rule
-// that a Room has at most one Role. The specification does not state the Count
-// restriction, but any other value would be unsatisfiable; rejecting it here
-// avoids discovering that after RNG consumption.
+// validateRoleCount requires Count 1 for Start and for Boss. Start is a single
+// Room, RoomID 0, and Boss is the single farthest unassigned Room, so any other
+// Count is unsatisfiable. A Room has at most one Role. Rejecting the Count here
+// avoids discovering that after a stream has been consumed.
 func validateRoleCount(role RoomRole, count, maxRooms uint32) error {
 	if role == RoomRoleStart || role == RoomRoleBoss {
 		if count != 1 {
@@ -449,11 +449,10 @@ func validateRoleCount(role RoomRole, count, maxRooms uint32) error {
 	return nil
 }
 
-// validateRoleTotals rejects a Boss request without Start, and a role total
-// above MaxRooms. The total is a conservative rule, not literal in the
-// specification: more roles than the Room limit can never be satisfied, and
-// section 5.3 requires detecting unsatisfiable geometry before allocating or
-// drawing.
+// validateRoleTotals rejects a Boss request without Start, because distance
+// without an origin is undefined, and a role total above MaxRooms. More roles
+// than the Room limit can never be satisfied. Unsatisfiable requests are
+// rejected before allocation or any draw.
 func validateRoleTotals(seen map[RoomRole]struct{}, hasStart bool, assignedRooms uint64, maxRooms uint32) error {
 	if _, hasBoss := seen[RoomRoleBoss]; hasBoss && !hasStart {
 		return fmt.Errorf("%w: Boss requires a Start request", ErrInvalidConfig)

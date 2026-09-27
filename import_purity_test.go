@@ -12,13 +12,12 @@ import (
 	"testing"
 )
 
-// Covers AC-17: the root package imports only the standard library, and a
-// controlled violation is recorded as a failure.
-//
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core
-// independently importable: grpc, protobuf, fx, zap, and generated bindings
-// live outside this package. Analysis uses the AST (go/parser), and each import
-// is resolved with go/build; any import outside GOROOT fails the test.
+// independently importable: the root package imports only the standard library,
+// and a controlled violation is recorded as a failure. grpc, protobuf, fx, zap,
+// and generated bindings live outside this package. Analysis uses the AST
+// (go/parser), and each import is resolved with go/build; any import outside
+// GOROOT fails the test.
 func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
 	directory, files := collectRootProductionFiles(t)
 	if len(files) == 0 {

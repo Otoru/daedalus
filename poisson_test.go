@@ -37,7 +37,7 @@ func TestCanceledPoissonReturnsNoPartialResult(t *testing.T) {
 	assert.Nil(t, placements)
 }
 
-// TestPoissonRespectsLimitAndPlacementInvariants covers AC-09: placement
+// TestPoissonRespectsLimitAndPlacementInvariants checks that placement
 // terminates with at most MaxRooms accepted Rooms.
 func TestPoissonRespectsLimitAndPlacementInvariants(t *testing.T) {
 	const maximumRooms = uint32(20)
@@ -108,7 +108,7 @@ func TestEmptyPoissonRegionsPreserveSequence(t *testing.T) {
 	assert.Equal(t, first, second)
 }
 
-// TestPoissonSameConfigurationReproducesGeometryFieldByField covers AC-19: a
+// TestPoissonSameConfigurationReproducesGeometryFieldByField checks that a
 // Config without RoomGeometry uses the default dynamic profile and, on a Grid
 // large enough, produces an explicit multi-Cell footprint.
 func TestPoissonSameConfigurationReproducesGeometryFieldByField(t *testing.T) {
@@ -128,7 +128,7 @@ func TestPoissonSameConfigurationReproducesGeometryFieldByField(t *testing.T) {
 	assertPlacementInvariants(t, req, first)
 }
 
-// TestPoissonMaxAttemptsChangesActivePointRemoval covers AC-09: MaxAttempts
+// TestPoissonMaxAttemptsChangesActivePointRemoval checks that MaxAttempts
 // bounds how long an active point is sampled before it is removed.
 func TestPoissonMaxAttemptsChangesActivePointRemoval(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
@@ -219,6 +219,12 @@ func TestAccelerationGridReusesNeighbourBuffer(t *testing.T) {
 	assert.Equal(t, accepted[0], nearby[0])
 }
 
+// TestAnnulusSamplingRepeatsRejectionInternally checks the square mapping
+// uniform01()*4r-2r on each axis. A pair outside the annulus is resampled
+// inside the sampler and does not consume one of MaxAttempts. Because
+// offset = r*(4u-2), the ring comparison divides through by r² and does not
+// depend on r, so a density region changes the accepted distance without
+// moving a draw.
 func TestAnnulusSamplingRepeatsRejectionInternally(t *testing.T) {
 	const radius = 4.0
 	stream := newSplitMix64(123)

@@ -123,38 +123,41 @@
 // breaking ties by Y then X. That center is the discrete point (Width-1)/2,
 // (Height-1)/2, compared in doubled integer coordinates so the choice does not
 // depend on floating-point rounding. Later Rooms grow from active anchors. One
-// draw picks the active anchor; each of up to MaxAttempts attempts then draws
-// an offset in the annulus around it, quantizes with floor, and draws a shape
-// and a dimension pair. The candidate is committed only when, in order, the
-// mask is valid, the bounding box lies inside the Grid, the area is within
-// MaxFootprintCells, the anchor is far enough from every accepted anchor, the
-// footprint does not overlap, and every pair of occupied Cells respects
-// MinRoomGap. Acceptance is atomic: a rejected attempt occupies nothing and
-// consumes at most one geometry draw. An anchor that falls outside the Grid
-// consumes none.
+// draw picks the active index once per outer iteration. Each of up to
+// MaxAttempts attempts then draws offsetX and offsetY in the annulus around
+// that anchor and quantizes with floor. Geometry comes from a separate stream
+// and is drawn only after the anchor lands inside the Grid. The candidate is
+// committed only when, in order, the mask is valid, the bounding box lies
+// inside the Grid, the area is within MaxFootprintCells, the anchor is far
+// enough from every accepted anchor, the footprint does not overlap, and every
+// pair of occupied Cells respects MinRoomGap. Acceptance is atomic: a rejected
+// attempt occupies nothing and consumes at most one geometry draw. An anchor
+// that falls outside the Grid consumes no geometry draw.
 //
-// The annulus is uniform by area. Two uniform draws build a point in the
-// square that encloses the ring, and the point is kept only when
-// r^2 <= offsetX^2 + offsetY^2 < 4r^2. The specification does not state how a
-// uniform01 draw maps onto that square. The frozen reading is u*4r-2r on
-// each axis, with uniform01 in [0, 1), which matches the exclusive outer
-// bound. Pairs that fall outside the ring are rejected inside the sampler and
-// do not consume a geometry attempt or a MaxAttempts slot. There is no sine
-// or cosine. Distance checks compare squares of int64 Cell deltas, so they do
-// not call a square root either.
+// The annulus is uniform by area. Each axis is uniform01()*4r-2r, because the
+// square that encloses the ring is [-2r, 2r] and uniform01 lies in [0, 1),
+// which matches the exclusive outer bound. The point is kept only when
+// r^2 <= offsetX^2 + offsetY^2 < 4r^2. Because offset = r*(4u-2), dividing
+// that test through by r^2 makes it independent of r, which is why a
+// DensityRegion can change the accepted distance without moving a single
+// draw. Pairs that fall outside the ring are rejected inside the sampler and
+// do not consume a geometry attempt or a MaxAttempts slot. The multiply and
+// the subtract stay in separate statements, so a fused multiply-add cannot
+// move the candidate between architectures. There is no sine or cosine.
+// Distance checks compare squares of int64 Cell deltas, so they do not call a
+// square root either.
 //
 // Without DensityRegions the required distance is MinDistance everywhere, and
 // the temporary acceleration grid uses the classic 5×5 Bridson neighbourhood.
-// A DensityRegion replaces that distance inside a rectangle. The specification
-// names the two corners and does not say which edges belong to the rectangle.
-// The frozen convention is half-open: Min is inclusive and Max is exclusive,
-// covering X in [Min.X, Max.X) and Y in [Min.Y, Max.Y). Max may therefore
-// equal the Grid dimension, a larger Max is invalid, and a one-Cell region is
-// written Max = Min + (1, 1). Regions do not overlap. An anchor outside every
-// region keeps MinDistance. The distance required between two anchors is the
-// maximum of their two local distances, so a Room sitting on the sparse side
-// of a boundary does not crowd its neighbour. Empty regions are not consulted
-// at all and add no draws; the uniform Poisson path runs unchanged.
+// A DensityRegion replaces that distance inside a half-open rectangle: Min is
+// inclusive and Max is exclusive, covering X in [Min.X, Max.X) and Y in
+// [Min.Y, Max.Y). Max may therefore equal the Grid dimension, a larger Max is
+// invalid, and a one-Cell region is written Max = Min + (1, 1). Regions do
+// not overlap. An anchor outside every region keeps MinDistance. The distance
+// required between two anchors is the maximum of their two local distances, so
+// a Room sitting on the sparse side of a boundary does not crowd its
+// neighbour. Empty regions are not consulted at all and add no draws; the
+// uniform Poisson path runs unchanged.
 //
 // MaxAttempts bounds complete proposals per active point, including those
 // rejected for distance, shape, bounds, or collision. After that many failures
@@ -165,12 +168,12 @@
 //
 // The built-in Connector builds a spanning tree with Prim, starting at
 // RoomID 0. The candidate graph is complete. Edge weight is Euclidean distance
-// between bounding-box centers, even though routes are orthogonal. The
-// specification says that for a 1×1 Room this weight matches the distance
-// between anchors. That sentence picks the center: it is the centroid of the
-// box's Cells, Origin + (dimension-1)/2, not the area center
-// Origin + dimension/2. The two disagree as soon as a dimension is greater
-// than 1, and they produce different trees. Equal weights break ties by
+// between bounding-box centers, even though routes are orthogonal. The center
+// is the centroid of the box's Cells, Origin + (dimension-1)/2, not the area
+// center Origin + dimension/2. A 1×1 Room weighs the same as the distance
+// between anchors only with that offset, which is zero when the dimension is
+// 1. The two formulas disagree as soon as a dimension is greater than 1, and
+// they produce different trees. Equal weights break ties by
 // FromRoomID, then ToRoomID, then the destination Room's anchor in canonical
 // Cell order. Comparing squared distances preserves that order, because the
 // square root is strictly increasing on non-negative values, and it avoids
@@ -204,12 +207,16 @@
 // footprint. It keeps the pair whose route has the fewest Corridor Cells,
 // then breaks ties by the source Door and the destination Door in
 // (At.Y, At.X, Direction), then by the route in lexicographic (Y, X) order.
+// A pair is pruned only when its lower bound is strictly greater than the
+// best cost so far. A bound that equals that cost can still tie and win on
+// the origin-Door tie-break, so greater-or-equal is not a reason to stop.
 // The preferred bend is the configured CorridorOrder, X-then-Y by default; the
 // other bend is the alternative. If both L-routes cross a footprint or leave
 // the Grid, a deterministic breadth-first search runs over free Cells.
-// Neighbours expand North, East, South, West, the queue is FIFO, a Cell is
-// marked when it is inserted, and storage is row-major. There is no map
-// iteration, so the path does not depend on hash order. The same opening is
+// Neighbours expand North, East, South, West. The queue is FIFO. A Cell is
+// marked when it is inserted, not when it is removed, and the parent is the
+// one from first discovery. Storage is row-major. There is no map iteration,
+// so the path does not depend on hash order. The same opening is
 // reused when another Corridor needs the same triple, and CorridorIDs on a
 // shared Cell stay sorted. Door.At need not equal Room.At. Only when no pair
 // has a route does the call fail. The router is not a public Strategy: edge
@@ -261,10 +268,11 @@
 // Five independent SplitMix64 streams are derived from the Seed, each as
 // Mix64 of the Seed xor a frozen salt: PlacementSeed, ConnectorSeed,
 // RoomPlantSeed, RoomGeometrySeed, and CorridorPlantSeed. Consuming one does
-// not advance the others. Placement draws the active index and the two annulus
-// offsets. Geometry draws the shape, by positive integer weights in canonical
-// shape order, and then a dimension pair from that shape's combinations sorted
-// by width then height. Plant draws run only when a catalog is present. Prim,
+// not advance the others. Placement draws the active index once per outer
+// iteration, then offsetX and offsetY on each attempt. Geometry is a separate
+// stream, drawn only after the anchor lands inside the Grid: the shape, by
+// positive integer weights in canonical shape order, and then a dimension pair
+// from that shape's combinations sorted by width then height. Plant draws run only when a catalog is present. Prim,
 // role assignment, and shortcut selection consume nothing, so enabling roles
 // or shortcuts does not shift the placement sequence. uniformInt is
 // inclusive and rejects samples to avoid modulo bias. uniform01 lies in
@@ -272,8 +280,8 @@
 //
 // The generation path does not call sine, cosine, or any other libm
 // trigonometry. Products and sums that affect a candidate, a distance, a
-// weight, or a tie-break are separate statements, with an explicit float64
-// conversion of the intermediate where a fused multiply-add would otherwise
+// weight, a priority, or a tie-break are separate statements, with an explicit
+// float64 conversion of the intermediate where a fused multiply-add would otherwise
 // differ between architectures. Discrete coordinates and squared Cell
 // distances use int64, which covers the v1 Grid limits. What stays frozen is
 // the observable result: masks, dimensions, footprints, door positions,

@@ -18,11 +18,14 @@ const (
 	// uniformAccelerationRange covers the Bridson grid's 5×5 neighbourhood when
 	// no DensityRegions exist.
 	uniformAccelerationRange = 2
-	// densityAccelerationMargin is the section 7 margin for the Bridson grid's
-	// variable range.
+	// densityAccelerationMargin is the extra cell after
+	// ceil(maxLocalDistance / cellSide). With density regions the Bridson cell
+	// side is minLocalDistance/sqrt(2), and the neighbour range on each axis is
+	// ceil(maxLocalDistance/(minLocalDistance/sqrt(2)))+1. Without regions the
+	// classic 5×5 neighbourhood, range 2, is enough.
 	densityAccelerationMargin = 1
-	// bridsonDimensions is the sqrt(2) divisor for a Cell side in two dimensions,
-	// as specified by section 7.
+	// bridsonDimensions is 2, the value under the square root: a Cell is a
+	// square, so the acceleration cell side is distance/sqrt(2).
 	bridsonDimensions = 2.0
 	// cancellationCandidateInterval limits the interval between Context checks
 	// during candidate proposals.
@@ -36,7 +39,10 @@ type poissonDiskRoomsPlacer struct{}
 
 var _ Placer = poissonDiskRoomsPlacer{}
 
-// Place proposes Rooms according to section 7 of the specification.
+// Place proposes Room anchors with a Poisson disk. The first Room is the
+// geometry draw nearest the Grid center. Each later iteration draws one active
+// index, then up to MaxAttempts pairs of annulus offsets, and draws geometry
+// only after an anchor lands inside the Grid.
 func (poissonDiskRoomsPlacer) Place(req PlacementRequest) ([]RoomPlacement, error) {
 	run, err := preparePoissonRun(req)
 	if err != nil {
@@ -290,14 +296,16 @@ func (sampler roomGeometrySampler) sample(stream *splitMix64) (roomGeometryCombi
 	return sampler.combinations[first+int(selected)], true
 }
 
-// sampleUniformAnnulusByRejection translates section 7's
-// SampleUniformAnnulusByRejection. The specification does not state the
-// transformation from uniform01 to the square; the frozen v1 interpretation is
-// u*4r-2r on each axis. uniform01 belongs to [0,1), consistent with the
-// annulus's exclusive outer bound; the inner bound is inclusive. Also under the
-// section 7 interpretation, pairs outside the annulus are rejected internally
-// without consuming a geometry attempt, as indicated by the pseudocode name
-// and the normative list of proposal-rejection reasons.
+// sampleUniformAnnulusByRejection draws a point uniformly in the square that
+// encloses the ring and resamples until it lands in the annulus. Each axis is
+// uniform01()*4r-2r, so the square is [-2r, 2r]. uniform01 is in [0, 1), which
+// matches the exclusive outer bound; the inner bound is inclusive. Because
+// offset = r*(4u-2), the test r^2 <= offsetX^2+offsetY^2 < 4r^2 divides
+// through by r^2 and does not depend on r, so a density region changes the
+// accepted distance without moving a draw. A pair outside the annulus is
+// resampled here and does not consume one of MaxAttempts. The multiply and the
+// subtract stay in separate statements: Go may contract a*b+c into a fused
+// multiply-add on arm64 and must not on amd64.
 func sampleUniformAnnulusByRejection(stream *splitMix64, radius float64) (float64, float64) {
 	squareWidth := float64(radius) * annulusSquareWidthFactor
 	squareHalf := float64(radius) * annulusSquareHalfFactor

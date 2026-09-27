@@ -1,9 +1,10 @@
 package daedalus
 
-// V1 product limits (specification decisions D1 and D2). They apply equally to
-// the SDK and gRPC service: a Config exceeding Width, Height, the Cell product,
-// or MaxRooms fails with ErrLimitExceeded before any allocation, generation,
-// or RNG consumption and is never silently truncated.
+// V1 product limits. MaxCells is 65536, so a Grid stops at 256×256. MaxRooms is
+// 256. MaxFootprintCells is 4096. They apply equally to the SDK and the gRPC
+// service: a Config exceeding Width, Height, the Cell product, MaxRooms, or
+// one Room's footprint fails with ErrLimitExceeded before any allocation,
+// generation, or RNG consumption and is never silently truncated.
 const (
 	// MaxCells is the maximum Width × Height product of a Grid: 65,536 Cells,
 	// corresponding to a Grid of up to 256 × 256.
@@ -61,8 +62,11 @@ type Config struct {
 	// overlapping Cells. The empty default uses uniform MinDistance and disables
 	// biomes.
 	DensityRegions []DensityRegion
-	// RoomGeometry defines Room geometry; nil requests the specification's
-	// default dynamic profile.
+	// RoomGeometry defines Room geometry. Nil requests the default dynamic
+	// profile: width and height from min(3, side) to min(9, side),
+	// MaxFootprintCells 81, MinRoomGap 1, and weights Rectangle 4, L 2, T 2,
+	// Cross 1, Circle 2. A shape with no legal size on the Grid is dropped.
+	// Rectangle, including the 1×1 mask, always remains.
 	RoomGeometry *RoomGeometry
 	// PlantCatalog is the optional asset-metadata catalog, or nil when absent; in
 	// that case PlantID and Tags remain empty in the Layout.
@@ -117,9 +121,8 @@ type RoomRoleRequest struct {
 // half-open: Min is inclusive and Max is exclusive, so the region covers X in
 // [Min.X, Max.X) and Y in [Min.Y, Max.Y). Thus Max may equal the Grid
 // dimension, a strictly greater Max is invalid, and a single-Cell region is
-// written with Max = Min + (1,1). The specification declares only the two
-// fields; this is the normative convention adopted here, and the Placer's
-// membership test uses exactly the same convention.
+// written with Max = Min + (1,1). The Placer's membership test uses exactly
+// this convention.
 type DensityRegion struct {
 	// Min is the inclusive minimum corner of the rectangle, in Cells.
 	Min Cell

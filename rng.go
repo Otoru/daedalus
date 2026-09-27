@@ -19,9 +19,8 @@ const (
 	// connectorStreamSalt separates the connection stream from the other streams.
 	connectorStreamSalt uint64 = 0x1F2E3D4C5B6A7988
 	// roomPlantStreamSalt separates the Room Plant stream from the other streams.
-	// Its value matches splitMixGamma as required by section 10.3, which lists
-	// this constant for RoomPlantSeed. The repetition is intentional and frozen:
-	// replacing it with another value would change every Layout.
+	// Its value is the same odd increment Mix64 adds, 0x9E3779B97F4A7C15. The
+	// repetition is intentional and frozen: replacing it would change every Layout.
 	roomPlantStreamSalt uint64 = 0x9E3779B97F4A7C15
 	// roomGeometryStreamSalt separates the Room geometry stream from the other streams.
 	roomGeometryStreamSalt uint64 = 0x6C8E9CF570932BD5
@@ -52,8 +51,10 @@ type rngStreams struct {
 	corridorPlant splitMix64
 }
 
-// mix64 applies the SplitMix64 finalization frozen by the specification. Uint64
-// arithmetic wraps modulo 2^64 as defined by Go.
+// mix64 is SplitMix64 finalization. Add 0x9E3779B97F4A7C15, then
+// z = (z xor (z>>30)) * 0xBF58476D1CE4E5B9, then
+// z = (z xor (z>>27)) * 0x94D049BB133111EB, and return z xor (z>>31).
+// Uint64 arithmetic wraps modulo 2^64 as defined by Go.
 func mix64(value uint64) uint64 {
 	value += splitMixGamma
 	value = (value ^ (value >> splitMixFirstShift)) * splitMixFirstMultiplier

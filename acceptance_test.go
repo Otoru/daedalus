@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAC01SuccessfulLayoutRespectsAllInvariants covers AC-01. The same
-// invariant checker enforces AC-03 and AC-22 (MinRoomGap and anchor distance),
-// AC-20 (Room.Cells matches the canonical mask) and the footprint clauses of
-// AC-21 (non-empty, unique, inside the Grid, 4-connected, At on the footprint).
-func TestAC01SuccessfulLayoutRespectsAllInvariants(t *testing.T) {
+// TestSuccessfulLayoutRespectsAllInvariants checks a successful Layout against
+// the Layout invariants: MinRoomGap and anchor distance, Room.Cells matching
+// the canonical mask, and a footprint that is non-empty, unique, inside the
+// Grid, 4-connected, with At on the footprint.
+func TestSuccessfulLayoutRespectsAllInvariants(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 101, MaxRooms: 24}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -27,7 +27,7 @@ func TestAC01SuccessfulLayoutRespectsAllInvariants(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-func TestPropertyLayoutsOrSpecificationErrors(t *testing.T) {
+func TestPropertyLayoutsOrKnownGenerationErrors(t *testing.T) {
 	const propertySeed int64 = 0x5eedf10
 	const caseCount = 48
 	random := rand.New(rand.NewSource(propertySeed))
@@ -41,7 +41,7 @@ func TestPropertyLayoutsOrSpecificationErrors(t *testing.T) {
 			layout, err := generator.GenerateContext(context.Background(), config)
 			if err != nil {
 				assert.Equal(t, Layout{}, layout, "property seed=%d", propertySeed)
-				assert.True(t, isSpecifiedGenerationError(err), "property seed=%d: error outside the specification: %v", propertySeed, err)
+				assert.True(t, isKnownGenerationError(err), "property seed=%d: error outside the known generation categories: %v", propertySeed, err)
 				if normalizationErr == nil {
 					assert.NotErrorIs(t, err, ErrInvalidConfig, "property seed=%d", propertySeed)
 					assert.NotErrorIs(t, err, ErrLimitExceeded, "property seed=%d", propertySeed)
@@ -54,9 +54,9 @@ func TestPropertyLayoutsOrSpecificationErrors(t *testing.T) {
 	}
 }
 
-// TestAC04SameConfigAndSeedProduceIdenticalWholeLayout covers AC-04: the same
-// Config and Seed reproduce every field, footprint and order.
-func TestAC04SameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
+// TestSameConfigAndSeedProduceIdenticalWholeLayout checks that the same Config
+// and Seed reproduce every field, footprint and order.
+func TestSameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 40, Seed: 404, MaxRooms: 28, ExtraEdgeCount: 3,
 		RoomRoleRequests: []RoomRoleRequest{
@@ -75,9 +75,9 @@ func TestAC04SameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
 	}
 }
 
-// TestAC05ConcurrentRequestsAreIsolated covers AC-05: interleaved requests
-// each match the isolated baseline, and cancelling one leaves the other intact.
-func TestAC05ConcurrentRequestsAreIsolated(t *testing.T) {
+// TestConcurrentRequestsAreIsolated checks that interleaved requests each match
+// the isolated baseline, and that cancelling one leaves the other intact.
+func TestConcurrentRequestsAreIsolated(t *testing.T) {
 	generator := Generator{}
 	config := Config{Width: 40, Height: 40, Seed: 505, MaxRooms: 24, ExtraEdgeCount: 2}
 	baseline, err := generator.Generate(config)
@@ -139,9 +139,9 @@ func TestAC05ConcurrentRequestsAreIsolated(t *testing.T) {
 	assert.Equal(t, baseline, independentLayout)
 }
 
-// TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor covers AC-07: a 1×1 Grid
-// with MinDistance 6 yields one 1×1 Rectangle at (0,0) and no Corridor or Door.
-func TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor(t *testing.T) {
+// TestSingleCellGridHasOneRoomAndNoCorridorOrDoor checks that a 1×1 Grid with
+// MinDistance 6 yields one 1×1 Rectangle at (0,0) and no Corridor or Door.
+func TestSingleCellGridHasOneRoomAndNoCorridorOrDoor(t *testing.T) {
 	config := Config{Width: 1, Height: 1, Seed: 7, MinDistance: 6}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -159,10 +159,10 @@ func TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-// TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation covers AC-08: a
-// small Grid or a MinDistance above the diagonal keeps the first valid Room
-// near the center and does not truncate its footprint.
-func TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation(t *testing.T) {
+// TestSmallGridAndLargeDistanceTerminateWithoutTruncation checks that a small
+// Grid or a MinDistance above the diagonal keeps the first valid Room near the
+// center and does not truncate its footprint.
+func TestSmallGridAndLargeDistanceTerminateWithoutTruncation(t *testing.T) {
 	first := fixedGeometryConfigForTest(2, 2, 10)
 	first.Seed = 80
 	first.MinDistance = 6
@@ -187,9 +187,9 @@ func TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation(t *testing.T) {
 	}
 }
 
-// TestAC09aDensityRegionsUseGreaterLocalDistance covers AC-09a: each anchor
-// pair respects the greater of the two LocalMinDistance values.
-func TestAC09aDensityRegionsUseGreaterLocalDistance(t *testing.T) {
+// TestDensityRegionsUseGreaterLocalDistance checks that each anchor pair
+// respects the greater of the two LocalMinDistance values.
+func TestDensityRegionsUseGreaterLocalDistance(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 48, Seed: 9091, MinDistance: 3, MaxRooms: 36,
 		DensityRegions: []DensityRegion{
@@ -215,9 +215,9 @@ func TestAC09aDensityRegionsUseGreaterLocalDistance(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-// TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws covers AC-09b: an explicit
-// empty DensityRegions list reproduces the Layout of the omitted list.
-func TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
+// TestEmptyRegionsChangeNeitherLayoutNorDraws checks that an explicit empty
+// DensityRegions list reproduces the Layout of the omitted list.
+func TestEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
 	base := Config{Width: 40, Height: 32, Seed: 9092, MaxRooms: 24}
 	explicitlyEmpty := base
 	explicitlyEmpty.DensityRegions = []DensityRegion{}
@@ -229,10 +229,10 @@ func TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
 	assert.Equal(t, baseline, actual)
 }
 
-// TestAC10CompatibleCatalogPreservesIDsTagsAndDirections covers AC-10: each
-// selected RoomPlant supports the Door directions in use, and IDs and tags
-// match the catalog.
-func TestAC10CompatibleCatalogPreservesIDsTagsAndDirections(t *testing.T) {
+// TestCompatibleCatalogPreservesIDsTagsAndDirections checks that each selected
+// RoomPlant supports the Door directions in use, and that IDs and tags match
+// the catalog.
+func TestCompatibleCatalogPreservesIDsTagsAndDirections(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 1010, MaxRooms: 16}
 	config.PlantCatalog = &PlantCatalog{
 		Rooms:     []RoomPlant{{ID: "hall", Tags: []string{"stone"}, Weight: 1, DoorDirections: allDirectionsForTest()}},
@@ -250,9 +250,9 @@ func TestAC10CompatibleCatalogPreservesIDsTagsAndDirections(t *testing.T) {
 	}
 }
 
-// TestAC11IncompatibleCatalogFailsWithoutPartialLayout covers AC-11: an
-// incompatible catalog returns ErrNoCompatiblePlant and an empty Layout.
-func TestAC11IncompatibleCatalogFailsWithoutPartialLayout(t *testing.T) {
+// TestIncompatibleCatalogFailsWithoutPartialLayout checks that an incompatible
+// catalog returns ErrNoCompatiblePlant and an empty Layout.
+func TestIncompatibleCatalogFailsWithoutPartialLayout(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 1111, MaxRooms: 16}
 	config.PlantCatalog = &PlantCatalog{
 		Rooms:     []RoomPlant{{ID: "north-only", Weight: 1, DoorDirections: []Direction{DirectionNorth}}},
@@ -263,9 +263,9 @@ func TestAC11IncompatibleCatalogFailsWithoutPartialLayout(t *testing.T) {
 	assert.Equal(t, Layout{}, layout)
 }
 
-// TestAC12aShortcutsKeepGraphConnectedAndAddCycles covers AC-12a: extra edges
-// keep the Layout connected and are the first short discarded edges in order.
-func TestAC12aShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
+// TestShortcutsKeepGraphConnectedAndAddCycles checks that extra edges keep the
+// Layout connected and are the shortest discarded edges, taken first.
+func TestShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
 		placedRoomAt(1, 2, 0),
@@ -285,7 +285,7 @@ func TestAC12aShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 		{FromRoomID: 1, ToRoomID: 3},
 		{FromRoomID: 2, ToRoomID: 3},
 		{FromRoomID: 0, ToRoomID: 3},
-	}, connections, "shortcuts must be the first discarded edges in normative order")
+	}, connections, "shortcuts must be the shortest discarded edges first")
 
 	config := Config{Width: 48, Height: 48, Seed: 121, MaxRooms: 24, ExtraEdgeCount: 3}
 	effective, err := normalizeConfig(config)
@@ -297,10 +297,9 @@ func TestAC12aShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-// TestAC12bWithoutShortcutsGraphIsTree covers AC-12b and AC-02: with
-// ExtraEdgeCount=0 the Corridor count is Rooms minus one and every Room stays
-// reachable.
-func TestAC12bWithoutShortcutsGraphIsTree(t *testing.T) {
+// TestWithoutShortcutsGraphIsTree checks that with ExtraEdgeCount=0 the
+// Corridor count is Rooms minus one and every Room stays reachable.
+func TestWithoutShortcutsGraphIsTree(t *testing.T) {
 	config := Config{Width: 48, Height: 48, Seed: 122, MaxRooms: 24, ExtraEdgeCount: 0}
 	effective, err := normalizeConfig(config)
 	require.NoError(t, err)
@@ -310,10 +309,11 @@ func TestAC12bWithoutShortcutsGraphIsTree(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-// TestAC12cRolesRespectMSTAndRequiredTags covers AC-12c: Start is RoomID 0,
-// Boss and Treasure follow MST distance with the frozen tie-break, and the
-// chosen Plant carries the RequiredTags.
-func TestAC12cRolesRespectMSTAndRequiredTags(t *testing.T) {
+// TestRolesRespectMSTAndRequiredTags checks that Start is RoomID 0, that Boss
+// and Treasure take the unassigned Rooms with the greatest weighted MST path
+// from Start (ties break by ascending RoomID), and that the chosen Plant
+// carries the RequiredTags.
+func TestRolesRespectMSTAndRequiredTags(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 48, Seed: 123, MaxRooms: 24,
 		RoomRoleRequests: []RoomRoleRequest{
@@ -352,9 +352,9 @@ func TestAC12cRolesRespectMSTAndRequiredTags(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
-// TestAC12dEmptyRolesChangeNeitherLayoutNorDraws covers AC-12d: an explicit
-// empty role list leaves every Role unset and reproduces the Layout.
-func TestAC12dEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
+// TestEmptyRolesChangeNeitherLayoutNorDraws checks that an explicit empty role
+// list leaves every Role unset and reproduces the Layout.
+func TestEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
 	base := Config{Width: 40, Height: 40, Seed: 124, MaxRooms: 20}
 	explicitlyEmpty := base
 	explicitlyEmpty.RoomRoleRequests = []RoomRoleRequest{}
@@ -368,10 +368,10 @@ func TestAC12dEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
 	}
 }
 
-// TestAC12eDisabledOptionsPreserveRefinedLayout covers AC-12e: zero shortcuts,
-// empty roles and no DensityRegions reproduce the refined Layout for the same
+// TestDisabledOptionsPreserveRefinedLayout checks that zero shortcuts, empty
+// roles and no DensityRegions reproduce the refined Layout for the same
 // normalized RoomGeometry.
-func TestAC12eDisabledOptionsPreserveRefinedLayout(t *testing.T) {
+func TestDisabledOptionsPreserveRefinedLayout(t *testing.T) {
 	geometry := &RoomGeometry{
 		MinWidth: 3, MaxWidth: 7, MinHeight: 3, MaxHeight: 7,
 		MaxFootprintCells: 49, MinRoomGap: 1,
@@ -395,9 +395,9 @@ func TestAC12eDisabledOptionsPreserveRefinedLayout(t *testing.T) {
 	assert.Equal(t, baseline, actual)
 }
 
-// TestAC14LimitsFailBeforeGeneratingLayout covers AC-14: a limit breach
-// returns ErrLimitExceeded before the Placer runs and publishes no Layout.
-func TestAC14LimitsFailBeforeGeneratingLayout(t *testing.T) {
+// TestLimitsFailBeforeGeneratingLayout checks that a limit breach returns
+// ErrLimitExceeded before the Placer runs and publishes no Layout.
+func TestLimitsFailBeforeGeneratingLayout(t *testing.T) {
 	configs := []Config{
 		{Width: 257, Height: 1, Seed: 1},
 		{Width: 1, Height: 257, Seed: 1},
@@ -410,10 +410,10 @@ func TestAC14LimitsFailBeforeGeneratingLayout(t *testing.T) {
 	}
 }
 
-// TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout covers AC-27:
-// when no footprint fits, generation stops without a partial Layout, and a
+// TestNoPositionFitsFailsWithoutTruncatingOrPublishingLayout checks that when
+// no footprint fits, generation stops without a partial Layout, and that a
 // 1×1 Grid still admits a 1×1 Rectangle.
-func TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T) {
+func TestNoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T) {
 	geometry := &RoomGeometry{
 		MinWidth: 6, MaxWidth: 6, MinHeight: 6, MaxHeight: 6,
 		MaxFootprintCells: 36,
@@ -429,10 +429,10 @@ func TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T
 	assert.Equal(t, []Cell{{X: 0, Y: 0}}, minimal.Rooms[0].Cells)
 }
 
-// TestAC29GeneratorRejectsDishonestPlacersAndConnectors covers AC-29: the
-// Generator rejects a mask that is duplicated, disconnected, outside the Grid
-// or incompatible with the Shape, and it publishes no Layout.
-func TestAC29GeneratorRejectsDishonestPlacersAndConnectors(t *testing.T) {
+// TestGeneratorRejectsDishonestPlacersAndConnectors checks that the Generator
+// rejects a mask that is duplicated, disconnected, outside the Grid or
+// incompatible with the Shape, and that it publishes no Layout.
+func TestGeneratorRejectsDishonestPlacersAndConnectors(t *testing.T) {
 	placerModes := []string{"duplicate", "disconnected", "out-of-bounds", "incompatible", "overlapping"}
 	for _, mode := range placerModes {
 		generator := Generator{Placer: lyingAcceptancePlacer{mode: mode}}
@@ -510,7 +510,7 @@ func randomPropertyConfig(random *rand.Rand, caseIndex int) Config {
 	return config
 }
 
-func isSpecifiedGenerationError(err error) bool {
+func isKnownGenerationError(err error) bool {
 	return errors.Is(err, ErrInvalidConfig) ||
 		errors.Is(err, ErrLimitExceeded) ||
 		errors.Is(err, ErrNoCompatiblePlant) ||

@@ -105,8 +105,12 @@ func (server *Server) Wait(ctx context.Context) error {
 	return server.admission.Wait(ctx)
 }
 
-// StatusError converts SDK and Context categories into gRPC status
-// without revealing internal details.
+// StatusError converts SDK and Context categories into gRPC status.
+// Invalid Config is InvalidArgument, a resource limit is
+// ResourceExhausted, a deadline is DeadlineExceeded, and caller
+// cancellation is Canceled. A missing plant, an unroutable edge, and
+// dishonest plugin output are FailedPrecondition. Anything else is
+// Internal. The status text has no stack trace and no sensitive data.
 func StatusError(err error) error {
 	switch {
 	case err == nil:
@@ -120,22 +124,31 @@ func StatusError(err error) error {
 	case errors.Is(err, daedalus.ErrLimitExceeded):
 		return status.Error(codes.ResourceExhausted, "resource limit exceeded")
 	case errors.Is(err, daedalus.ErrNoCompatiblePlant):
-		// The specification fixes HTTP 422, but not the gRPC status. The
-		// conservative reading uses FailedPrecondition, its closest analogue.
+		// HTTP maps a missing compatible plant to 422. gRPC has no 422, so
+		// FailedPrecondition is the closest status: Config was accepted and
+		// generation still cannot produce a Layout.
 		return status.Error(codes.FailedPrecondition, "no compatible plant")
 	case errors.Is(err, daedalus.ErrUnroutableEdge):
-		// Same conservative reading as ErrNoCompatiblePlant.
+		// HTTP maps an unroutable edge to 422, the same category as a
+		// missing plant. gRPC reports FailedPrecondition for the same reason.
 		return status.Error(codes.FailedPrecondition, "edge has no orthogonal route")
 	case errors.Is(err, daedalus.ErrInvalidPlugin):
-		// Unreachable over gRPC, which only ever runs the built-in algorithms;
-		// the mapping exists so the transport agrees with Appendix B rather
-		// than falling through to Internal if that ever changes.
+		// Unreachable over gRPC, which only ever runs the built-in algorithms.
+		// Dishonest output from an injected Placer or Connector — a mask that
+		// does not match the declared shape, a placement outside the Grid, a
+		// collision, or a disconnected graph — is the same caller-facing
+		// category as a missing plant, so it is FailedPrecondition rather
+		// than Internal.
 		return status.Error(codes.FailedPrecondition, "invalid plugin output")
 	default:
 		return status.Error(codes.Internal, "internal failure while generating layout")
 	}
 }
 
+// checkHardLimits rejects a grid, room count, or footprint above the v1
+// maxima before generation allocates. The failure is ErrLimitExceeded,
+// mapped to ResourceExhausted on gRPC and to HTTP 413, and nothing is
+// truncated to fit.
 func checkHardLimits(config *daedalusv1.Config) error {
 	if config.Width > maximumGridDimension || config.Height > maximumGridDimension {
 		return fmt.Errorf("%w: grid dimension exceeds the v1 maximum", daedalus.ErrLimitExceeded)
