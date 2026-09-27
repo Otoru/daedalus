@@ -60,15 +60,15 @@ elements.requestEditor.value = exampleRequest;
 
 elements.loadExample.addEventListener("click", () => {
   elements.requestEditor.value = exampleRequest;
-  setStatus("Exemplo carregado", "success");
+  setStatus("Example loaded", "success");
 });
 
 elements.copyRequest.addEventListener("click", async () => {
-  await copyExactText(elements.requestEditor.value, "Solicitação copiada");
+  await copyExactText(elements.requestEditor.value, "Request copied");
 });
 
 elements.copyResponse.addEventListener("click", async () => {
-  await copyExactText(state.responseText, "Resposta copiada");
+  await copyExactText(state.responseText, "Response copied");
 });
 
 elements.generate.addEventListener("click", generateLayout);
@@ -88,13 +88,13 @@ async function generateLayout() {
   try {
     JSON.parse(requestText);
   } catch {
-    showLocalError("O editor contém JSON inválido. Corrija a sintaxe antes de gerar.");
+    showLocalError("The editor contains invalid JSON. Fix the syntax before generating.");
     return;
   }
 
   setGenerating(true);
   clearError();
-  setStatus("Gerando mapa…", "busy");
+  setStatus("Generating map…", "busy");
 
   try {
     const response = await fetch("/api/v1/generate", {
@@ -104,12 +104,12 @@ async function generateLayout() {
     });
     const responseText = await response.text();
     state.responseText = responseText;
-    elements.responseViewer.textContent = responseText || "O servidor devolveu uma resposta vazia.";
+    elements.responseViewer.textContent = responseText || "The server returned an empty response.";
     elements.copyResponse.disabled = responseText.length === 0;
 
     if (!response.ok) {
       showServerError(response.status, responseText);
-      setStatus(`Falha HTTP ${response.status}`, "failure");
+      setStatus(`HTTP failure ${response.status}`, "failure");
       return;
     }
 
@@ -120,10 +120,10 @@ async function generateLayout() {
     renderLayout();
     const roomCount = Array.isArray(layout.rooms) ? layout.rooms.length : 0;
     const corridorCount = Array.isArray(layout.corridors) ? layout.corridors.length : 0;
-    setStatus(`${roomCount} salas · ${corridorCount} corredores`, "success");
+    setStatus(`${roomCount} rooms · ${corridorCount} corridors`, "success");
   } catch (error) {
-    showLocalError(`Não foi possível concluir a solicitação: ${error.message}`);
-    setStatus("Falha de comunicação", "failure");
+    showLocalError(`Could not complete the request: ${error.message}`);
+    setStatus("Communication failure", "failure");
   } finally {
     setGenerating(false);
   }
@@ -134,15 +134,15 @@ function showServerError(statusCode, responseText) {
   try {
     error = JSON.parse(responseText);
   } catch {
-    showLocalError(`O servidor devolveu HTTP ${statusCode} sem um erro JSON legível.`);
+    showLocalError(`The server returned HTTP ${statusCode} without a readable JSON error.`);
     return;
   }
 
   const lines = [
     `HTTP ${statusCode}`,
-    `Código: ${error.code || "não informado"}`,
-    `Mensagem: ${error.message || "não informada"}`,
-    `Request ID: ${error.request_id || "não informado"}`,
+    `Code: ${error.code || "not provided"}`,
+    `Message: ${error.message || "not provided"}`,
+    `Request ID: ${error.request_id || "not provided"}`,
   ];
   elements.errorBox.textContent = lines.join("\n");
   elements.errorBox.hidden = false;
@@ -161,7 +161,7 @@ function clearError() {
 function setGenerating(isGenerating) {
   elements.generate.disabled = isGenerating;
   elements.loadExample.disabled = isGenerating;
-  elements.generate.querySelector("span").textContent = isGenerating ? "Gerando…" : "Gerar mapa";
+  elements.generate.querySelector("span").textContent = isGenerating ? "Generating…" : "Generate map";
 }
 
 function setStatus(message, style) {
@@ -186,7 +186,7 @@ async function copyExactText(text, successMessage) {
     }
     setStatus(successMessage, "success");
   } catch {
-    setStatus("Não foi possível copiar para a área de transferência", "failure");
+    setStatus("Could not copy to the clipboard", "failure");
   }
 }
 
@@ -255,9 +255,9 @@ function colorForCell(cell) {
 
 function roomColor(roomID) {
   /*
-   * A seção 2.3 exige cor determinística por RoomID, mas não fixa a paleta.
-   * O passo primo distribui IDs vizinhos; a luminosidade alternada mantém
-   * uma segunda diferença visual além da matiz.
+   * Section 2.3 requires a deterministic colour per RoomID, but does not fix the palette.
+   * The prime step spreads neighbouring IDs; alternating lightness keeps
+   * a second visual difference beyond hue.
    */
   const hue = (Number(roomID) * 137 + 211) % 360;
   const lightness = Number(roomID) % 2 === 0 ? 58 : 68;
@@ -423,29 +423,29 @@ function updateInspector(x, y) {
   const corridors = (state.layout.corridors || []).filter((corridor) => corridorIDs.includes(corridor.id));
   const doors = (state.layout.doors || []).filter((door) => door.at && door.at.x === x && door.at.y === y);
   const details = {
-    coordenadas: {x, y},
-    tipo: readableEnum(cell.kind, "CELL_KIND_"),
-    sala: rooms.map((room) => ({
+    coordinates: {x, y},
+    kind: readableEnum(cell.kind, "CELL_KIND_"),
+    rooms: rooms.map((room) => ({
       id: room.id,
-      forma: readableEnum(room.shape, "ROOM_SHAPE_"),
-      origem: room.origin,
-      dimensoes: {largura: room.width, altura: room.height},
-      papel: readableEnum(room.role, "ROOM_ROLE_") || null,
+      shape: readableEnum(room.shape, "ROOM_SHAPE_"),
+      origin: room.origin,
+      dimensions: {width: room.width, height: room.height},
+      role: readableEnum(room.role, "ROOM_ROLE_") || null,
       plant_id: room.plant_id || null,
       tags: room.tags || [],
       door_ids: room.door_ids || [],
     })),
-    corredores: corridors.map((corridor) => ({
+    corridors: corridors.map((corridor) => ({
       id: corridor.id,
-      de_sala: corridor.from_room_id,
-      para_sala: corridor.to_room_id,
+      from_room: corridor.from_room_id,
+      to_room: corridor.to_room_id,
       plant_id: corridor.plant_id || null,
       tags: corridor.tags || [],
     })),
-    portas: doors.map((door) => ({
+    doors: doors.map((door) => ({
       id: door.id,
-      sala_id: door.room_id,
-      direcao: readableEnum(door.direction, "DIRECTION_"),
+      room_id: door.room_id,
+      direction: readableEnum(door.direction, "DIRECTION_"),
       corridor_ids: door.corridor_ids || [],
     })),
   };
