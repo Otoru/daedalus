@@ -347,10 +347,7 @@ func enumerateGeometryCombinations(geometry RoomGeometry) []roomGeometryCombinat
 		}
 		for width := geometry.MinWidth; width <= geometry.MaxWidth; width++ {
 			for height := geometry.MinHeight; height <= geometry.MaxHeight; height++ {
-				if !ValidRoomShapeDimensions(shape, width, height) {
-					continue
-				}
-				if roomShapeCellCount(shape, width, height) > uint64(geometry.MaxFootprintCells) {
+				if !combinationIsAdmissible(shape, width, height, geometry.MaxFootprintCells) {
 					continue
 				}
 				combinations = append(combinations, roomGeometryCombination{shape: shape, width: width, height: height})
@@ -358,6 +355,17 @@ func enumerateGeometryCombinations(geometry RoomGeometry) []roomGeometryCombinat
 		}
 	}
 	return combinations
+}
+
+// combinationIsAdmissible reports whether the dimensions describe a valid
+// canonical mask for the shape and whether the resulting footprint fits within
+// the effective area limit. Both conditions decide the same thing — may this
+// combination ever be drawn — so they belong together.
+func combinationIsAdmissible(shape RoomShape, width, height, maxFootprintCells uint32) bool {
+	if !ValidRoomShapeDimensions(shape, width, height) {
+		return false
+	}
+	return roomShapeCellCount(shape, width, height) <= uint64(maxFootprintCells)
 }
 
 func roomShapeCellCount(shape RoomShape, width, height uint32) uint64 {
