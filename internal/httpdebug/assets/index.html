@@ -3,12 +3,87 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Daedalus Debug</title>
+  <meta name="color-scheme" content="dark">
+  <title>Daedalus — Gerador de mapas</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main>
-    <h1>Daedalus Debug</h1>
-    <p>A interface visual será disponibilizada em uma etapa posterior.</p>
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Interface local de desenvolvimento</p>
+      <h1>Daedalus</h1>
+    </div>
+    <p id="status" class="status" role="status" aria-live="polite">Pronto para gerar</p>
+  </header>
+
+  <main class="workspace">
+    <section class="panel request-panel" aria-labelledby="request-title">
+      <div class="panel-header">
+        <div>
+          <p class="step">01 · Solicitação</p>
+          <h2 id="request-title">ProtoJSON completo</h2>
+        </div>
+        <div class="actions">
+          <button id="load-example" class="button secondary" type="button">Carregar exemplo</button>
+          <button id="copy-request" class="button secondary" type="button">Copiar solicitação</button>
+        </div>
+      </div>
+      <label class="visually-hidden" for="request-editor">Solicitação GenerateRequest em ProtoJSON</label>
+      <textarea id="request-editor" class="code-editor" spellcheck="false" autocomplete="off"></textarea>
+      <button id="generate" class="button primary" type="button">
+        <span>Gerar mapa</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </section>
+
+    <section class="panel map-panel" aria-labelledby="map-title">
+      <div class="panel-header">
+        <div>
+          <p class="step">02 · Layout</p>
+          <h2 id="map-title">Mapa interativo</h2>
+        </div>
+        <div class="zoom-controls">
+          <label for="zoom">Escala</label>
+          <input id="zoom" type="range" min="2" max="24" value="8">
+          <output id="zoom-value" for="zoom">8 px</output>
+          <button id="fit-map" class="button secondary compact" type="button">Ajustar</button>
+        </div>
+      </div>
+
+      <div class="legend" aria-label="Legenda do mapa">
+        <span><i class="swatch empty"></i>Vazia</span>
+        <span><i class="swatch room"></i>Sala</span>
+        <span><i class="swatch corridor"></i>Corredor</span>
+        <span><i class="swatch door"></i>Porta</span>
+      </div>
+
+      <div id="map-viewport" class="map-viewport">
+        <canvas id="map-canvas" class="map-canvas" tabindex="0" aria-label="Mapa gerado. Clique em uma célula para inspecioná-la."></canvas>
+        <p id="map-placeholder" class="map-placeholder">Gere um mapa para visualizar suas células, salas, corredores e portas.</p>
+      </div>
+
+      <aside class="inspector" aria-labelledby="inspector-title">
+        <h3 id="inspector-title">Célula selecionada</h3>
+        <pre id="cell-details">Nenhuma célula selecionada.</pre>
+      </aside>
+    </section>
+
+    <section class="panel response-panel" aria-labelledby="response-title">
+      <div class="panel-header">
+        <div>
+          <p class="step">03 · Resposta</p>
+          <h2 id="response-title">ProtoJSON devolvido</h2>
+        </div>
+        <button id="copy-response" class="button secondary" type="button" disabled>Copiar resposta</button>
+      </div>
+      <div id="error-box" class="error-box" role="alert" hidden></div>
+      <pre id="response-viewer" class="response-viewer">A resposta aparecerá aqui.</pre>
+    </section>
   </main>
+
+  <footer>
+    Execução local e same-origin · Nenhum dado é persistido
+  </footer>
+  <script src="app.js" defer></script>
 </body>
 </html>

@@ -32,6 +32,9 @@ const (
 	MaxHTTPDebugBodyBytes = 1 << 20
 
 	requestIDBytes = 16
+	debugIndexPath = "assets/index.html"
+	debugCSSPath   = "assets/styles.css"
+	debugJSPath    = "assets/app.js"
 	// A especificação não define o status de uma solicitação cujo cliente
 	// cancelou a conexão. A leitura conservadora usa o código convencional
 	// 499, sem transformá-lo em uma falha interna 500.
@@ -127,13 +130,33 @@ func (server *Server) root(writer http.ResponseWriter, request *http.Request) {
 	http.Redirect(writer, request, "/debug/", http.StatusTemporaryRedirect)
 }
 
-func (server *Server) debug(writer http.ResponseWriter, _ *http.Request) {
-	content, err := assets.ReadFile("assets/index.html")
+func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
+	var assetPath string
+	var contentType string
+	switch request.URL.Path {
+	case "/debug/":
+		assetPath = debugIndexPath
+		contentType = "text/html; charset=utf-8"
+	case "/debug/styles.css":
+		assetPath = debugCSSPath
+		contentType = "text/css; charset=utf-8"
+	case "/debug/app.js":
+		assetPath = debugJSPath
+		contentType = "text/javascript; charset=utf-8"
+	default:
+		// A seção 2.3 não define fallback para caminhos de asset
+		// desconhecidos. A leitura conservadora devolve 404 em vez de
+		// mascarar um recurso ausente com o HTML da página.
+		http.NotFound(writer, request)
+		return
+	}
+
+	content, err := assets.ReadFile(assetPath)
 	if err != nil {
 		http.Error(writer, "asset de debug indisponível", http.StatusInternalServerError)
 		return
 	}
-	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Content-Type", contentType)
 	_, _ = writer.Write(content)
 }
 

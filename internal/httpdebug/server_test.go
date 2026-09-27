@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -55,6 +57,66 @@ func TestRotasBasicasServemSaudeRedirecionamentoEAssetLocal(t *testing.T) {
 	assert.NotContains(t, debug.Body.String(), "http://")
 	assert.NotContains(t, debug.Body.String(), "https://")
 	assert.Zero(t, geracoes.Load(), "rotas GET não podem iniciar geração")
+}
+
+func TestAssetsDaInterfaceSaoEmbedadosLocaisESemCORS(t *testing.T) {
+	t.Parallel()
+
+	server := novoServidorTeste(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		return daedalus.Layout{}, nil
+	}, service.NewAdmission(1), zap.NewNop())
+	assetsEsperados := []struct {
+		path        string
+		contentType string
+		conteudo    string
+	}{
+		{path: "/debug/", contentType: "text/html; charset=utf-8", conteudo: `id="request-editor"`},
+		{path: "/debug/styles.css", contentType: "text/css; charset=utf-8", conteudo: ".map-canvas"},
+		{path: "/debug/app.js", contentType: "text/javascript; charset=utf-8", conteudo: "/api/v1/generate"},
+	}
+
+	for _, esperado := range assetsEsperados {
+		esperado := esperado
+		t.Run(esperado.path, func(t *testing.T) {
+			response := executarRequisicao(server.Handler(), http.MethodGet, esperado.path, nil)
+
+			require.Equal(t, http.StatusOK, response.Code)
+			assert.Equal(t, esperado.contentType, response.Header().Get("Content-Type"))
+			assert.Contains(t, response.Body.String(), esperado.conteudo)
+			assert.NotContains(t, response.Body.String(), "http://")
+			assert.NotContains(t, response.Body.String(), "https://")
+			assert.NotRegexp(t, `(?i)(?:src|href)\s*=\s*["']//`, response.Body.String())
+			assert.Empty(t, response.Header().Get("Access-Control-Allow-Origin"))
+		})
+	}
+}
+
+func TestTodosAssetsEmbedadosNaoReferenciamHostExterno(t *testing.T) {
+	t.Parallel()
+
+	var verificados int
+	err := fs.WalkDir(assets, "assets", func(assetPath string, entry fs.DirEntry, walkErr error) error {
+		require.NoError(t, walkErr)
+		if entry.IsDir() {
+			return nil
+		}
+		switch path.Ext(assetPath) {
+		case ".html", ".css", ".js":
+		default:
+			return nil
+		}
+
+		content, err := fs.ReadFile(assets, assetPath)
+		require.NoError(t, err)
+		verificados++
+		assert.NotContains(t, string(content), "http://", assetPath)
+		assert.NotContains(t, string(content), "https://", assetPath)
+		assert.NotRegexp(t, `(?i)["'(]//[[:alnum:].-]+(?:[/:"')]|$)`, string(content), assetPath)
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, verificados, 3, "HTML, CSS e JavaScript devem ser verificados")
 }
 
 func TestGenerateAceitaProtoJSONSnakeCaseEDevolveLayoutDoMesmoGerador(t *testing.T) {
