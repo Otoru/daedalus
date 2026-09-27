@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -128,4 +130,107 @@ func TestHTTPDesabilitadoNaoAbrePortaNemAlteraHandshake(t *testing.T) {
 	require.NoError(t, json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &got))
 	assert.Equal(t, config.TransportTCP, got.Transport)
 	assert.NotEqual(t, httpAddr, got.Addr)
+}
+
+func TestHTTPHabilitadoServeRotasSemAlterarHandshakeGRPC(t *testing.T) {
+	httpAddr := reservarEnderecoTCP(t)
+	processConfig := config.Default()
+	processConfig.HTTPDebugEnabled = true
+	processConfig.HTTPDebugAddr = httpAddr
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newApp(processConfig, &stdout, &stderr)
+
+	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
+	defer cancelStart()
+	require.NoError(t, app.Start(startContext))
+	t.Cleanup(func() {
+		stopContext, cancelStop := context.WithTimeout(context.Background(), testLifecycleTimeout)
+		defer cancelStop()
+		require.NoError(t, app.Stop(stopContext))
+	})
+
+	var got handshake
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &got))
+	assert.Equal(t, config.TransportTCP, got.Transport)
+	assert.NotEqual(t, httpAddr, got.Addr)
+
+	healthResponse, err := http.Get("http://" + httpAddr + "/healthz")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, healthResponse.Body.Close()) }()
+	healthBody, err := io.ReadAll(healthResponse.Body)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, healthResponse.StatusCode)
+	assert.JSONEq(t, `{"status":"ok","version":"`+Version+`"}`, string(healthBody))
+
+	debugResponse, err := http.Get("http://" + httpAddr + "/debug/")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, debugResponse.Body.Close()) }()
+	assert.Equal(t, http.StatusOK, debugResponse.StatusCode)
+	assert.Contains(t, stderr.String(), "servidor HTTP de debug iniciado")
+	assert.Contains(t, stderr.String(), httpAddr)
+}
+
+func TestFalhaDeBindHTTPAbortaStartupSemAnunciarOuManterGRPC(t *testing.T) {
+	occupiedHTTP, err := net.Listen("tcp", config.DefaultTCPAddr)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, occupiedHTTP.Close()) }()
+
+	grpcAddr := reservarEnderecoTCP(t)
+	processConfig := config.Default()
+	processConfig.Addr = grpcAddr
+	processConfig.HTTPDebugEnabled = true
+	processConfig.HTTPDebugAddr = occupiedHTTP.Addr().String()
+	var stdout bytes.Buffer
+	app := newApp(processConfig, &stdout, &bytes.Buffer{})
+
+	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
+	defer cancelStart()
+	err = app.Start(startContext)
+
+	require.Error(t, err)
+	assert.Empty(t, stdout.String())
+	grpcProbe, listenErr := net.Listen("tcp", grpcAddr)
+	require.NoError(t, listenErr, "listener gRPC deve ser fechado após falha do HTTP")
+	require.NoError(t, grpcProbe.Close())
+}
+
+func TestShutdownFechaListenersGRPCEHTTP(t *testing.T) {
+	httpAddr := reservarEnderecoTCP(t)
+	processConfig := config.Default()
+	processConfig.HTTPDebugEnabled = true
+	processConfig.HTTPDebugAddr = httpAddr
+	var stdout bytes.Buffer
+	app := newApp(processConfig, &stdout, &bytes.Buffer{})
+
+	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
+	require.NoError(t, app.Start(startContext))
+	cancelStart()
+	var got handshake
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &got))
+	healthResponse, err := http.Get("http://" + httpAddr + "/healthz")
+	require.NoError(t, err)
+	require.NoError(t, healthResponse.Body.Close())
+	require.Equal(t, http.StatusOK, healthResponse.StatusCode)
+
+	stopContext, cancelStop := context.WithTimeout(context.Background(), testLifecycleTimeout)
+	require.NoError(t, app.Stop(stopContext))
+	cancelStop()
+
+	for _, addr := range []string{got.Addr, httpAddr} {
+		connection, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+		}
+		require.Error(t, err, "listener %s permaneceu aberto", addr)
+	}
+}
+
+func reservarEnderecoTCP(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", config.DefaultTCPAddr)
+	require.NoError(t, err)
+	addr := listener.Addr().String()
+	require.NoError(t, listener.Close())
+	return addr
 }

@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/Otoru/daedalus/internal/config"
 	daedalusv1 "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1"
+	"github.com/Otoru/daedalus/internal/httpdebug"
 	"github.com/Otoru/daedalus/internal/logging"
 	"github.com/Otoru/daedalus/internal/service"
 	"github.com/Otoru/daedalus/internal/transport"
@@ -25,6 +28,9 @@ const (
 	// lifecycleTimeout limita startup e shutdown para que sinais não deixem
 	// o subprocesso bloqueado indefinidamente.
 	lifecycleTimeout = 15 * time.Second
+	// httpReadHeaderTimeout limita clientes locais que enviam cabeçalhos
+	// incompletos sem impor prazo adicional à geração.
+	httpReadHeaderTimeout = 5 * time.Second
 )
 
 // Version recebe o valor de release por -ldflags "-X main.Version=vX.Y.Z".
@@ -46,8 +52,11 @@ type grpcRuntime struct {
 	logger        *zap.Logger
 	stdout        io.Writer
 
-	listener   *transport.Listener
-	grpcServer *grpc.Server
+	listener     *transport.Listener
+	grpcServer   *grpc.Server
+	httpDebug    *httpdebug.Server
+	httpListener net.Listener
+	httpServer   *http.Server
 }
 
 func main() {
@@ -108,6 +117,9 @@ func newApp(processConfig config.Config, stdout, stderr io.Writer) *fx.App {
 			func(admission *service.Admission) *service.Server {
 				return service.New(nil, admission)
 			},
+			func(server *service.Server, logger *zap.Logger) *httpdebug.Server {
+				return httpdebug.New(server, Version, logger)
+			},
 			newGRPCRuntime,
 		),
 		fx.Invoke(func(*grpcRuntime) {}),
@@ -118,12 +130,14 @@ func newGRPCRuntime(
 	lifecycle fx.Lifecycle,
 	processConfig config.Config,
 	server *service.Server,
+	httpDebug *httpdebug.Server,
 	logger *zap.Logger,
 	stdout stdoutWriter,
 ) *grpcRuntime {
 	runtime := &grpcRuntime{
 		processConfig: processConfig,
 		service:       server,
+		httpDebug:     httpDebug,
 		logger:        logger,
 		stdout:        stdout.Writer,
 	}
@@ -140,17 +154,44 @@ func (runtime *grpcRuntime) start(context.Context) error {
 		return err
 	}
 
+	var httpListener net.Listener
+	if runtime.processConfig.HTTPDebugEnabled {
+		httpListener, err = net.Listen("tcp", runtime.processConfig.HTTPDebugAddr)
+		if err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("abrir listener HTTP de debug: %w", err)
+		}
+	}
+
 	grpcServer := grpc.NewServer()
 	daedalusv1.RegisterDaedalusServiceServer(grpcServer, runtime.service)
 
 	runtime.listener = listener
 	runtime.grpcServer = grpcServer
+	runtime.httpListener = httpListener
 	go func() {
 		serveErr := grpcServer.Serve(listener)
 		if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
 			runtime.logger.Error("servidor gRPC encerrou com erro", zap.Error(serveErr))
 		}
 	}()
+	if httpListener != nil {
+		runtime.httpServer = &http.Server{
+			Handler:           runtime.httpDebug.Handler(),
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+		}
+		go func() {
+			serveErr := runtime.httpServer.Serve(httpListener)
+			if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+				runtime.logger.Error("servidor HTTP de debug encerrou com erro", zap.Error(serveErr))
+			}
+		}()
+		runtime.logger.Info(
+			"servidor HTTP de debug iniciado",
+			zap.String("addr", httpListener.Addr().String()),
+			zap.Bool("ativo", true),
+		)
+	}
 
 	wireHandshake := handshake{
 		Transport: listener.Transport(), Addr: listener.ResolvedAddr(),
@@ -159,6 +200,12 @@ func (runtime *grpcRuntime) start(context.Context) error {
 	if err := json.NewEncoder(runtime.stdout).Encode(wireHandshake); err != nil {
 		runtime.service.BeginShutdown()
 		grpcServer.Stop()
+		if runtime.httpServer != nil {
+			_ = runtime.httpServer.Close()
+		}
+		if httpListener != nil {
+			_ = httpListener.Close()
+		}
 		_ = listener.Close()
 		return fmt.Errorf("escrever handshake no stdout: %w", err)
 	}
@@ -176,19 +223,38 @@ func (runtime *grpcRuntime) stop(ctx context.Context) error {
 	}
 	runtime.service.BeginShutdown()
 
-	stopped := make(chan struct{})
+	grpcStopped := make(chan struct{})
 	go func() {
 		runtime.grpcServer.GracefulStop()
-		close(stopped)
+		close(grpcStopped)
 	}()
+	var httpErr error
+	if runtime.httpServer != nil {
+		httpErr = runtime.httpServer.Shutdown(ctx)
+		if httpErr != nil {
+			_ = runtime.httpServer.Close()
+		}
+	}
 	select {
-	case <-stopped:
+	case <-grpcStopped:
 	case <-ctx.Done():
 		runtime.grpcServer.Stop()
-		<-stopped
+		<-grpcStopped
 	}
-	if err := runtime.listener.Close(); err != nil {
-		return err
+	var listenerErr error
+	if runtime.listener != nil {
+		listenerErr = runtime.listener.Close()
+	}
+	if runtime.httpListener != nil && httpErr == nil {
+		if err := runtime.httpListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			httpErr = err
+		}
+	}
+	if httpErr != nil || listenerErr != nil {
+		return errors.Join(httpErr, listenerErr)
+	}
+	if runtime.httpServer != nil {
+		runtime.logger.Info("servidor HTTP de debug encerrado")
 	}
 	runtime.logger.Info("servidor gRPC encerrado")
 	return nil
