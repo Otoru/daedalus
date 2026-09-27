@@ -1,13 +1,35 @@
 # Compiled binaries
 /bin/
 /dist/
+*.exe
+*.dll
+*.so
+*.dylib
 
 # Test and coverage artifacts
 *.test
 *.out
 coverage.*
 
+# Profiles and traces
+*.prof
+*.pprof
+*.trace
+
+# Go workspace and vendoring
+vendor/
+go.work
+go.work.sum
+
+# Sonar
+.scannerwork/
+.sonarlint/
+sonar-project.properties
+
 # Editor / OS
 .DS_Store
 .idea/
 .vscode/
+*.swp
+*~
+Thumbs.db
