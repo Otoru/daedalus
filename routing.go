@@ -3,6 +3,7 @@ package daedalus
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
 const (
@@ -18,6 +19,8 @@ const (
 	routingNoParent int64 = -1
 	// routingCancellationInterval limita o trabalho entre consultas ao Context.
 	routingCancellationInterval uint64 = 256
+	// routingEndpointCellCount inclui a Cell externa final no limite Manhattan.
+	routingEndpointCellCount int64 = 1
 )
 
 type doorOpening struct {
@@ -31,6 +34,12 @@ type routedConnection struct {
 	from  doorOpening
 	to    doorOpening
 	cells []Cell
+}
+
+type openingPairCandidate struct {
+	fromIndex  int
+	toIndex    int
+	lowerBound int64
 }
 
 type routingSearch struct {
@@ -154,40 +163,69 @@ func selectRoutedConnection(
 	order CorridorOrder,
 	search *routingSearch,
 ) (routedConnection, bool, error) {
-	var best routedConnection
-	found := false
-	for _, from := range fromOpenings {
-		for _, to := range toOpenings {
+	pairs := make([]openingPairCandidate, 0, len(fromOpenings)*len(toOpenings))
+	for fromIndex, from := range fromOpenings {
+		for toIndex, to := range toOpenings {
 			if err := search.ctx.Err(); err != nil {
 				return routedConnection{}, false, err
 			}
-			cells, ok, err := routeOpeningPair(from, to, order, search, search.routeScratch)
-			if err != nil {
-				return routedConnection{}, false, err
-			}
-			search.routeScratch = cells[:0]
-			if !ok {
-				continue
-			}
-			candidate := routedConnection{from: from, to: to, cells: cells}
-			if !found || routedConnectionLess(candidate, best) {
-				search.bestScratch = append(search.bestScratch[:0], cells...)
-				candidate.cells = search.bestScratch
-				best = candidate
-				found = true
-				if len(best.cells) == 0 {
-					// Zero é o custo mínimo possível. Como as aberturas são
-					// enumeradas canonicamente, o primeiro par vazio também vence
-					// todos os desempates de Doors da seção 9.1.
-					return best, true, nil
-				}
-			}
+			pairs = append(pairs, openingPairCandidate{
+				fromIndex:  fromIndex,
+				toIndex:    toIndex,
+				lowerBound: openingPairLowerBound(from, to),
+			})
+		}
+	}
+	sort.Slice(pairs, func(first, second int) bool {
+		return pairs[first].lowerBound < pairs[second].lowerBound
+	})
+
+	var best routedConnection
+	found := false
+	for _, pair := range pairs {
+		// A poda precisa ser estrita: um par com limite igual ao custo atual
+		// ainda pode vencer pelos desempates canônicos da seção 9.1.
+		if found && !openingPairCanBeatBest(pair.lowerBound, len(best.cells)) {
+			break
+		}
+		if err := search.ctx.Err(); err != nil {
+			return routedConnection{}, false, err
+		}
+		from := fromOpenings[pair.fromIndex]
+		to := toOpenings[pair.toIndex]
+		cells, ok, err := routeOpeningPair(from, to, order, search, search.routeScratch)
+		if err != nil {
+			return routedConnection{}, false, err
+		}
+		search.routeScratch = cells[:0]
+		if !ok {
+			continue
+		}
+		candidate := routedConnection{from: from, to: to, cells: cells}
+		if !found || routedConnectionLess(candidate, best) {
+			search.bestScratch = append(search.bestScratch[:0], cells...)
+			candidate.cells = search.bestScratch
+			best = candidate
+			found = true
 		}
 	}
 	if found {
 		best.cells = append([]Cell(nil), best.cells...)
 	}
 	return best, found, nil
+}
+
+func openingPairLowerBound(from, to doorOpening) int64 {
+	if openingsFaceEachOther(from, to) {
+		return 0
+	}
+	distanceX := absInt64(int64(from.outside.X) - int64(to.outside.X))
+	distanceY := absInt64(int64(from.outside.Y) - int64(to.outside.Y))
+	return distanceX + distanceY + routingEndpointCellCount
+}
+
+func openingPairCanBeatBest(lowerBound int64, bestCost int) bool {
+	return lowerBound <= int64(bestCost)
 }
 
 func routeOpeningPair(

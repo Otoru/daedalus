@@ -190,6 +190,45 @@ func TestRoomsAdjacentesQueNãoSeEncaramNãoProduzemCorridorVazio(t *testing.T) 
 	assert.Equal(t, []Cell{{X: 1, Y: 0}, {X: 2, Y: 0}}, route)
 }
 
+func TestLimiteInferiorDoParDeAberturasContaCellsExternas(t *testing.T) {
+	tests := []struct {
+		name string
+		from doorOpening
+		to   doorOpening
+		want int64
+	}{
+		{
+			name: "aberturas que se encaram",
+			from: doorOpening{at: Cell{X: 1, Y: 1}, direction: DirectionEast, outside: Cell{X: 2, Y: 1}},
+			to:   doorOpening{at: Cell{X: 2, Y: 1}, direction: DirectionWest, outside: Cell{X: 1, Y: 1}},
+			want: 0,
+		},
+		{
+			name: "mesma Cell externa",
+			from: doorOpening{outside: Cell{X: 3, Y: 4}},
+			to:   doorOpening{outside: Cell{X: 3, Y: 4}},
+			want: 1,
+		},
+		{
+			name: "distância Manhattan inclui ambas as extremidades",
+			from: doorOpening{outside: Cell{X: 1, Y: 2}},
+			to:   doorOpening{outside: Cell{X: 4, Y: 6}},
+			want: 8,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, openingPairLowerBound(test.from, test.to))
+		})
+	}
+}
+
+func TestPodaMantémParQueAindaPodeEmpatarNoCusto(t *testing.T) {
+	assert.True(t, openingPairCanBeatBest(7, 7))
+	assert.False(t, openingPairCanBeatBest(8, 7))
+}
+
 func TestDoorsDeFormasNãoRetangularesSaemDeCellsDeBorda(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -335,37 +374,36 @@ func placedShape(t testing.TB, id RoomID, shape RoomShape, origin Cell, width, h
 }
 
 func BenchmarkRoteamento256Rooms(b *testing.B) {
-	const (
-		roomsPerAxis = 16
-		roomSpacing  = 16
-		gridSize     = 256
-	)
-	rooms := make([]PlacedRoom, 0, roomsPerAxis*roomsPerAxis)
-	for row := 0; row < roomsPerAxis; row++ {
-		for columnOffset := 0; columnOffset < roomsPerAxis; columnOffset++ {
-			column := columnOffset
-			if row%2 != 0 {
-				column = roomsPerAxis - 1 - columnOffset
-			}
-			origin := Cell{X: int32(1 + column*roomSpacing), Y: int32(1 + row*roomSpacing)}
-			rooms = append(rooms, placedRectangle(b, RoomID(len(rooms)), origin, 1, 1))
+	config := Config{
+		Width: 256, Height: 256, Seed: 17,
+		MinDistance: 6, MaxAttempts: 30, MaxRooms: 256,
+	}
+	layout, err := (Generator{}).Generate(config)
+	require.NoError(b, err)
+	require.Len(b, layout.Rooms, 256)
+
+	rooms := make([]PlacedRoom, len(layout.Rooms))
+	for roomIndex, room := range layout.Rooms {
+		rooms[roomIndex] = PlacedRoom{
+			ID: room.ID, At: room.At, Shape: room.Shape, Origin: room.Origin,
+			Width: room.Width, Height: room.Height, Cells: room.Cells,
 		}
 	}
-	connections := make([]Connection, 0, len(rooms)-1)
-	for roomIndex := 1; roomIndex < len(rooms); roomIndex++ {
+	connections := make([]Connection, 0, len(layout.Corridors))
+	for _, corridor := range layout.Corridors {
 		connections = append(connections, Connection{
-			FromRoomID: RoomID(roomIndex - 1), ToRoomID: RoomID(roomIndex),
+			FromRoomID: corridor.FromRoomID, ToRoomID: corridor.ToRoomID,
 		})
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for iteration := 0; iteration < b.N; iteration++ {
-		corridors, doors, err := routeCorridors(
-			context.Background(), gridSize, gridSize, CorridorOrderXThenY, rooms, connections,
+		corridors, doors, routeErr := routeCorridors(
+			context.Background(), config.Width, config.Height, config.CorridorOrder, rooms, connections,
 		)
-		if err != nil || len(corridors) != len(connections) || len(doors) == 0 {
-			b.Fatalf("roteamento 256 Rooms inválido: corridors=%d doors=%d err=%v", len(corridors), len(doors), err)
+		if routeErr != nil || len(corridors) != len(connections) || len(doors) == 0 {
+			b.Fatalf("roteamento 256 Rooms inválido: corridors=%d doors=%d err=%v", len(corridors), len(doors), routeErr)
 		}
 	}
 }
