@@ -43,18 +43,35 @@ const elements = {
   viewport: document.querySelector("#map-viewport"),
   canvas: document.querySelector("#map-canvas"),
   placeholder: document.querySelector("#map-placeholder"),
+  inspector: document.querySelector("#cell-inspector"),
   cellDetails: document.querySelector("#cell-details"),
   errorBox: document.querySelector("#error-box"),
   responseViewer: document.querySelector("#response-viewer"),
   copyResponse: document.querySelector("#copy-response"),
+  requestTrigger: document.querySelector("#request-trigger"),
+  responseTrigger: document.querySelector("#response-trigger"),
+  requestPane: document.querySelector("#request-pane"),
+  responsePane: document.querySelector("#response-pane"),
+  drawer: document.querySelector("#json-drawer"),
 };
 
 const state = {
   layout: null,
   responseText: "",
   selectedCell: null,
+  origin: {x: 0, y: 0},
   scale: Number(elements.zoom.value),
+  fitted: true,
+  openDrawer: null,
 };
+
+const drawerPanes = {
+  request: {trigger: elements.requestTrigger, pane: elements.requestPane},
+  response: {trigger: elements.responseTrigger, pane: elements.responsePane},
+};
+
+let viewportSyncTimer = 0;
+let lastViewport = {width: 0, height: 0, dpr: 0};
 
 elements.requestEditor.value = exampleRequest;
 
@@ -74,6 +91,7 @@ elements.copyResponse.addEventListener("click", async () => {
 elements.generate.addEventListener("click", generateLayout);
 
 elements.zoom.addEventListener("input", () => {
+  state.fitted = false;
   state.scale = Number(elements.zoom.value);
   updateZoomLabel();
   renderLayout();
@@ -82,6 +100,16 @@ elements.zoom.addEventListener("input", () => {
 elements.fitMap.addEventListener("click", fitMap);
 elements.canvas.addEventListener("click", selectCellFromPointer);
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
+elements.requestTrigger.addEventListener("click", () => toggleDrawer("request"));
+elements.responseTrigger.addEventListener("click", () => toggleDrawer("response"));
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !state.openDrawer) {
+    return;
+  }
+  event.preventDefault();
+  closeDrawer();
+});
 
 async function generateLayout() {
   const requestText = elements.requestEditor.value;
@@ -89,6 +117,7 @@ async function generateLayout() {
     JSON.parse(requestText);
   } catch {
     showLocalError("The editor contains invalid JSON. Fix the syntax before generating.");
+    setStatus("Invalid JSON", "failure");
     return;
   }
 
@@ -116,8 +145,8 @@ async function generateLayout() {
     const layout = JSON.parse(responseText);
     state.layout = layout;
     state.selectedCell = null;
+    clearInspector();
     fitMap();
-    renderLayout();
     const roomCount = Array.isArray(layout.rooms) ? layout.rooms.length : 0;
     const corridorCount = Array.isArray(layout.corridors) ? layout.corridors.length : 0;
     setStatus(`${roomCount} rooms · ${corridorCount} corridors`, "success");
@@ -146,11 +175,13 @@ function showServerError(statusCode, responseText) {
   ];
   elements.errorBox.textContent = lines.join("\n");
   elements.errorBox.hidden = false;
+  openDrawer("response");
 }
 
 function showLocalError(message) {
   elements.errorBox.textContent = message;
   elements.errorBox.hidden = false;
+  openDrawer("response");
 }
 
 function clearError() {
@@ -182,17 +213,73 @@ async function copyExactText(text, successMessage) {
   }
 }
 
+function toggleDrawer(name) {
+  if (state.openDrawer === name) {
+    closeDrawer();
+    return;
+  }
+  openDrawer(name);
+}
+
+function openDrawer(name) {
+  state.openDrawer = name;
+  elements.drawer.hidden = false;
+  Object.entries(drawerPanes).forEach(([key, entry]) => {
+    const open = key === name;
+    entry.pane.hidden = !open;
+    entry.trigger.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  if (name === "request") {
+    elements.requestEditor.focus();
+    elements.requestEditor.setSelectionRange(0, 0);
+    elements.requestEditor.scrollTop = 0;
+    return;
+  }
+  if (!elements.copyResponse.disabled) {
+    elements.copyResponse.focus();
+    return;
+  }
+  elements.responsePane.focus();
+}
+
+function closeDrawer() {
+  const trigger = state.openDrawer ? drawerPanes[state.openDrawer].trigger : null;
+  state.openDrawer = null;
+  elements.drawer.hidden = true;
+  Object.values(drawerPanes).forEach((entry) => {
+    entry.pane.hidden = true;
+    entry.trigger.setAttribute("aria-expanded", "false");
+  });
+  if (trigger) {
+    trigger.focus();
+  }
+}
+
 function fitMap() {
   if (!state.layout?.grid) {
     return;
   }
-  const grid = state.layout.grid;
-  const horizontalScale = Math.floor((elements.viewport.clientWidth - 2) / grid.width);
-  const verticalScale = Math.floor((elements.viewport.clientHeight - 2) / grid.height);
+  state.fitted = true;
+  applyFitScale();
+  renderLayout();
+}
+
+function applyFitScale() {
+  const grid = state.layout?.grid;
+  const width = elements.viewport.clientWidth;
+  const height = elements.viewport.clientHeight;
+  if (!grid?.width || !grid?.height || width < 1 || height < 1) {
+    return;
+  }
+  // Fit is the largest scale that keeps every cell of the grid inside the
+  // current viewport. Recompute it from that box whenever the viewport changes
+  // while the map is fitted, so a drawer or window resize does not leave a
+  // stale zoom.
+  const horizontalScale = Math.floor(width / grid.width);
+  const verticalScale = Math.floor(height / grid.height);
   state.scale = clamp(Math.min(horizontalScale, verticalScale), 2, 24);
   elements.zoom.value = String(state.scale);
   updateZoomLabel();
-  renderLayout();
 }
 
 function updateZoomLabel() {
@@ -208,15 +295,32 @@ function renderLayout() {
   const grid = state.layout.grid;
   const scale = state.scale;
   const canvas = elements.canvas;
-  canvas.width = grid.width * scale;
-  canvas.height = grid.height * scale;
+  const contentWidth = grid.width * scale;
+  const contentHeight = grid.height * scale;
+  const cssWidth = Math.max(elements.viewport.clientWidth, contentWidth);
+  const cssHeight = Math.max(elements.viewport.clientHeight, contentHeight);
+  state.origin = {
+    x: Math.floor((cssWidth - contentWidth) / 2),
+    y: Math.floor((cssHeight - contentHeight) / 2),
+  };
+  const dpr = window.devicePixelRatio || 1;
+  // A canvas does not reflow with its container. Size the backing store from
+  // the CSS box and the device pixel ratio, then redraw, or the picture
+  // stretches when the drawer or the window changes the map.
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  canvas.width = Math.max(1, Math.round(cssWidth * dpr));
+  canvas.height = Math.max(1, Math.round(cssHeight * dpr));
   canvas.classList.add("visible");
   elements.placeholder.hidden = true;
 
   const context = canvas.getContext("2d");
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
   context.imageSmoothingEnabled = false;
-  context.fillStyle = "#182431";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = cellColors.empty;
+  context.fillRect(0, 0, cssWidth, cssHeight);
+  context.save();
+  context.translate(state.origin.x, state.origin.y);
 
   const cells = Array.isArray(grid.cells) ? grid.cells : [];
   cells.forEach((cell, index) => {
@@ -233,27 +337,34 @@ function renderLayout() {
   drawDoors(context, scale);
   drawGrid(context, grid.width, grid.height, scale);
   drawSelection(context, scale);
+  context.restore();
 }
+
+const cellColors = {
+  empty: "hsl(210 8% 13%)",
+  corridor: "hsl(40 14% 30%)",
+  corridorRoute: "hsl(40 12% 18%)",
+  door: "hsl(16 14% 78%)",
+  doorMark: "hsl(16 8% 24%)",
+};
 
 function colorForCell(cell) {
   if (cell.kind === "CELL_KIND_ROOM") {
     return roomColor(cell.room_id || 0);
   }
   if (cell.kind === "CELL_KIND_CORRIDOR") {
-    return "#f3c95e";
+    return cellColors.corridor;
   }
-  return "#182431";
+  return cellColors.empty;
 }
 
 function roomColor(roomID) {
-  /*
-   * Section 2.3 requires a deterministic colour per RoomID, but does not fix the palette.
-   * The prime step spreads neighbouring IDs; alternating lightness keeps
-   * a second visual difference beyond hue.
-   */
+  // Neighbouring RoomIDs take a prime hue step and alternate lightness, so adjacent
+  // Rooms stay separable by hue and by value. Saturation stays low so a Layout
+  // with many Rooms does not read as confetti.
   const hue = (Number(roomID) * 137 + 211) % 360;
-  const lightness = Number(roomID) % 2 === 0 ? 58 : 68;
-  return `hsl(${hue} 55% ${lightness}%)`;
+  const lightness = Number(roomID) % 2 === 0 ? 50 : 63;
+  return `hsl(${hue} 16% ${lightness}%)`;
 }
 
 function drawRoomBoundaries(context, scale) {
@@ -277,7 +388,7 @@ function drawRoomBoundaries(context, scale) {
 function drawCorridorRoutes(context, scale) {
   const corridors = Array.isArray(state.layout.corridors) ? state.layout.corridors : [];
   context.save();
-  context.strokeStyle = "#68470b";
+  context.strokeStyle = cellColors.corridorRoute;
   context.lineCap = "square";
   context.lineJoin = "miter";
   context.lineWidth = Math.max(1, scale * 0.22);
@@ -307,8 +418,8 @@ function drawDoors(context, scale) {
     const centerY = (door.at.y + 0.5) * scale;
     const direction = directionVector(door.direction);
     const radius = Math.max(1.5, scale * 0.28);
-    context.fillStyle = "#ff6f61";
-    context.strokeStyle = "#2c0704";
+    context.fillStyle = cellColors.door;
+    context.strokeStyle = cellColors.doorMark;
     context.lineWidth = Math.max(1, scale * 0.1);
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
@@ -376,8 +487,8 @@ function selectCellFromPointer(event) {
     return;
   }
   const bounds = elements.canvas.getBoundingClientRect();
-  const x = Math.floor((event.clientX - bounds.left) * elements.canvas.width / bounds.width / state.scale);
-  const y = Math.floor((event.clientY - bounds.top) * elements.canvas.height / bounds.height / state.scale);
+  const x = Math.floor((event.clientX - bounds.left - state.origin.x) / state.scale);
+  const y = Math.floor((event.clientY - bounds.top - state.origin.y) / state.scale);
   selectCell(x, y);
 }
 
@@ -404,6 +515,11 @@ function selectCell(x, y) {
   state.selectedCell = {x, y};
   updateInspector(x, y);
   renderLayout();
+}
+
+function clearInspector() {
+  elements.inspector.hidden = true;
+  elements.cellDetails.textContent = "No cell selected.";
 }
 
 function updateInspector(x, y) {
@@ -442,6 +558,7 @@ function updateInspector(x, y) {
     })),
   };
   elements.cellDetails.textContent = JSON.stringify(details, null, 2);
+  elements.inspector.hidden = false;
 }
 
 function readableEnum(value, prefix) {
@@ -452,4 +569,36 @@ function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function scheduleViewportSync() {
+  window.clearTimeout(viewportSyncTimer);
+  viewportSyncTimer = window.setTimeout(syncViewportToContainer, 80);
+}
+
+function syncViewportToContainer() {
+  const width = elements.viewport.clientWidth;
+  const height = elements.viewport.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  if (width < 1 || height < 1) {
+    return;
+  }
+  if (width === lastViewport.width && height === lastViewport.height && dpr === lastViewport.dpr) {
+    return;
+  }
+  lastViewport = {width, height, dpr};
+  if (!state.layout?.grid) {
+    return;
+  }
+  if (state.fitted) {
+    applyFitScale();
+  }
+  renderLayout();
+}
+
 updateZoomLabel();
+
+if (typeof ResizeObserver === "function") {
+  const viewportObserver = new ResizeObserver(() => {
+    scheduleViewportSync();
+  });
+  viewportObserver.observe(elements.viewport);
+}
