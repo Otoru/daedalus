@@ -1,0 +1,43 @@
+# Contributing
+
+## Tooling
+
+- Go 1.25 or newer, as declared in `go.mod`.
+- [`buf`](https://buf.build/docs/installation) on `PATH` or in `GOBIN`, for the protobuf targets.
+- `golangci-lint` 2.14.0 or newer — the version CI pins. An older linter misses findings that fail the build.
+
+## Make targets
+
+- `make generate` runs `buf generate`. The generated bindings under `internal/gen` are committed, and CI fails if regenerating them produces a diff.
+- `make lint` runs `buf lint` and `golangci-lint`.
+- `make test` runs `go test ./...`.
+- `make bench` runs `BenchmarkGenerate` for the three loads, with `-benchmem`.
+- `make build` writes `bin/daedalus` and stamps `main.Version` from `git describe`.
+- `make build-all` cross-compiles `linux/amd64`, `darwin/arm64` and `windows/amd64`.
+
+## Frozen output
+
+The same effective `Config` and `Seed` must reproduce a `Layout` bit for bit for the whole v1 major, in the SDK and over gRPC, on amd64 and arm64. `testdata/golden` holds the fixtures and `TestFrozenGoldenLayouts` compares each `Layout` to its fixture field by field.
+
+Check the fixtures in place:
+
+```
+go test ./ -run '^TestFrozenGoldenLayouts$' -count=1
+```
+
+Regenerating them is deliberately **not** a Make target. It rewrites the v1 fixtures, which is a major-version decision, not a way to make a red test go green:
+
+```
+go test ./ -run '^TestFrozenGoldenLayouts$' -update -count=1
+```
+
+If a change makes the goldens fail, the question is whether the change was meant to alter observable output. If it was not, the change is wrong. If it was, it needs a new major version or a new algorithm id.
+
+Two traps the code guards against, worth knowing before touching the hot path:
+
+- products and sums that feed a candidate, a distance, a weight, a priority or a tie-break stay in separate statements, because Go may contract `a*b+c` into a fused multiply-add on arm64 and not on amd64;
+- the generation path calls no trigonometry.
+
+## Import purity
+
+The root package imports **only** the standard library, and `TestRootPackageImportsOnlyStandardLibrary` parses its AST to enforce it. gRPC, protobuf, fx, zap and the generated bindings belong in `cmd/daedalus` and `internal/`. A dependency added to the root package fails the suite, by design.
