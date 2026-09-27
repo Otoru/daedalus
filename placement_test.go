@@ -8,6 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAnchorDerivationReconstructsCanonicalMasks covers AC-20: for every
+// Shape, the materialized Cells are exactly the canonical mask of the
+// declared bounds.
 func TestAnchorDerivationReconstructsCanonicalMasks(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -140,6 +143,8 @@ func TestPlacementValidationStopsAtFirstViolatedRule(t *testing.T) {
 	assert.ErrorIs(t, err, errPlacementInvalidMask)
 }
 
+// TestPlacementAreaRespectsEffectiveLimit covers the area clause of AC-21:
+// a footprint larger than the effective limit is rejected.
 func TestPlacementAreaRespectsEffectiveLimit(t *testing.T) {
 	placement := buildPlacementFromAt(Cell{X: 0, Y: 0}, RoomShapeRectangle, 2, 2)
 

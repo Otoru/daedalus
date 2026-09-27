@@ -43,6 +43,8 @@ func TestCrossMask(t *testing.T) {
 	assertCellsEqual(t, got, want)
 }
 
+// TestCircleMaskD5AndD7 covers AC-20a: a Circle with odd Width=Height of 5 or
+// 7 is exactly the Cells inside the integer radius.
 func TestCircleMaskD5AndD7(t *testing.T) {
 	tests := []struct {
 		diameter uint32
@@ -64,6 +66,9 @@ func TestRoomShapeHasCanonicalOrder(t *testing.T) {
 	assert.Equal(t, RoomShape(4), RoomShapeCircle)
 }
 
+// TestMaskIsValidAndConnected covers AC-20a and AC-21 at mask level: every
+// valid Shape, including Circle, is non-empty, free of duplicate Cells and
+// 4-connected.
 func TestMaskIsValidAndConnected(t *testing.T) {
 	shapes := []RoomShape{RoomShapeRectangle, RoomShapeL, RoomShapeT, RoomShapeCross, RoomShapeCircle}
 	for _, shape := range shapes {
@@ -98,6 +103,8 @@ func TestMaskOrderAndFirstOffset(t *testing.T) {
 	}
 }
 
+// TestInvalidMaskDimensions covers AC-20a: a Circle whose Width and Height
+// differ, are even, or are below 5 is not a valid mask.
 func TestInvalidMaskDimensions(t *testing.T) {
 	invalid := []struct {
 		shape         RoomShape

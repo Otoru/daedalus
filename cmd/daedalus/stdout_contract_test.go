@@ -13,8 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBinaryEmitsExactlyOneLineOnRealStdout runs the actual subprocess,
-// and not an fx composition with an injected writer.
+// TestBinaryEmitsExactlyOneLineOnRealStdout covers AC-16 on the real process
+// stdout: exactly one handshake line, so logs cannot land there.
+//
+// It runs the actual subprocess, and not an fx composition with an injected
+// writer.
 //
 // The other tests in this package pass a bytes.Buffer to newApp and prove
 // that *that* writer receives a single line. This does not cover the contract

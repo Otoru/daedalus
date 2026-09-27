@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParseAppliesProcessDefaults covers AC-31: HTTP debug is off unless
+// requested, and the default address is 127.0.0.1:8090.
 func TestParseAppliesProcessDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -50,6 +52,8 @@ func TestParseRejectsNonPositiveConcurrency(t *testing.T) {
 	assert.Contains(t, err.Error(), "max-concurrent-generations")
 }
 
+// TestParseValidatesHTTPAddressOnlyWhenEnabled covers AC-38: a non-loopback
+// HTTP address is rejected when debug is enabled, before any listener starts.
 func TestParseValidatesHTTPAddressOnlyWhenEnabled(t *testing.T) {
 	t.Parallel()
 

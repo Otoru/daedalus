@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRoutingReproducesAppendixAExample covers AC-06 and AC-23: the Appendix A
+// route is an orthogonal sequence of Cells between two multi-Cell Rooms.
 func TestRoutingReproducesAppendixAExample(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 2, 2),
@@ -49,6 +51,8 @@ func TestRoutingChoosesDoorPairWithShortestCorridor(t *testing.T) {
 	assert.Equal(t, Door{ID: 1, RoomID: 1, At: Cell{X: 5, Y: 2}, Direction: DirectionWest, CorridorIDs: []CorridorID{0}}, doors[1])
 }
 
+// TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes covers AC-28: when
+// both L-routes are blocked, deterministic BFS still finds an exterior route.
 func TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 3}, 1, 1),
@@ -87,6 +91,9 @@ func TestCorridorOrderChangesBendWhenBothLRoutesAreValid(t *testing.T) {
 	assert.Equal(t, []Cell{{X: 1, Y: 1}, {X: 1, Y: 2}, {X: 1, Y: 3}, {X: 2, Y: 3}, {X: 3, Y: 3}}, yThenX)
 }
 
+// TestUnroutableEdgeDiscardsPartialResult covers AC-12 and AC-28: a blocked
+// pair returns the same ErrUnroutableEdge on every run and discards the
+// partial Corridors and Doors.
 func TestUnroutableEdgeDiscardsPartialResult(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 0, Y: 2}, 1, 1),
@@ -110,6 +117,9 @@ func TestUnroutableEdgeDiscardsPartialResult(t *testing.T) {
 	assert.Nil(t, secondDoors)
 }
 
+// TestTwoEdgesReuseDoorAndSortCorridorIDs covers AC-24: two routes that share
+// an opening keep a single Door per (RoomID, At, Direction), and CorridorIDs
+// lists every edge in ascending order.
 func TestTwoEdgesReuseDoorAndSortCorridorIDs(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 2}, 1, 1),
@@ -273,6 +283,9 @@ func TestNonRectangularShapeDoorsLeaveBoundaryCells(t *testing.T) {
 	}
 }
 
+// TestCorridorKeepsExternalCellsAndFourConnectedSequence covers AC-06 and
+// AC-23: between multi-Cell Rooms the Corridor stays outside every footprint,
+// each step is orthogonal, and the endpoint Doors sit on the two Rooms.
 func TestCorridorKeepsExternalCellsAndFourConnectedSequence(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 1}, 2, 2),

@@ -12,6 +12,9 @@ import (
 	"testing"
 )
 
+// Covers AC-17: the root package imports only the standard library, and a
+// controlled violation is recorded as a failure.
+//
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core
 // independently importable: grpc, protobuf, fx, zap, and generated bindings
 // live outside this package. Analysis uses the AST (go/parser), and each import

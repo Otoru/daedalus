@@ -12,6 +12,9 @@ type generationBenchmark struct {
 	config Config
 }
 
+// BenchmarkGenerate records the three section 11 loads. It does not cover
+// AC-15: nothing here asserts p95 or p99, and this machine is not the
+// reference hardware of the release SLA.
 func BenchmarkGenerate(b *testing.B) {
 	for _, benchmark := range generationBenchmarks() {
 		b.Run(benchmark.name, func(b *testing.B) {

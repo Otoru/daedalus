@@ -13,6 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAC01SuccessfulLayoutRespectsAllInvariants covers AC-01. The same
+// invariant checker enforces AC-03 and AC-22 (MinRoomGap and anchor distance),
+// AC-20 (Room.Cells matches the canonical mask) and the footprint clauses of
+// AC-21 (non-empty, unique, inside the Grid, 4-connected, At on the footprint).
 func TestAC01SuccessfulLayoutRespectsAllInvariants(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 101, MaxRooms: 24}
 	effective, err := normalizeConfig(config)
@@ -50,6 +54,8 @@ func TestPropertyLayoutsOrSpecificationErrors(t *testing.T) {
 	}
 }
 
+// TestAC04SameConfigAndSeedProduceIdenticalWholeLayout covers AC-04: the same
+// Config and Seed reproduce every field, footprint and order.
 func TestAC04SameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 40, Seed: 404, MaxRooms: 28, ExtraEdgeCount: 3,
@@ -69,6 +75,8 @@ func TestAC04SameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
 	}
 }
 
+// TestAC05ConcurrentRequestsAreIsolated covers AC-05: interleaved requests
+// each match the isolated baseline, and cancelling one leaves the other intact.
 func TestAC05ConcurrentRequestsAreIsolated(t *testing.T) {
 	generator := Generator{}
 	config := Config{Width: 40, Height: 40, Seed: 505, MaxRooms: 24, ExtraEdgeCount: 2}
@@ -131,6 +139,8 @@ func TestAC05ConcurrentRequestsAreIsolated(t *testing.T) {
 	assert.Equal(t, baseline, independentLayout)
 }
 
+// TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor covers AC-07: a 1×1 Grid
+// with MinDistance 6 yields one 1×1 Rectangle at (0,0) and no Corridor or Door.
 func TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor(t *testing.T) {
 	config := Config{Width: 1, Height: 1, Seed: 7, MinDistance: 6}
 	effective, err := normalizeConfig(config)
@@ -149,6 +159,9 @@ func TestAC07SingleCellGridHasOneRoomAndNoCorridorOrDoor(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
+// TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation covers AC-08: a
+// small Grid or a MinDistance above the diagonal keeps the first valid Room
+// near the center and does not truncate its footprint.
 func TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation(t *testing.T) {
 	first := fixedGeometryConfigForTest(2, 2, 10)
 	first.Seed = 80
@@ -174,6 +187,8 @@ func TestAC08SmallGridAndLargeDistanceTerminateWithoutTruncation(t *testing.T) {
 	}
 }
 
+// TestAC09aDensityRegionsUseGreaterLocalDistance covers AC-09a: each anchor
+// pair respects the greater of the two LocalMinDistance values.
 func TestAC09aDensityRegionsUseGreaterLocalDistance(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 48, Seed: 9091, MinDistance: 3, MaxRooms: 36,
@@ -200,6 +215,8 @@ func TestAC09aDensityRegionsUseGreaterLocalDistance(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
+// TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws covers AC-09b: an explicit
+// empty DensityRegions list reproduces the Layout of the omitted list.
 func TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
 	base := Config{Width: 40, Height: 32, Seed: 9092, MaxRooms: 24}
 	explicitlyEmpty := base
@@ -212,6 +229,9 @@ func TestAC09bEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
 	assert.Equal(t, baseline, actual)
 }
 
+// TestAC10CompatibleCatalogPreservesIDsTagsAndDirections covers AC-10: each
+// selected RoomPlant supports the Door directions in use, and IDs and tags
+// match the catalog.
 func TestAC10CompatibleCatalogPreservesIDsTagsAndDirections(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 1010, MaxRooms: 16}
 	config.PlantCatalog = &PlantCatalog{
@@ -230,6 +250,8 @@ func TestAC10CompatibleCatalogPreservesIDsTagsAndDirections(t *testing.T) {
 	}
 }
 
+// TestAC11IncompatibleCatalogFailsWithoutPartialLayout covers AC-11: an
+// incompatible catalog returns ErrNoCompatiblePlant and an empty Layout.
 func TestAC11IncompatibleCatalogFailsWithoutPartialLayout(t *testing.T) {
 	config := Config{Width: 32, Height: 32, Seed: 1111, MaxRooms: 16}
 	config.PlantCatalog = &PlantCatalog{
@@ -241,6 +263,8 @@ func TestAC11IncompatibleCatalogFailsWithoutPartialLayout(t *testing.T) {
 	assert.Equal(t, Layout{}, layout)
 }
 
+// TestAC12aShortcutsKeepGraphConnectedAndAddCycles covers AC-12a: extra edges
+// keep the Layout connected and are the first short discarded edges in order.
 func TestAC12aShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
@@ -273,6 +297,9 @@ func TestAC12aShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
+// TestAC12bWithoutShortcutsGraphIsTree covers AC-12b and AC-02: with
+// ExtraEdgeCount=0 the Corridor count is Rooms minus one and every Room stays
+// reachable.
 func TestAC12bWithoutShortcutsGraphIsTree(t *testing.T) {
 	config := Config{Width: 48, Height: 48, Seed: 122, MaxRooms: 24, ExtraEdgeCount: 0}
 	effective, err := normalizeConfig(config)
@@ -283,6 +310,9 @@ func TestAC12bWithoutShortcutsGraphIsTree(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
+// TestAC12cRolesRespectMSTAndRequiredTags covers AC-12c: Start is RoomID 0,
+// Boss and Treasure follow MST distance with the frozen tie-break, and the
+// chosen Plant carries the RequiredTags.
 func TestAC12cRolesRespectMSTAndRequiredTags(t *testing.T) {
 	config := Config{
 		Width: 48, Height: 48, Seed: 123, MaxRooms: 24,
@@ -322,6 +352,8 @@ func TestAC12cRolesRespectMSTAndRequiredTags(t *testing.T) {
 	assertLayoutInvariants(t, effective, layout)
 }
 
+// TestAC12dEmptyRolesChangeNeitherLayoutNorDraws covers AC-12d: an explicit
+// empty role list leaves every Role unset and reproduces the Layout.
 func TestAC12dEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
 	base := Config{Width: 40, Height: 40, Seed: 124, MaxRooms: 20}
 	explicitlyEmpty := base
@@ -336,6 +368,9 @@ func TestAC12dEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
 	}
 }
 
+// TestAC12eDisabledOptionsPreserveRefinedLayout covers AC-12e: zero shortcuts,
+// empty roles and no DensityRegions reproduce the refined Layout for the same
+// normalized RoomGeometry.
 func TestAC12eDisabledOptionsPreserveRefinedLayout(t *testing.T) {
 	geometry := &RoomGeometry{
 		MinWidth: 3, MaxWidth: 7, MinHeight: 3, MaxHeight: 7,
@@ -360,6 +395,8 @@ func TestAC12eDisabledOptionsPreserveRefinedLayout(t *testing.T) {
 	assert.Equal(t, baseline, actual)
 }
 
+// TestAC14LimitsFailBeforeGeneratingLayout covers AC-14: a limit breach
+// returns ErrLimitExceeded before the Placer runs and publishes no Layout.
 func TestAC14LimitsFailBeforeGeneratingLayout(t *testing.T) {
 	configs := []Config{
 		{Width: 257, Height: 1, Seed: 1},
@@ -373,6 +410,9 @@ func TestAC14LimitsFailBeforeGeneratingLayout(t *testing.T) {
 	}
 }
 
+// TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout covers AC-27:
+// when no footprint fits, generation stops without a partial Layout, and a
+// 1×1 Grid still admits a 1×1 Rectangle.
 func TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T) {
 	geometry := &RoomGeometry{
 		MinWidth: 6, MaxWidth: 6, MinHeight: 6, MaxHeight: 6,
@@ -389,6 +429,9 @@ func TestAC27NoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T
 	assert.Equal(t, []Cell{{X: 0, Y: 0}}, minimal.Rooms[0].Cells)
 }
 
+// TestAC29GeneratorRejectsDishonestPlacersAndConnectors covers AC-29: the
+// Generator rejects a mask that is duplicated, disconnected, outside the Grid
+// or incompatible with the Shape, and it publishes no Layout.
 func TestAC29GeneratorRejectsDishonestPlacersAndConnectors(t *testing.T) {
 	placerModes := []string{"duplicate", "disconnected", "out-of-bounds", "incompatible", "overlapping"}
 	for _, mode := range placerModes {

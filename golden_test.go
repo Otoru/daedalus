@@ -41,6 +41,10 @@ func (connections goldenConnector) Connect(ConnectionRequest) ([]Connection, err
 	return append([]Connection(nil), connections...), nil
 }
 
+// TestFrozenGoldenLayouts covers AC-13: named Seeds match the frozen fixtures
+// exactly. A mismatch reports the field path, not only a hash. This test does
+// not cover AC-18 or AC-25; those require the same suite on native amd64 and
+// arm64 runners.
 func TestFrozenGoldenLayouts(t *testing.T) {
 	for _, testCase := range goldenCases() {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -304,6 +308,9 @@ func readGoldenFixture(t *testing.T, path string) Layout {
 	return layout
 }
 
+// TestGoldenDiagnosticPointsToFirstChangedCell covers AC-13: the diagnostic
+// names the first divergent Cell path, the expected and actual scalars, and
+// the changed Cells.
 func TestGoldenDiagnosticPointsToFirstChangedCell(t *testing.T) {
 	expected := Layout{Rooms: []Room{{ID: 0, Cells: []Cell{{X: 2, Y: 3}}}}}
 	actual := Layout{Rooms: []Room{{ID: 0, Cells: []Cell{{X: 9, Y: 3}}}}}

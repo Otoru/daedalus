@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEmptyRolesAssignAndConsumeNoDraw covers AC-12d at the role phase: a nil
+// request assigns no Role and leaves the RNG streams unchanged.
 func TestEmptyRolesAssignAndConsumeNoDraw(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 3, 0)}
 	backbone := []Connection{{FromRoomID: 0, ToRoomID: 1}}

@@ -22,6 +22,8 @@ import (
 
 const testLifecycleTimeout = 5 * time.Second
 
+// TestStartupEmitsOneHandshakeLineAndServesGRPC covers AC-16: startup writes
+// exactly one valid handshake line, and the client connects only after that.
 func TestStartupEmitsOneHandshakeLineAndServesGRPC(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -102,6 +104,9 @@ func TestShutdownClosesGRPCListener(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestDisabledHTTPDoesNotOpenPortOrChangeHandshake covers AC-30: with HTTP
+// debug disabled, the HTTP address stays free to bind and the gRPC handshake
+// is unchanged.
 func TestDisabledHTTPDoesNotOpenPortOrChangeHandshake(t *testing.T) {
 	probe, err := net.Listen("tcp", config.DefaultTCPAddr)
 	require.NoError(t, err)
@@ -132,6 +137,9 @@ func TestDisabledHTTPDoesNotOpenPortOrChangeHandshake(t *testing.T) {
 	assert.NotEqual(t, httpAddr, got.Addr)
 }
 
+// TestEnabledHTTPServesRoutesWithoutChangingGRPCHandshake covers AC-31: with
+// HTTP debug enabled, GET /healthz and GET /debug/ succeed and the gRPC
+// handshake stays on its own address.
 func TestEnabledHTTPServesRoutesWithoutChangingGRPCHandshake(t *testing.T) {
 	httpAddr := reserveTCPAddress(t)
 	processConfig := config.Default()
@@ -171,6 +179,9 @@ func TestEnabledHTTPServesRoutesWithoutChangingGRPCHandshake(t *testing.T) {
 	assert.Contains(t, stderr.String(), httpAddr)
 }
 
+// TestHTTPBindFailureAbortsStartupWithoutAnnouncingOrKeepingGRPC covers
+// AC-38: an HTTP port already in use aborts startup, writes no handshake and
+// does not leave the gRPC listener open.
 func TestHTTPBindFailureAbortsStartupWithoutAnnouncingOrKeepingGRPC(t *testing.T) {
 	occupiedHTTP, err := net.Listen("tcp", config.DefaultTCPAddr)
 	require.NoError(t, err)
@@ -195,6 +206,8 @@ func TestHTTPBindFailureAbortsStartupWithoutAnnouncingOrKeepingGRPC(t *testing.T
 	require.NoError(t, grpcProbe.Close())
 }
 
+// TestShutdownClosesGRPCAndHTTPListeners covers AC-39: shutdown closes the
+// HTTP listener together with the gRPC listener.
 func TestShutdownClosesGRPCAndHTTPListeners(t *testing.T) {
 	httpAddr := reserveTCPAddress(t)
 	processConfig := config.Default()

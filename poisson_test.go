@@ -37,6 +37,8 @@ func TestCanceledPoissonReturnsNoPartialResult(t *testing.T) {
 	assert.Nil(t, placements)
 }
 
+// TestPoissonRespectsLimitAndPlacementInvariants covers AC-09: placement
+// terminates with at most MaxRooms accepted Rooms.
 func TestPoissonRespectsLimitAndPlacementInvariants(t *testing.T) {
 	const maximumRooms = uint32(20)
 	geometry := unitRectangleGeometry(1)
@@ -106,6 +108,9 @@ func TestEmptyPoissonRegionsPreserveSequence(t *testing.T) {
 	assert.Equal(t, first, second)
 }
 
+// TestPoissonSameConfigurationReproducesGeometryFieldByField covers AC-19: a
+// Config without RoomGeometry uses the default dynamic profile and, on a Grid
+// large enough, produces an explicit multi-Cell footprint.
 func TestPoissonSameConfigurationReproducesGeometryFieldByField(t *testing.T) {
 	req := mustPlacementRequest(t, Config{
 		Width: 48, Height: 48, Seed: 424242,
@@ -123,6 +128,8 @@ func TestPoissonSameConfigurationReproducesGeometryFieldByField(t *testing.T) {
 	assertPlacementInvariants(t, req, first)
 }
 
+// TestPoissonMaxAttemptsChangesActivePointRemoval covers AC-09: MaxAttempts
+// bounds how long an active point is sampled before it is removed.
 func TestPoissonMaxAttemptsChangesActivePointRemoval(t *testing.T) {
 	geometry := unitRectangleGeometry(0)
 	foundDifference := false
