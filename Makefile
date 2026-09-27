@@ -37,7 +37,7 @@ PLATFORMS := linux/amd64 darwin/arm64 windows/amd64
 CMD_DIR := ./cmd/daedalus
 HAS_CMD := $(wildcard cmd/daedalus)
 
-.PHONY: generate lint test bench build build-all
+.PHONY: generate lint test golden-update bench build build-all
 
 generate:
 	@test -n "$(BUF)" || { echo "buf não encontrado; instale com: $(GO) install github.com/bufbuild/buf/cmd/buf@latest (ou passe BUF=/caminho/para/buf)" >&2; exit 1; }
@@ -59,11 +59,15 @@ lint:
 test:
 	$(GO) test ./...
 
+# Regrava os Layouts normativos somente por ação explícita. Revise o diff
+# legível em testdata/golden antes de aceitar uma mudança de compatibilidade.
+golden-update:
+	$(GO) test ./ -run '^TestLayoutsGoldenCongelados$$' -update -count=1
+
 # Benchmarks de geração vivem no pacote raiz (spec seção 13); -benchmem
-# registra alocações. Enquanto a frente do núcleo não publica benchmarks,
-# o alvo roda os testes da raiz sem nenhum benchmark e passa.
+# registra as alocações das três cargas normativas.
 bench:
-	$(GO) test -bench=. -benchmem .
+	$(GO) test -run '^$$' -bench '^BenchmarkGenerate$$' -benchmem .
 
 build:
 ifeq ($(HAS_CMD),)
