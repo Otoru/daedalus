@@ -79,14 +79,47 @@ jobs:
     # inventing a name.
     #
     # NOT EXERCISED locally: availability of the ubuntu-24.04-arm runner can
-    # only be confirmed with the repository on GitHub.
+    # only be confirmed with the repository on GitHub. There is no remote,
+    # so this job has never been scheduled. Do not skip the leg: no `if`,
+    # no `continue-on-error`. A runs-on label with no matching runner stays
+    # queued; the documented queue limit is 24 hours, and timeout-minutes
+    # covers execution only, not that wait, so this file cannot turn a
+    # missing runner into an immediate failure. The first step is what it
+    # can enforce once a machine accepts the job: wrong uname or QEMU
+    # user-mode fails before the suite can pass under emulation.
     strategy:
       fail-fast: false
       matrix:
         # ubuntu-latest is amd64; ubuntu-24.04-arm is native arm64.
+        # Not QEMU, not docker buildx --platform.
         runs-on: [ubuntu-latest, ubuntu-24.04-arm]
+    name: determinism (${{ matrix.runs-on }})
     runs-on: ${{ matrix.runs-on }}
     steps:
+      - name: Require the native architecture for this matrix leg
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          case "${{ matrix.runs-on }}" in
+            ubuntu-24.04-arm)
+              expected="aarch64"
+              ;;
+            ubuntu-latest)
+              expected="x86_64"
+              ;;
+            *)
+              echo "::error::determinism matrix entry '${{ matrix.runs-on }}' is not a native runner this gate knows (ubuntu-latest or ubuntu-24.04-arm)"
+              exit 1
+              ;;
+          esac
+          if [ "$arch" != "$expected" ]; then
+            echo "::error::${{ matrix.runs-on }} reported ${arch}, expected native ${expected}. QEMU and docker buildx --platform do not prove AC-18 or AC-25."
+            exit 1
+          fi
+          if [ -r /proc/self/maps ] && grep -E -q 'qemu-' /proc/self/maps; then
+            echo "::error::This process is running under QEMU user-mode emulation. Emulation does not prove architecture determinism (specification section 13, P45)."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
