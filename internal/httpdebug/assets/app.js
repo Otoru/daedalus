@@ -170,20 +170,12 @@ function setStatus(message, style) {
 }
 
 async function copyExactText(text, successMessage) {
+  if (typeof navigator.clipboard?.writeText !== "function") {
+    setStatus("Could not copy to the clipboard", "failure");
+    return;
+  }
   try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const fallback = document.createElement("textarea");
-      fallback.value = text;
-      fallback.setAttribute("readonly", "");
-      fallback.style.position = "fixed";
-      fallback.style.opacity = "0";
-      document.body.appendChild(fallback);
-      fallback.select();
-      document.execCommand("copy");
-      fallback.remove();
-    }
+    await navigator.clipboard.writeText(text);
     setStatus(successMessage, "success");
   } catch {
     setStatus("Could not copy to the clipboard", "failure");
@@ -191,7 +183,7 @@ async function copyExactText(text, successMessage) {
 }
 
 function fitMap() {
-  if (!state.layout || !state.layout.grid) {
+  if (!state.layout?.grid) {
     return;
   }
   const grid = state.layout.grid;
@@ -209,7 +201,7 @@ function updateZoomLabel() {
 }
 
 function renderLayout() {
-  if (!state.layout || !state.layout.grid) {
+  if (!state.layout?.grid) {
     return;
   }
 

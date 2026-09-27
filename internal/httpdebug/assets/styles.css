@@ -88,6 +88,9 @@ h3 {
 }
 
 .status {
+  /* <output> is inline by default, and max-width does not apply to a
+     non-replaced inline element. */
+  display: inline-block;
   max-width: 44ch;
   margin-bottom: 0;
   padding: 9px 13px;
