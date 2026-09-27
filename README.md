@@ -86,11 +86,8 @@ Over HTTP and gRPC the same `Layout` comes back as ProtoJSON. The first cell of 
 
 ## Reference
 
-- [Package documentation](https://pkg.go.dev/github.com/Otoru/daedalus) — vocabulary, masks, pipeline, determinism, errors and concurrency.
-- [`Generator.Generate`](https://pkg.go.dev/github.com/Otoru/daedalus#Generator.Generate) and [`GenerateContext`](https://pkg.go.dev/github.com/Otoru/daedalus#Generator.GenerateContext)
-- [`Config`](https://pkg.go.dev/github.com/Otoru/daedalus#Config), [`RoomGeometry`](https://pkg.go.dev/github.com/Otoru/daedalus#RoomGeometry), [`RoomRoleRequest`](https://pkg.go.dev/github.com/Otoru/daedalus#RoomRoleRequest), [`DensityRegion`](https://pkg.go.dev/github.com/Otoru/daedalus#DensityRegion), [`PlantCatalog`](https://pkg.go.dev/github.com/Otoru/daedalus#PlantCatalog)
-- [`Layout`](https://pkg.go.dev/github.com/Otoru/daedalus#Layout), [`Grid`](https://pkg.go.dev/github.com/Otoru/daedalus#Grid), [`CellState`](https://pkg.go.dev/github.com/Otoru/daedalus#CellState), [`Room`](https://pkg.go.dev/github.com/Otoru/daedalus#Room), [`Corridor`](https://pkg.go.dev/github.com/Otoru/daedalus#Corridor), [`Door`](https://pkg.go.dev/github.com/Otoru/daedalus#Door)
-- [`Placer`](https://pkg.go.dev/github.com/Otoru/daedalus#Placer) and [`Connector`](https://pkg.go.dev/github.com/Otoru/daedalus#Connector), the two extension points, with the [`PlacerFunc`](https://pkg.go.dev/github.com/Otoru/daedalus#PlacerFunc) and [`ConnectorFunc`](https://pkg.go.dev/github.com/Otoru/daedalus#ConnectorFunc) adapters.
+- [Package documentation](https://pkg.go.dev/github.com/Otoru/daedalus) — the whole API, and the long form of this contract.
+- [`Config`](https://pkg.go.dev/github.com/Otoru/daedalus#Config) is the request, [`Layout`](https://pkg.go.dev/github.com/Otoru/daedalus#Layout) is the reply.
 - [Examples](https://pkg.go.dev/github.com/Otoru/daedalus#pkg-examples) — runnable, and part of the test suite.
 
 ## Install
