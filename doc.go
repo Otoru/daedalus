@@ -1,28 +1,374 @@
-// Package daedalus gera dungeons 2D discretas e determinísticas sob demanda.
+// Package daedalus generates discrete, deterministic 2D dungeons on demand.
 //
-// Dada uma Config e uma Seed, o pacote produz um Layout completo e imutável:
-// Grid lógico, Rooms com footprint discreto, Corridors ortogonais e Doors
-// direcionais nas bordas das Rooms. O pacote raiz contém somente o modelo de
-// dados e a geração determinística; ele não renderiza, não conhece engines de
-// jogo, não calcula posições em pixel e importa apenas a biblioteca padrão
-// Go — invariante verificada por teste de pureza de imports via AST.
+// A game requests a floor by passing a Config and a Seed to Generator.Generate,
+// or to GenerateContext when it already holds a deadline. The zero Generator is
+// ready to use: a nil Placer selects poisson_disk_rooms_v1 and a nil Connector
+// selects prim_rooms_v1. The call returns one immutable Layout, or an error and
+// the zero Layout. No Seed, stream, or Layout is kept for a later request.
 //
-// Rooms têm tamanho e forma variáveis. RoomShape define as cinco máscaras
-// canônicas — Rectangle, L, T, Cross e Circle — e RoomGeometry controla
-// faixas de dimensão, área máxima, espaçamento entre footprints e o peso
-// relativo de cada forma. Config sem RoomGeometry não produz Rooms de uma
-// única Cell: ela normaliza para um perfil dinâmico, reduzido às formas que
-// cabem no Grid solicitado.
+// The package owns validation, placement, connection, thematic roles, optional
+// shortcuts, orthogonal routing, door derivation, plant metadata, and
+// materialization. It does not render, instantiate scenes or prefabs, load
+// assets, know Godot, Unity, or Bevy, compute pixel positions, build a
+// navmesh, or hold game state. CellSize is an opaque unit defined by the
+// caller and is only copied onto the Layout; no algorithm converts it. There
+// is no configuration file: Config is a Go value here, and a process outside
+// this package may carry the same request as a protobuf message. Each phase
+// builds local values and publishes a Layout only after every phase succeeds,
+// so there is no partial public result for a caller to patch. The root package
+// imports only the Go standard library.
 //
-// O posicionamento e a conexão são pontos de extensão. Placer e Connector
-// são as duas únicas interfaces Strategy de v1 e podem ser fornecidas pelo
-// jogo; os algoritmos embutidos são poisson_disk_rooms_v1 e prim_rooms_v1,
-// cuja saída observável é congelada por toda a major v1 para a mesma Config
-// efetiva e Seed, em qualquer plataforma suportada.
+// The names Layout, Room, Corridor, Door, Grid, Cell, Config, Seed, Placer,
+// and Connector are normative public vocabulary. Renaming any of them is a
+// breaking API change.
 //
-// O vocabulário público (Layout, Room, Corridor, Door, Grid, Cell, Config,
-// Seed, Placer, Connector) é normativo: renomeá-lo é mudança incompatível
-// de API. A documentação deste pacote está em português, enquanto os
-// identificadores de domínio permanecem em inglês, conforme a especificação
-// de engenharia em docs/spec.md.
+// # Vocabulary
+//
+// A Cell is an integer (X, Y) coordinate on the Grid, never a pixel. A Grid is
+// a rectangle of Width by Height Cells, with 0 ≤ X < Width and 0 ≤ Y < Height.
+// Grid.Cells is that rectangle in row-major order, Y then X, and each CellState
+// is Empty, Room, or Corridor. A Room Cell names exactly one Room. A Corridor
+// Cell lists every Corridor that uses it, in ascending ID order, and may be
+// shared. An Empty Cell names neither.
+//
+// A Room is a topological vertex whose footprint is a finite, non-empty,
+// 4-connected set of Cells. The footprint does not include Doors or Corridors.
+// Room.At, the anchor, is the first occupied Cell in canonical Y-then-X order.
+// Room.Origin is the top-left corner of the bounding box and may itself be
+// empty, as it is for a Cross. Width and Height are that box, in Cells.
+// Room.Cells is the absolute footprint, copied into the Layout.
+//
+// A Corridor is both a topological edge and the orthogonal Cells walked
+// outside every footprint, from the exterior neighbour of the source Door to
+// the exterior neighbour of the destination Door. Those Cells are omitted when
+// two Doors face each other directly and no Room Cell is crossed. A Door is a
+// logical opening on a boundary Cell of a Room, identified by RoomID, At, and
+// a cardinal Direction that points out of the Room. Diagonals are invalid.
+// The canonical Direction order is North, East, South, West.
+//
+// A Layout is the complete successful result: the Seed that produced it, the
+// Grid, and the Rooms, Corridors, and Doors in creation order. IDs start at 0
+// and stay stable. A PlantID is an opaque UTF-8 token the game resolves to a
+// scene, prefab, tile, or mesh; this package stores the token and its tags and
+// never interprets them. An absent catalog leaves PlantID and Tags empty.
+//
+// Config is the whole request. Width, Height, and Seed are required and have
+// no safe default. Seed is a uint64; every value is accepted, and zero is a
+// real seed rather than a request for entropy. The remaining fields document
+// their own defaults. The zero Config is not valid.
+//
+// # Room geometry
+//
+// Rooms vary in size and shape. RoomShape names five canonical masks, with no
+// implicit rotation. Rectangle fills its bounding box. L joins the full top
+// row to the full left column and needs both dimensions at least 2. T joins
+// the full top row to the center column, needs width at least 3 and height at
+// least 2, and places that column at (Width-1)/2. Cross joins the center row
+// to the center column and needs both dimensions at least 3; an even dimension
+// uses the same (N-1)/2 index, so the geometric middle of an even span is the
+// lower of the two central lines. Circle is a square of odd diameter D at
+// least 5. With r = (D-1)/2 and center (r, r), a Cell is occupied exactly when
+// (x-r)^2 + (y-r)^2 <= r^2, compared in integers with no rounding. Every mask
+// is a set, so the union does not duplicate a Cell, and every mask is
+// 4-connected.
+// Offsets are relative to Origin and are materialized in Y-then-X order. The
+// first occupied offset is (0, 0) for Rectangle, L, and T, ((Width-1)/2, 0)
+// for Cross, and (r, 0) for Circle, which is what lets an anchor be turned
+// back into an Origin without ambiguity.
+//
+// RoomGeometry sets the dimension ranges, the maximum footprint area, the
+// minimum gap between footprints, and a positive weight per shape. A nil
+// RoomGeometry does not mean one-Cell Rooms. After validation it normalizes to
+// a dynamic profile: minimum width min(3, Width), maximum width min(9, Width),
+// and the same pair for height; MaxFootprintCells 81; MinRoomGap 1; and
+// weights Rectangle 4, L 2, T 2, Cross 1, Circle 2. Circle keeps only odd
+// diameters from 5 up to the smaller of the two maxima. A shape with no legal
+// dimensions on this Grid is dropped. Rectangle always remains, including the
+// 1×1 mask, so a 1×1 Grid yields one Rectangle Room and no Corridor or Door.
+// The normalized profile is part of the effective Config.
+//
+// An explicit RoomGeometry makes every field required. Dimensions are at least
+// 1, maxima are at least the minima and at most the Grid, MaxFootprintCells is
+// 1..4096, MinRoomGap is 0..256, and Shapes is non-empty, duplicate-free, and
+// weighted at least 1. At least one shape and dimension pair must fit inside
+// MaxFootprintCells; otherwise the Config is invalid. L, T, Cross, and Circle
+// still obey the mask minima above, and an even Circle diameter is simply not
+// a candidate. A Room is accepted only when its anchors satisfy MinDistance
+// and its footprints satisfy MinRoomGap at the same time. Neither check
+// replaces the other.
+//
+// MinRoomGap counts empty layers by Chebyshev distance between occupied Cells
+// of different Rooms. Gap 0 forbids overlap and still allows edge contact,
+// including a diagonal touch. Gap 1 demands a full empty layer, diagonal
+// included. The default profile uses 1.
+//
+// # Pipeline
+//
+// Generation always runs in the same order. Validation and normalization come
+// first, before any stream is drawn and before any Grid is allocated. The
+// Placer then proposes RoomPlacements, and every Cell of an accepted footprint
+// is reserved. The Connector proposes topological edges. Requested thematic
+// roles are assigned on that backbone. Optional shortcuts are reintroduced
+// from the short edges the backbone discarded. Each edge is traced as an
+// orthogonal Corridor. Doors are derived from the ends of those routes. Only
+// then are optional plant metadata resolved and an immutable Layout
+// materialized. A failure in any phase discards the private work and returns
+// the zero Layout.
+//
+// The built-in Placer is a Poisson disk over anchors, not over footprint
+// Cells. One geometry draw selects the first Room. Normalization has already
+// dropped every shape and size that cannot sit on the Grid, so that draw has
+// a legal placement. Among anchors where the mask lies inside the Grid, it
+// keeps the one whose squared distance to the geometric center is smallest,
+// breaking ties by Y then X. That center is the discrete point (Width-1)/2,
+// (Height-1)/2, compared in doubled integer coordinates so the choice does not
+// depend on floating-point rounding. Later Rooms grow from active anchors. One
+// draw picks the active anchor; each of up to MaxAttempts attempts then draws
+// an offset in the annulus around it, quantizes with floor, and draws a shape
+// and a dimension pair. The candidate is committed only when, in order, the
+// mask is valid, the bounding box lies inside the Grid, the area is within
+// MaxFootprintCells, the anchor is far enough from every accepted anchor, the
+// footprint does not overlap, and every pair of occupied Cells respects
+// MinRoomGap. Acceptance is atomic: a rejected attempt occupies nothing and
+// consumes at most one geometry draw. An anchor that falls outside the Grid
+// consumes none.
+//
+// The annulus is uniform by area. Two uniform draws build a point in the
+// square that encloses the ring, and the point is kept only when
+// r^2 <= offsetX^2 + offsetY^2 < 4r^2. The specification does not state how a
+// uniform01 draw maps onto that square. The frozen reading is u*4r-2r on
+// each axis, with uniform01 in [0, 1), which matches the exclusive outer
+// bound. Pairs that fall outside the ring are rejected inside the sampler and
+// do not consume a geometry attempt or a MaxAttempts slot. There is no sine
+// or cosine. Distance checks compare squares of int64 Cell deltas, so they do
+// not call a square root either.
+//
+// Without DensityRegions the required distance is MinDistance everywhere, and
+// the temporary acceleration grid uses the classic 5×5 Bridson neighbourhood.
+// A DensityRegion replaces that distance inside a rectangle. The specification
+// names the two corners and does not say which edges belong to the rectangle.
+// The frozen convention is half-open: Min is inclusive and Max is exclusive,
+// covering X in [Min.X, Max.X) and Y in [Min.Y, Max.Y). Max may therefore
+// equal the Grid dimension, a larger Max is invalid, and a one-Cell region is
+// written Max = Min + (1, 1). Regions do not overlap. An anchor outside every
+// region keeps MinDistance. The distance required between two anchors is the
+// maximum of their two local distances, so a Room sitting on the sparse side
+// of a boundary does not crowd its neighbour. Empty regions are not consulted
+// at all and add no draws; the uniform Poisson path runs unchanged.
+//
+// MaxAttempts bounds complete proposals per active point, including those
+// rejected for distance, shape, bounds, or collision. After that many failures
+// the active point is removed. MaxRooms is a ceiling, not a request to fill
+// the Grid. Each iteration either accepts one new anchor or retires one, and
+// anchors are unique Cells, so placement terminates. A footprint is never
+// truncated to make it fit.
+//
+// The built-in Connector builds a spanning tree with Prim, starting at
+// RoomID 0. The candidate graph is complete. Edge weight is Euclidean distance
+// between bounding-box centers, even though routes are orthogonal. The
+// specification says that for a 1×1 Room this weight matches the distance
+// between anchors. That sentence picks the center: it is the centroid of the
+// box's Cells, Origin + (dimension-1)/2, not the area center
+// Origin + dimension/2. The two disagree as soon as a dimension is greater
+// than 1, and they produce different trees. Equal weights break ties by
+// FromRoomID, then ToRoomID, then the destination Room's anchor in canonical
+// Cell order. Comparing squared distances preserves that order, because the
+// square root is strictly increasing on non-negative values, and it avoids
+// another rounding step on the frozen path. Prim receives its stream and
+// consumes no draw. The tree is the minimum total weight among spanning
+// trees; it does not minimize routed Cells. It is always the backbone. The
+// Layout is a tree only when ExtraEdgeCount is 0.
+//
+// Thematic roles are a projection onto that tree, not a third plugin. If Start
+// is requested it is RoomID 0, the first Room accepted, which is also the one
+// nearest the center. Boss, which requires a Start because distance without an
+// origin is undefined, is the unassigned Room with the greatest weighted path
+// distance from Start; equal distances take the smaller RoomID. Each Treasure
+// request, in request order, takes the next unassigned Rooms that are farthest
+// by the same rule, up to Count. RequiredTags restrict the Plant chosen later
+// and do not move the Room. Roles are assigned before shortcuts so that "far
+// from the start" still means the exploration tree the backbone planned.
+// Later cycles must not pull the Boss into an artificially short hop. An
+// empty role list leaves every Role absent and consumes no draw.
+//
+// When ExtraEdgeCount is greater than zero, the Generator takes every edge of
+// the complete graph that is not already in the tree, orders those edges by
+// increasing Euclidean distance and the same Prim tie-break, and appends the
+// first ExtraEdgeCount of them. The choice is ordered, not random, and it
+// consumes no draw. Zero skips the phase entirely. The graph stays connected
+// either way; extra edges are the only way it gains a cycle.
+//
+// Routing then enumerates, for each edge, every opening (RoomID, At,
+// Direction) whose Cell belongs to the footprint, whose Direction is cardinal,
+// and whose neighbour Cell lies inside the Grid and outside that same
+// footprint. It keeps the pair whose route has the fewest Corridor Cells,
+// then breaks ties by the source Door and the destination Door in
+// (At.Y, At.X, Direction), then by the route in lexicographic (Y, X) order.
+// The preferred bend is the configured CorridorOrder, X-then-Y by default; the
+// other bend is the alternative. If both L-routes cross a footprint or leave
+// the Grid, a deterministic breadth-first search runs over free Cells.
+// Neighbours expand North, East, South, West, the queue is FIFO, a Cell is
+// marked when it is inserted, and storage is row-major. There is no map
+// iteration, so the path does not depend on hash order. The same opening is
+// reused when another Corridor needs the same triple, and CorridorIDs on a
+// shared Cell stay sorted. Door.At need not equal Room.At. Only when no pair
+// has a route does the call fail. The router is not a public Strategy: edge
+// selection is the extension point, and tracing a route is a fixed reading of
+// those edges.
+//
+// Plant selection runs after Doors exist, because a Room plant must list every
+// Direction the Room actually uses. Several Doors in one Direction count once.
+// If the Room has a role, the plant's tags must also contain that role's
+// RequiredTags. Candidate IDs are sorted before the weighted draw, so the
+// order of the catalog in the request does not change the result. Corridor
+// plants are chosen the same way, without a direction constraint. The game
+// may ignore PlantID.
+//
+// # Placer and Connector
+//
+// Placer and Connector are the only two Strategy interfaces in v1. A function
+// or a closure satisfies either one. Placer returns RoomPlacements and nothing
+// else: no Plants, no Doors, no IDs, and no mutation of a Layout. Connector
+// returns edges and nothing else: it does not route Cells. Generator checks
+// every placement against the normalized geometry and the Grid, and it rejects
+// a connection that is duplicated, a self-loop, unknown, or disconnected.
+// With ExtraEdgeCount 0 the accepted graph must be a tree. Above that,
+// Connector may return extra edges up to the budget. Each edge beyond the
+// n-1 backbone consumes one shortcut, and Generator adds only the remaining
+// discarded short edges, in the same deterministic order. prim_rooms_v1
+// returns the tree alone, so the whole budget is filled in that later phase.
+//
+// poisson_disk_rooms_v1 and prim_rooms_v1 are the built-ins, and they are what
+// the gRPC service and the debug HTTP server run. An injected plugin exists
+// only in the SDK. The plugin owns its determinism, its observation of
+// Context, and its safety under concurrent calls. This package does not
+// serialize a shared plugin, and it does not register, version, or detect one.
+// A caller that needs mutable plugin state should use separate Generators or
+// synchronize inside the plugin. A plugin that is not deterministic makes the
+// Layout not deterministic; that is the plugin's contract, not a failure of
+// the built-in freeze.
+//
+// # Determinism
+//
+// For the built-in algorithms, the same effective Config and the same Seed
+// reproduce a Layout bit for bit on every supported platform, for the whole of
+// major version v1, in the SDK and over gRPC. Effective includes the
+// normalized RoomGeometry, so an omitted geometry and an explicit copy of the
+// dynamic profile are the same request. amd64 and arm64 are both in that
+// promise. CellSize is frozen only as the value copied into the Layout; it
+// does not move a Room.
+//
+// Five independent SplitMix64 streams are derived from the Seed, each as
+// Mix64 of the Seed xor a frozen salt: PlacementSeed, ConnectorSeed,
+// RoomPlantSeed, RoomGeometrySeed, and CorridorPlantSeed. Consuming one does
+// not advance the others. Placement draws the active index and the two annulus
+// offsets. Geometry draws the shape, by positive integer weights in canonical
+// shape order, and then a dimension pair from that shape's combinations sorted
+// by width then height. Plant draws run only when a catalog is present. Prim,
+// role assignment, and shortcut selection consume nothing, so enabling roles
+// or shortcuts does not shift the placement sequence. uniformInt is
+// inclusive and rejects samples to avoid modulo bias. uniform01 lies in
+// [0, 1).
+//
+// The generation path does not call sine, cosine, or any other libm
+// trigonometry. Products and sums that affect a candidate, a distance, a
+// weight, or a tie-break are separate statements, with an explicit float64
+// conversion of the intermediate where a fused multiply-add would otherwise
+// differ between architectures. Discrete coordinates and squared Cell
+// distances use int64, which covers the v1 Grid limits. What stays frozen is
+// the observable result: masks, dimensions, footprints, door positions,
+// corridor Cells, role assignment, field values, and sequence order. Allocation
+// strategy, the private acceleration grid, logs, and wire layout may change
+// inside v1 when none of those results change.
+//
+// A calibration or a bugfix that changes frozen output is a new major version,
+// or a new algorithm ID such as a future poisson_disk_v2 while
+// poisson_disk_rooms_v1 stays put. Silent updates of the built-in Layout are
+// not part of the contract. Pinning the module version is what keeps a replay
+// stable across releases.
+//
+// # Errors
+//
+// Four sentinels name the SDK failure categories. They are wrapped with
+// context, and callers distinguish them with errors.Is. None of them is
+// accompanied by a partial Layout.
+//
+// ErrInvalidConfig reports a request that violates a range, numeric
+// finiteness, catalog shape, density region, role request, or RoomGeometry.
+// ErrLimitExceeded reports a request past a v1 product limit: a Grid dimension
+// above 256, a Width×Height above MaxCells, a MaxRooms above MaxRooms, or a
+// RoomGeometry.MaxFootprintCells above MaxFootprintCells. Both are detected
+// before allocation, generation, or any stream consumption, and the request is
+// never silently truncated. ErrNoCompatiblePlant reports a valid Config whose
+// catalog has no Room plant that supports a Room's Directions and the assigned
+// role's required tags. ErrUnroutableEdge reports an edge for which both
+// L-routes are blocked and the breadth-first search finds no orthogonal path.
+//
+// Cancellation and deadlines are not sentinels. GenerateContext returns
+// context.Canceled or context.DeadlineExceeded, still with the zero Layout.
+// The gRPC service maps ErrInvalidConfig to InvalidArgument, ErrLimitExceeded
+// to ResourceExhausted, a deadline to DeadlineExceeded, and caller
+// cancellation to Canceled.
+//
+// # Limits and latency
+//
+// A player is waiting for the floor, so the limits are part of the product
+// rather than a later throughput exercise. MaxCells is 65,536, the largest
+// Width×Height, and each side stops at 256. MaxRooms is 256 accepted Rooms,
+// not 256 occupied Cells. MaxFootprintCells is 4,096 Cells in one Room when
+// the caller sends a RoomGeometry; the default profile uses 81, which is the
+// 9×9 rectangle. Exceeding a product limit returns ErrLimitExceeded.
+//
+// Three release budgets describe the loads the built-in path is sized for, on
+// the declared reference hardware. A small load is 64×64 with MinDistance 6,
+// MaxAttempts 30, and MaxRooms 128, and its SDK generation p95 is at most
+// 20 ms. A typical load is 128×128 with the same distance and attempt cap and
+// MaxRooms 256; p95 is at most 50 ms and p99 at most 100 ms. The maximum v1
+// load is 256×256 with MinDistance 1, MaxAttempts 1,024, MaxRooms 256, dynamic
+// geometry, footprints, gap, cycles, roles, and DensityRegions all enabled;
+// p95 is at most 500 ms and p99 at most 1 s. Shared CI records regressions. It
+// is not the authority for those absolute numbers.
+//
+// The built-ins observe Context at phase boundaries and at least every 256
+// candidate attempts or Prim key updates. An expired Context discards private
+// work and returns the cancellation or deadline error.
+//
+// # Concurrency
+//
+// The zero Generator, the built-in Placer and Connector, and GenerateContext
+// are safe for simultaneous calls. Every invocation allocates its own streams,
+// acceleration grid, visited sets, scratch buffers, and result slices. No
+// Seed, active point, catalog draw, or partial Layout is shared, and mutating
+// a returned slice cannot change another request's Layout. Cancelling one call
+// does not disturb another. A caller-supplied plugin that is shared across
+// goroutines has to provide that same guarantee itself.
+//
+// # Tuning
+//
+// Defaults are chosen so that an ordinary floor has separated, multi-Cell
+// Rooms and a tree of corridors, and so that zero means "leave the documented
+// default", not "disable the mechanism", except where a count really is a
+// count. MinDistance defaults to 6 Cells between anchors: raising it spreads
+// Rooms out and usually accepts fewer of them; lowering it packs anchors and
+// spends more time rejecting collisions. MaxAttempts defaults to 30 proposals
+// per active point: raising it searches harder locally, lowering it gives up
+// sooner and leaves a sparser floor. MaxRooms defaults to the product ceiling
+// of 256 and stops placement early when set lower. CellSize defaults to 1 and
+// never changes topology.
+//
+// CorridorOrder defaults to X-then-Y. The other value swaps the preferred
+// elbow wherever both L-routes are legal; it does not change the Rooms.
+// ExtraEdgeCount defaults to 0, which keeps the backbone a tree. Raising it
+// adds the shortest discarded edges and the cycles those edges create.
+// RoomRoleRequests defaults to empty. A Treasure count of zero asks for no
+// treasure Rooms. DensityRegions defaults to empty, which is the uniform
+// Poisson path; a region with a smaller local distance packs that rectangle,
+// and a larger one opens it up, while a pair that straddles the boundary
+// still obeys the greater of the two local distances.
+//
+// Shape weights in the default profile are 4, 2, 2, 1, and 2 for Rectangle,
+// L, T, Cross, and Circle. A higher weight makes that mask more common among
+// geometry draws. Zero is invalid. Plant weights behave the same way inside a
+// catalog. None of these knobs, and none of the role, shortcut, or density
+// options, shifts the draws of another stream.
 package daedalus
