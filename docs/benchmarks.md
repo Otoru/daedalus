@@ -1,18 +1,18 @@
-# Referência de benchmark
+# Benchmark reference
 
-Esta medição registra uma referência local para as três cargas da seção 11 da
-especificação. Ela serve como evidência de regressão e **não** declara este
-computador como o hardware de referência do SLA de release.
+This measurement records a local reference for the three loads in section 11 of
+the specification. It serves as regression evidence and **does not** declare this
+computer to be the reference hardware of the release SLA.
 
-## Ambiente
+## Environment
 
-- Data: 2026-09-27
+- Date: 2026-09-27
 - CPU: Apple M4 Pro
-- Sistema: Darwin arm64
+- System: Darwin arm64
 - Go: `go1.26.4`
-- Comando: `make bench`
+- Command: `make bench`
 
-## Resultado
+## Result
 
 ```text
 go test -run '^$' -bench '^BenchmarkGenerate$' -benchmem .

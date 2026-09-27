@@ -26,17 +26,17 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// DaedalusService é o subprocesso de geração de dungeons. Ele não tem estado
-// entre solicitações: cada Generate recebe uma Config completa, cria um
-// Layout, devolve-o e não retém Layout, Seed nem stream aleatório. O
-// transporte usa somente os algoritmos embutidos (poisson_disk_rooms_v1 e
-// prim_rooms_v1); algoritmos injetados pelo jogo existem apenas no SDK.
+// DaedalusService is the dungeon-generation subprocess. It holds no state
+// between requests: each Generate receives a complete Config, creates a
+// Layout, returns it and retains neither the Layout, the Seed nor the random
+// stream. The transport uses only the built-in algorithms
+// (poisson_disk_rooms_v1 and prim_rooms_v1); algorithms injected by the game
+// exist only in the SDK.
 type DaedalusServiceClient interface {
-	// Generate cria um Layout completo a partir de uma Config. Falhas de
-	// validação retornam InvalidArgument, limites de produto excedidos
-	// retornam ResourceExhausted, expiração retorna DeadlineExceeded e
-	// cancelamento do chamador retorna Canceled. Nunca devolve Layout
-	// parcial.
+	// Generate creates a complete Layout from a Config. Validation failures
+	// return InvalidArgument, exceeded product limits return ResourceExhausted,
+	// expiry returns DeadlineExceeded and caller cancellation returns Canceled.
+	// It never returns a partial Layout.
 	Generate(ctx context.Context, in *GenerateRequest, opts ...grpc.CallOption) (*GenerateResponse, error)
 }
 
@@ -62,17 +62,17 @@ func (c *daedalusServiceClient) Generate(ctx context.Context, in *GenerateReques
 // All implementations must embed UnimplementedDaedalusServiceServer
 // for forward compatibility.
 //
-// DaedalusService é o subprocesso de geração de dungeons. Ele não tem estado
-// entre solicitações: cada Generate recebe uma Config completa, cria um
-// Layout, devolve-o e não retém Layout, Seed nem stream aleatório. O
-// transporte usa somente os algoritmos embutidos (poisson_disk_rooms_v1 e
-// prim_rooms_v1); algoritmos injetados pelo jogo existem apenas no SDK.
+// DaedalusService is the dungeon-generation subprocess. It holds no state
+// between requests: each Generate receives a complete Config, creates a
+// Layout, returns it and retains neither the Layout, the Seed nor the random
+// stream. The transport uses only the built-in algorithms
+// (poisson_disk_rooms_v1 and prim_rooms_v1); algorithms injected by the game
+// exist only in the SDK.
 type DaedalusServiceServer interface {
-	// Generate cria um Layout completo a partir de uma Config. Falhas de
-	// validação retornam InvalidArgument, limites de produto excedidos
-	// retornam ResourceExhausted, expiração retorna DeadlineExceeded e
-	// cancelamento do chamador retorna Canceled. Nunca devolve Layout
-	// parcial.
+	// Generate creates a complete Layout from a Config. Validation failures
+	// return InvalidArgument, exceeded product limits return ResourceExhausted,
+	// expiry returns DeadlineExceeded and caller cancellation returns Canceled.
+	// It never returns a partial Layout.
 	Generate(context.Context, *GenerateRequest) (*GenerateResponse, error)
 	mustEmbedUnimplementedDaedalusServiceServer()
 }

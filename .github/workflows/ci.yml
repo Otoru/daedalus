@@ -2,12 +2,11 @@ name: ci
 
 on:
   push:
-    # Somente branches. Tag é um snapshot de uma main já verificada e o
-    # workflow de release reroda os testes com -race antes de publicar,
-    # então rodar CI em tag duplica trabalho. Builds de tag também não têm
-    # o contexto de branch que este workflow assume (HEAD destacado, sem
-    # refs locais de branch) — foi o que quebrou o CI do Geppetto em push
-    # de tag.
+    # Branches only. A tag is a snapshot of a main branch that was already
+    # verified, and the release workflow reruns the tests with -race before
+    # publishing, so running CI on a tag duplicates work. Tag builds also
+    # lack the branch context this workflow assumes (detached HEAD, with no
+    # local branch refs) — that is what broke Geppetto's CI on a tag push.
     branches: ['**']
   pull_request:
 
@@ -20,45 +19,45 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          # Fonte única da versão da toolchain Go: go.mod.
+          # Single source of the Go toolchain version: go.mod.
           go-version-file: go.mod
       - uses: bufbuild/buf-setup-action@v1
       - uses: golangci/golangci-lint-action@v7
         with:
-          # Fixada na mesma versão que o Makefile exige como piso
-          # (GOLANGCI_LINT_MIN), para que local e CI reprovem o mesmo
-          # conjunto de achados.
+          # Pinned to the same version the Makefile requires as the floor
+          # (GOLANGCI_LINT_MIN), so that local and CI fail the same set of
+          # findings.
           version: v2.14.0
           install-mode: binary
       - name: Verify generated bindings
-        # O pathspec aponta para internal/gen, onde os bindings gerados
-        # estão commitados. Um pathspec sem match sai 0 em silêncio (foi o
-        # falso verde do Geppetto); aqui o diretório existe e tem arquivos
-        # rastreados, então o diff realmente verifica algo.
+        # The pathspec points at internal/gen, where the generated bindings
+        # are committed. A pathspec with no match exits 0 in silence (that
+        # was Geppetto's false green); here the directory exists and has
+        # tracked files, so the diff actually checks something.
         run: |
           make generate
           git diff --exit-code -- internal/gen
       - name: Buf lint and breaking checks
         run: |
           buf lint
-          # Compara contra a ref remote-tracking da branch padrão, nunca
-          # uma branch local: checkouts destacados (tags, alguns contextos
-          # de pull_request) podem não tê-la. O fetch explícito cria a ref
-          # em vez de assumir que o checkout o fez.
+          # Compares against the remote-tracking ref of the default branch,
+          # never a local branch: detached checkouts (tags, some
+          # pull_request contexts) may not have it. The explicit fetch
+          # creates the ref instead of assuming the checkout did.
           git fetch --no-tags origin "+refs/heads/${{ github.event.repository.default_branch }}:refs/remotes/origin/${{ github.event.repository.default_branch }}"
           buf breaking --against ".git#ref=refs/remotes/origin/${{ github.event.repository.default_branch }}"
       - name: Test with race detector
-        # A suite da raiz inclui pureza de imports e os goldens congelados
-        # (spec seção 13).
+        # The root suite includes import purity and the frozen goldens
+        # (specification section 13).
         run: go test -race ./...
       - name: Lint
         run: golangci-lint run ./...
       - name: Build
         run: go build ./...
       - name: Record benchmarks
-        # Spec seções 11 e 13: registra tempos e alocações das três cargas
-        # sem transformar o orçamento de SLA em asserção de runner
-        # compartilhado.
+        # Specification sections 11 and 13: records timings and allocations
+        # of the three loads without turning the SLA budget into an
+        # assertion on a shared runner.
         run: make bench | tee bench.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -67,23 +66,24 @@ jobs:
           retention-days: 30
 
   determinism:
-    # AC-18 / P45: a mesma suite — incluindo os goldens, com o MESMO
-    # arquivo esperado commitado — passa em runners NATIVOS amd64 e arm64.
-    # Emulação (QEMU) não prova determinismo de arquitetura, por isso a
-    # matriz usa ubuntu-24.04-arm, runner arm64 nativo que o GitHub
-    # oferece para repositório público. Qualquer divergência de Layout
-    # derruba o job na arquitetura que divergir.
+    # AC-18 / P45: the same suite — including the goldens, with the SAME
+    # committed expected file — passes on NATIVE amd64 and arm64 runners.
+    # Emulation (QEMU) does not prove architecture determinism, which is why
+    # the matrix uses ubuntu-24.04-arm, the native arm64 runner GitHub
+    # offers for a public repository. Any Layout divergence fails the job
+    # on the architecture that diverged.
     #
-    # A spec não fixa um padrão de nome para os testes golden, então o
-    # seletor é a suite inteira (go test ./...): os goldens vivem nos
-    # testes da raiz (spec seção 2) e são cobertos sem inventar nome.
+    # The specification does not fix a naming pattern for the golden tests,
+    # so the selector is the whole suite (go test ./...): the goldens live
+    # in the root tests (specification section 2) and are covered without
+    # inventing a name.
     #
-    # NÃO EXERCITADO localmente: a disponibilidade do runner
-    # ubuntu-24.04-arm só pode ser confirmada com o repositório no GitHub.
+    # NOT EXERCISED locally: availability of the ubuntu-24.04-arm runner can
+    # only be confirmed with the repository on GitHub.
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-latest é amd64; ubuntu-24.04-arm é arm64 nativo.
+        # ubuntu-latest is amd64; ubuntu-24.04-arm is native arm64.
         runs-on: [ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runs-on }}
     steps:
@@ -92,6 +92,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Run full suite (golden determinism gate)
-        # -count=1 desativa o cache de testes: o gate precisa executar o
-        # golden de verdade em cada arquitetura, nunca herdar resultado.
+        # -count=1 disables the test cache: the gate must actually run the
+        # golden on each architecture, never inherit a result.
         run: go test -count=1 ./...

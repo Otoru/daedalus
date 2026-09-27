@@ -21,8 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// CorridorOrder escolhe o cotovelo preferido do traçado ortogonal em L.
-// UNSPECIFIED é lido como o padrão X_THEN_Y.
+// CorridorOrder chooses the preferred elbow of the orthogonal L-shaped route.
+// UNSPECIFIED is read as the X_THEN_Y default.
 type CorridorOrder int32
 
 const (
@@ -72,7 +72,7 @@ func (CorridorOrder) EnumDescriptor() ([]byte, []int) {
 	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{0}
 }
 
-// RoomRole é o papel temático opcional de uma Room.
+// RoomRole is the optional thematic role of a Room.
 type RoomRole int32
 
 const (
@@ -125,8 +125,8 @@ func (RoomRole) EnumDescriptor() ([]byte, []int) {
 	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{1}
 }
 
-// Direction é uma das quatro direções cardinais do Grid. Diagonais são
-// inválidas. A ordem canônica é NORTH, EAST, SOUTH, WEST.
+// Direction is one of the four cardinal directions of the Grid. Diagonals are
+// invalid. The canonical order is NORTH, EAST, SOUTH, WEST.
 type Direction int32
 
 const (
@@ -182,7 +182,7 @@ func (Direction) EnumDescriptor() ([]byte, []int) {
 	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{2}
 }
 
-// CellKind é o estado físico de uma Cell do Grid.
+// CellKind is the physical state of a Grid Cell.
 type CellKind int32
 
 const (
@@ -235,7 +235,7 @@ func (CellKind) EnumDescriptor() ([]byte, []int) {
 	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{3}
 }
 
-// RoomShape identifica a máscara geométrica canônica de uma Room.
+// RoomShape identifies the canonical geometric mask of a Room.
 type RoomShape int32
 
 const (
@@ -294,8 +294,8 @@ func (RoomShape) EnumDescriptor() ([]byte, []int) {
 	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{4}
 }
 
-// GenerateRequest carrega todos os dados de Config, inclusive
-// extra_edge_count, room_role_requests, density_regions e room_geometry.
+// GenerateRequest carries every Config datum, including extra_edge_count,
+// room_role_requests, density_regions and room_geometry.
 type GenerateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Config        *Config                `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
@@ -340,7 +340,7 @@ func (x *GenerateRequest) GetConfig() *Config {
 	return nil
 }
 
-// GenerateResponse carrega o Layout completo gerado com sucesso.
+// GenerateResponse carries the complete Layout that was generated successfully.
 type GenerateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Layout        *Layout                `protobuf:"bytes,1,opt,name=layout,proto3" json:"layout,omitempty"`
@@ -385,8 +385,8 @@ func (x *GenerateResponse) GetLayout() *Layout {
 	return nil
 }
 
-// Cell é uma coordenada inteira (x, y) do Grid, nunca posição em pixel.
-// Válida somente dentro de Grid: 0 ≤ x < width e 0 ≤ y < height.
+// Cell is an integer (x, y) coordinate on the Grid, never a pixel position.
+// Valid only inside the Grid: 0 ≤ x < width and 0 ≤ y < height.
 type Cell struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
@@ -439,44 +439,45 @@ func (x *Cell) GetY() int32 {
 	return 0
 }
 
-// Config é a entrada completa de uma solicitação de geração. width, height
-// e seed são obrigatórios e não têm defaults seguros; os demais campos
-// ausentes recebem os defaults do SDK (cell_size 1.0, min_distance 6.0,
-// max_attempts 30, max_rooms 256, corridor_order X_THEN_Y). Limites v1 de
-// produto: width e height em 1..256, width × height ≤ 65.536 e
-// max_rooms ≤ 256; excedê-los falha com ResourceExhausted, sem truncamento.
+// Config is the complete input of a generation request. width, height and
+// seed are required and have no safe defaults; the other absent fields
+// receive the SDK defaults (cell_size 1.0, min_distance 6.0, max_attempts 30,
+// max_rooms 256, corridor_order X_THEN_Y). v1 product limits: width and
+// height in 1..256, width × height ≤ 65,536 and max_rooms ≤ 256; exceeding
+// them fails with ResourceExhausted, with no truncation.
 type Config struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Width  uint32                 `protobuf:"varint,1,opt,name=width,proto3" json:"width,omitempty"`
 	Height uint32                 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
-	// cell_size é o tamanho de uma Cell em unidades opacas do chamador,
-	// copiado para o Layout somente; finito e > 0.
+	// cell_size is the size of one Cell in opaque caller units, copied onto
+	// the Layout only; finite and > 0.
 	CellSize float64 `protobuf:"fixed64,3,opt,name=cell_size,json=cellSize,proto3" json:"cell_size,omitempty"`
-	// seed é a fonte dos streams aleatórios da solicitação; zero é válido e
-	// não significa aleatório.
+	// seed is the source of the request's random streams; zero is valid and
+	// does not mean random.
 	Seed uint64 `protobuf:"varint,4,opt,name=seed,proto3" json:"seed,omitempty"`
-	// min_distance é a distância euclidiana mínima, em Cells, entre centros
-	// de Rooms; finita e ≥ 1.0.
+	// min_distance is the minimum Euclidean distance, in Cells, between Room
+	// centres; finite and ≥ 1.0.
 	MinDistance float64 `protobuf:"fixed64,5,opt,name=min_distance,json=minDistance,proto3" json:"min_distance,omitempty"`
-	// max_attempts é o máximo de candidatos Poisson por ponto ativo: 1..1024.
+	// max_attempts is the maximum number of Poisson candidates per active
+	// point: 1..1024.
 	MaxAttempts uint32 `protobuf:"varint,6,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
-	// max_rooms é o máximo de Rooms aceitas: 1..256.
+	// max_rooms is the maximum number of accepted Rooms: 1..256.
 	MaxRooms      uint32        `protobuf:"varint,7,opt,name=max_rooms,json=maxRooms,proto3" json:"max_rooms,omitempty"`
 	CorridorOrder CorridorOrder `protobuf:"varint,8,opt,name=corridor_order,json=corridorOrder,proto3,enum=daedalus.v1.CorridorOrder" json:"corridor_order,omitempty"`
-	// extra_edge_count é a quantidade máxima de arestas curtas descartadas
-	// reintroduzidas após o backbone; 0 desliga ciclos e garante árvore.
+	// extra_edge_count is the maximum number of discarded short edges
+	// reintroduced after the backbone; 0 disables cycles and guarantees a tree.
 	ExtraEdgeCount uint32 `protobuf:"varint,9,opt,name=extra_edge_count,json=extraEdgeCount,proto3" json:"extra_edge_count,omitempty"`
-	// room_role_requests lista no máximo uma entrada por RoomRole; vazio
-	// desliga Rooms temáticas.
+	// room_role_requests lists at most one entry per RoomRole; empty disables
+	// thematic Rooms.
 	RoomRoleRequests []*RoomRoleRequest `protobuf:"bytes,10,rep,name=room_role_requests,json=roomRoleRequests,proto3" json:"room_role_requests,omitempty"`
-	// density_regions lista retângulos não vazios, internos ao Grid e sem
-	// sobreposição; vazio usa min_distance uniforme e desliga biomas.
+	// density_regions lists non-empty rectangles, inside the Grid and without
+	// overlap; empty uses a uniform min_distance and disables biomes.
 	DensityRegions []*DensityRegion `protobuf:"bytes,11,rep,name=density_regions,json=densityRegions,proto3" json:"density_regions,omitempty"`
-	// plant_catalog é opcional; ausente, plant_id e tags ficam vazios no
-	// Layout.
+	// plant_catalog is optional; when absent, plant_id and tags stay empty on
+	// the Layout.
 	PlantCatalog *PlantCatalog `protobuf:"bytes,12,opt,name=plant_catalog,json=plantCatalog,proto3" json:"plant_catalog,omitempty"`
-	// room_geometry é a geometria opcional das Rooms; ausente usa o perfil
-	// dinâmico padrão da especificação.
+	// room_geometry is the optional Room geometry; when absent, the
+	// specification's default dynamic profile is used.
 	RoomGeometry  *RoomGeometry `protobuf:"bytes,13,opt,name=room_geometry,json=roomGeometry,proto3,oneof" json:"room_geometry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -603,21 +604,21 @@ func (x *Config) GetRoomGeometry() *RoomGeometry {
 	return nil
 }
 
-// RoomGeometry define dimensões, área, espaçamento e pesos das Rooms.
+// RoomGeometry defines the dimensions, area, spacing and weights of Rooms.
 type RoomGeometry struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Dimensões da bounding box, em Cells; máximas ≥ mínimas e ≤ dimensão do
-	// Grid.
+	// Bounding-box dimensions, in Cells; maxima ≥ minima and ≤ the Grid
+	// dimension.
 	MinWidth  uint32 `protobuf:"varint,1,opt,name=min_width,json=minWidth,proto3" json:"min_width,omitempty"`
 	MaxWidth  uint32 `protobuf:"varint,2,opt,name=max_width,json=maxWidth,proto3" json:"max_width,omitempty"`
 	MinHeight uint32 `protobuf:"varint,3,opt,name=min_height,json=minHeight,proto3" json:"min_height,omitempty"`
 	MaxHeight uint32 `protobuf:"varint,4,opt,name=max_height,json=maxHeight,proto3" json:"max_height,omitempty"`
-	// max_footprint_cells limita as Cells ocupadas por uma única Room.
+	// max_footprint_cells limits the Cells occupied by a single Room.
 	MaxFootprintCells uint32 `protobuf:"varint,5,opt,name=max_footprint_cells,json=maxFootprintCells,proto3" json:"max_footprint_cells,omitempty"`
-	// min_room_gap é o número mínimo de camadas vazias entre footprints,
-	// medido pela distância de Chebyshev entre Cells ocupadas.
+	// min_room_gap is the minimum number of empty layers between footprints,
+	// measured by the Chebyshev distance between occupied Cells.
 	MinRoomGap uint32 `protobuf:"varint,6,opt,name=min_room_gap,json=minRoomGap,proto3" json:"min_room_gap,omitempty"`
-	// shapes lista pesos positivos por forma, sem formas duplicadas.
+	// shapes lists positive weights per shape, with no duplicate shapes.
 	Shapes        []*RoomShapeWeight `protobuf:"bytes,7,rep,name=shapes,proto3" json:"shapes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -702,12 +703,12 @@ func (x *RoomGeometry) GetShapes() []*RoomShapeWeight {
 	return nil
 }
 
-// RoomShapeWeight associa uma forma a um peso de seleção positivo.
+// RoomShapeWeight associates a shape with a positive selection weight.
 type RoomShapeWeight struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// shape é uma das formas canônicas de Room.
+	// shape is one of the canonical Room shapes.
 	Shape RoomShape `protobuf:"varint,1,opt,name=shape,proto3,enum=daedalus.v1.RoomShape" json:"shape,omitempty"`
-	// weight é o peso relativo positivo usado na seleção da forma.
+	// weight is the positive relative weight used when selecting the shape.
 	Weight        uint32 `protobuf:"varint,2,opt,name=weight,proto3" json:"weight,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -757,15 +758,15 @@ func (x *RoomShapeWeight) GetWeight() uint32 {
 	return 0
 }
 
-// RoomRoleRequest é um pedido declarativo de atribuição de um RoomRole e
-// das tags de Plant exigidas.
+// RoomRoleRequest is a declarative request to assign one RoomRole and the
+// required Plant tags.
 type RoomRoleRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Role  RoomRole               `protobuf:"varint,1,opt,name=role,proto3,enum=daedalus.v1.RoomRole" json:"role,omitempty"`
-	// count é 1 para START e BOSS, e 0..max_rooms para TREASURE. BOSS exige
-	// uma solicitação START na mesma Config.
+	// count is 1 for START and BOSS, and 0..max_rooms for TREASURE. BOSS
+	// requires a START request in the same Config.
 	Count uint32 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
-	// required_tags lista tags UTF-8 não vazias e sem duplicatas.
+	// required_tags lists non-empty UTF-8 tags with no duplicates.
 	RequiredTags  []string `protobuf:"bytes,3,rep,name=required_tags,json=requiredTags,proto3" json:"required_tags,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -822,17 +823,17 @@ func (x *RoomRoleRequest) GetRequiredTags() []string {
 	return nil
 }
 
-// DensityRegion é um retângulo de Grid que substitui min_distance por uma
-// distância local. O retângulo é semiaberto: min é inclusiva e max é
-// exclusiva, cobrindo x em [min.x, max.x) e y em [min.y, max.y).
+// DensityRegion is a Grid rectangle that replaces min_distance with a local
+// distance. The rectangle is half-open: min is inclusive and max is
+// exclusive, covering x in [min.x, max.x) and y in [min.y, max.y).
 type DensityRegion struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// min é o canto mínimo do retângulo, em Cells, inclusivo.
+	// min is the rectangle's minimum corner, in Cells, inclusive.
 	Min *Cell `protobuf:"bytes,1,opt,name=min,proto3" json:"min,omitempty"`
-	// max é o canto máximo do retângulo, em Cells, exclusivo.
+	// max is the rectangle's maximum corner, in Cells, exclusive.
 	Max *Cell `protobuf:"bytes,2,opt,name=max,proto3" json:"max,omitempty"`
-	// min_distance é a distância euclidiana mínima local, em Cells: finita e
-	// ≥ 1.0.
+	// min_distance is the local minimum Euclidean distance, in Cells: finite
+	// and ≥ 1.0.
 	MinDistance   float64 `protobuf:"fixed64,3,opt,name=min_distance,json=minDistance,proto3" json:"min_distance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -889,8 +890,8 @@ func (x *DensityRegion) GetMinDistance() float64 {
 	return 0
 }
 
-// PlantCatalog é o catálogo engine-agnóstico de metadados de assets. Quando
-// presente, ambas as listas são não vazias, com IDs únicos.
+// PlantCatalog is the engine-agnostic catalogue of asset metadata. When
+// present, both lists are non-empty, with unique IDs.
 type PlantCatalog struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Rooms         []*RoomPlant           `protobuf:"bytes,1,rep,name=rooms,proto3" json:"rooms,omitempty"`
@@ -943,16 +944,16 @@ func (x *PlantCatalog) GetCorridors() []*CorridorPlant {
 	return nil
 }
 
-// RoomPlant descreve os metadados de uma Plant de Room do catálogo.
+// RoomPlant describes the metadata of one catalogue Room Plant.
 type RoomPlant struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// id é o identificador opaco do asset: UTF-8 não vazio.
+	// id is the opaque asset identifier: non-empty UTF-8.
 	Id   string   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Tags []string `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty"`
-	// weight é o peso relativo de seleção ponderada: 1..2^32-1.
+	// weight is the relative weight of the weighted selection: 1..2^32-1.
 	Weight uint32 `protobuf:"varint,3,opt,name=weight,proto3" json:"weight,omitempty"`
-	// door_directions declara as Directions de abertura suportadas: não
-	// vazio e sem duplicatas.
+	// door_directions declares the supported opening Directions: non-empty and
+	// with no duplicates.
 	DoorDirections []Direction `protobuf:"varint,4,rep,packed,name=door_directions,json=doorDirections,proto3,enum=daedalus.v1.Direction" json:"door_directions,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1016,8 +1017,9 @@ func (x *RoomPlant) GetDoorDirections() []Direction {
 	return nil
 }
 
-// CorridorPlant descreve os metadados de uma Plant de Corridor do catálogo.
-// Não declara geometria local porque ela deriva de Corridor.cells.
+// CorridorPlant describes the metadata of one catalogue Corridor Plant.
+// It declares no local geometry because that geometry derives from
+// Corridor.cells.
 type CorridorPlant struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1078,15 +1080,15 @@ func (x *CorridorPlant) GetWeight() uint32 {
 	return 0
 }
 
-// CellState é o estado físico de uma Cell do Grid gerado.
+// CellState is the physical state of one generated Grid Cell.
 type CellState struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	At    *Cell                  `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
 	Kind  CellKind               `protobuf:"varint,2,opt,name=kind,proto3,enum=daedalus.v1.CellKind" json:"kind,omitempty"`
-	// room_id está presente se e somente se kind == CELL_KIND_ROOM.
+	// room_id is present if and only if kind == CELL_KIND_ROOM.
 	RoomId *uint32 `protobuf:"varint,3,opt,name=room_id,json=roomId,proto3,oneof" json:"room_id,omitempty"`
-	// corridor_ids lista em ordem crescente todos os Corridors que contêm
-	// esta Cell; não vazio se e somente se kind == CELL_KIND_CORRIDOR.
+	// corridor_ids lists, in ascending order, every Corridor that contains
+	// this Cell; non-empty if and only if kind == CELL_KIND_CORRIDOR.
 	CorridorIds   []uint32 `protobuf:"varint,4,rep,packed,name=corridor_ids,json=corridorIds,proto3" json:"corridor_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1150,15 +1152,15 @@ func (x *CellState) GetCorridorIds() []uint32 {
 	return nil
 }
 
-// Grid é o espaço retangular de width × height Cells do Layout.
+// Grid is the Layout's rectangular space of width × height Cells.
 type Grid struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Width  uint32                 `protobuf:"varint,1,opt,name=width,proto3" json:"width,omitempty"`
 	Height uint32                 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
-	// cell_size é o tamanho de uma Cell em unidades opacas do chamador.
+	// cell_size is the size of one Cell in opaque caller units.
 	CellSize float64 `protobuf:"fixed64,3,opt,name=cell_size,json=cellSize,proto3" json:"cell_size,omitempty"`
-	// cells contém exatamente width × height estados, em ordem canônica
-	// (Y e depois X): o estado de (x, y) está em cells[y * width + x].
+	// cells contains exactly width × height states, in canonical order
+	// (Y then X): the state of (x, y) is at cells[y * width + x].
 	Cells         []*CellState `protobuf:"bytes,4,rep,name=cells,proto3" json:"cells,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1222,30 +1224,31 @@ func (x *Grid) GetCells() []*CellState {
 	return nil
 }
 
-// Room é um vértice topológico do Layout e contém seu footprint absoluto.
+// Room is a topological vertex of the Layout and holds its absolute footprint.
 type Room struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    uint32                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	At    *Cell                  `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
-	// role está ausente quando a Config não pediu papéis temáticos ou quando
-	// nenhum papel foi atribuído a esta Room.
+	// role is absent when the Config requested no thematic roles, or when no
+	// role was assigned to this Room.
 	Role *RoomRole `protobuf:"varint,3,opt,name=role,proto3,enum=daedalus.v1.RoomRole,oneof" json:"role,omitempty"`
-	// plant_id é o metadado de asset selecionado, ou vazio sem catálogo.
+	// plant_id is the selected asset metadata, or empty when there is no
+	// catalogue.
 	PlantId string `protobuf:"bytes,4,opt,name=plant_id,json=plantId,proto3" json:"plant_id,omitempty"`
-	// tags é a cópia canônica das tags da Plant selecionada.
+	// tags is the canonical copy of the selected Plant's tags.
 	Tags []string `protobuf:"bytes,5,rep,name=tags,proto3" json:"tags,omitempty"`
-	// door_ids lista as aberturas em ordem de Cell (y, x) e Direction.
+	// door_ids lists the openings in Cell order (y, x) and Direction.
 	DoorIds []uint32 `protobuf:"varint,6,rep,packed,name=door_ids,json=doorIds,proto3" json:"door_ids,omitempty"`
-	// shape é a máscara discreta canônica do footprint.
+	// shape is the canonical discrete mask of the footprint.
 	Shape RoomShape `protobuf:"varint,7,opt,name=shape,proto3,enum=daedalus.v1.RoomShape" json:"shape,omitempty"`
-	// origin é o canto superior esquerdo da bounding box; pode não ser
-	// ocupada, como no CROSS.
+	// origin is the top-left corner of the bounding box; it may be unoccupied,
+	// as with CROSS.
 	Origin *Cell `protobuf:"bytes,8,opt,name=origin,proto3" json:"origin,omitempty"`
-	// width é a largura da bounding box, em Cells.
+	// width is the bounding-box width, in Cells.
 	Width uint32 `protobuf:"varint,9,opt,name=width,proto3" json:"width,omitempty"`
-	// height é a altura da bounding box, em Cells.
+	// height is the bounding-box height, in Cells.
 	Height uint32 `protobuf:"varint,10,opt,name=height,proto3" json:"height,omitempty"`
-	// cells é o footprint absoluto da Room, em ordem Y e depois X.
+	// cells is the Room's absolute footprint, in Y-then-X order.
 	Cells         []*Cell `protobuf:"bytes,11,rep,name=cells,proto3" json:"cells,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1358,8 +1361,8 @@ func (x *Room) GetCells() []*Cell {
 	return nil
 }
 
-// Corridor é uma aresta topológica entre duas Rooms e suas Cells ortogonais
-// internas ordenadas.
+// Corridor is a topological edge between two Rooms and its ordered internal
+// orthogonal Cells.
 type Corridor struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Id         uint32                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1367,8 +1370,8 @@ type Corridor struct {
 	ToRoomId   uint32                 `protobuf:"varint,3,opt,name=to_room_id,json=toRoomId,proto3" json:"to_room_id,omitempty"`
 	FromDoorId uint32                 `protobuf:"varint,4,opt,name=from_door_id,json=fromDoorId,proto3" json:"from_door_id,omitempty"`
 	ToDoorId   uint32                 `protobuf:"varint,5,opt,name=to_door_id,json=toDoorId,proto3" json:"to_door_id,omitempty"`
-	// cells são as Cells internas do traçado, do lado From até o lado To;
-	// vazio quando as Rooms são adjacentes.
+	// cells are the route's internal Cells, from the From side to the To side;
+	// empty when the Rooms are adjacent.
 	Cells         []*Cell  `protobuf:"bytes,6,rep,name=cells,proto3" json:"cells,omitempty"`
 	PlantId       string   `protobuf:"bytes,7,opt,name=plant_id,json=plantId,proto3" json:"plant_id,omitempty"`
 	Tags          []string `protobuf:"bytes,8,rep,name=tags,proto3" json:"tags,omitempty"`
@@ -1462,17 +1465,17 @@ func (x *Corridor) GetTags() []string {
 	return nil
 }
 
-// Door é a abertura lógica de uma Room identificada por Cell e Direction;
-// única por (room_id, at, direction).
+// Door is a Room's logical opening, identified by Cell and Direction; unique
+// per (room_id, at, direction).
 type Door struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Id     uint32                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	RoomId uint32                 `protobuf:"varint,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	// at é uma Cell de borda pertencente ao footprint da Room dona.
+	// at is a border Cell that belongs to the owning Room's footprint.
 	At        *Cell     `protobuf:"bytes,3,opt,name=at,proto3" json:"at,omitempty"`
 	Direction Direction `protobuf:"varint,4,opt,name=direction,proto3,enum=daedalus.v1.Direction" json:"direction,omitempty"`
-	// corridor_ids lista em ordem crescente uma ou mais arestas que usam
-	// esta abertura.
+	// corridor_ids lists, in ascending order, one or more edges that use this
+	// opening.
 	CorridorIds   []uint32 `protobuf:"varint,5,rep,packed,name=corridor_ids,json=corridorIds,proto3" json:"corridor_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1543,10 +1546,10 @@ func (x *Door) GetCorridorIds() []uint32 {
 	return nil
 }
 
-// Layout é o resultado completo, imutável e gerado com sucesso de uma
-// solicitação. O payload é array-of-structs (AoS): mensagens aninhadas
-// repetidas espelham Room, Corridor, Door e CellState, porque um Layout
-// moderado por solicitação não justifica a validação de offsets de SoA.
+// Layout is the complete, immutable result of a request that was generated
+// successfully. The payload is array-of-structs (AoS): repeated nested
+// messages mirror Room, Corridor, Door and CellState, because one moderate
+// Layout per request does not justify validating SoA offsets.
 type Layout struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Seed          uint64                 `protobuf:"varint,1,opt,name=seed,proto3" json:"seed,omitempty"`
