@@ -1,0 +1,56 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: chore
+    groups:
+      uber-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - go.uber.org/*
+        update-types:
+          - minor
+          - patch
+      google-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - google.golang.org/*
+        update-types:
+          - minor
+          - patch
+      go-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      go-major:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
