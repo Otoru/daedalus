@@ -39,14 +39,23 @@ type Grid struct {
 	Cells []CellState
 }
 
-// Room é um vértice topológico do Layout. Em v1 uma Room ocupa exatamente
-// uma Cell; variação de tamanho é visual e pertence ao jogo ao instanciar
-// seu asset nessa Cell.
+// Room é um vértice topológico do Layout e contém o footprint absoluto da
+// máscara da Room, em ordem canônica Y/X.
 type Room struct {
 	// ID é o identificador estável da Room, na ordem de criação.
 	ID RoomID
-	// At é a Cell ocupada pela Room; distinta entre todas as Rooms.
+	// At é a primeira Cell ocupada do footprint em ordem canônica Y/X.
 	At Cell
+	// Shape é a máscara canônica da Room.
+	Shape RoomShape
+	// Origin é o canto superior esquerdo da bounding box da Room.
+	Origin Cell
+	// Width é a largura da bounding box, em Cells.
+	Width uint32
+	// Height é a altura da bounding box, em Cells.
+	Height uint32
+	// Cells é o footprint absoluto da Room, em ordem Y e depois X.
+	Cells []Cell
 	// Role é o papel temático da Room, ou nil quando
 	// Config.RoomRoleRequests está vazio ou nenhum papel foi atribuído a
 	// esta Room. Nenhuma Room recebe mais de um Role em v1.
@@ -58,8 +67,8 @@ type Room struct {
 	// Tags é a cópia canônica das tags da Plant selecionada; vazio quando
 	// não há catálogo ou a Plant não declara tags.
 	Tags []string
-	// DoorIDs lista as aberturas da Room em ordem cardinal (North, East,
-	// South, West); pode ser vazio quando a Room não possui Corridors.
+	// DoorIDs lista as aberturas da Room em ordem de Cell (Y, X) e depois
+	// Direction; pode ser vazio quando a Room não possui Corridors.
 	DoorIDs []DoorID
 }
 
@@ -92,15 +101,15 @@ type Corridor struct {
 	Tags []string
 }
 
-// Door é a abertura lógica de uma Room identificada por uma Direction
-// cardinal. Door é única por (RoomID, Direction), mesmo quando múltiplas
+// Door é a abertura lógica de uma Room identificada por Cell e Direction
+// cardinal. Door é única por (RoomID, At, Direction), mesmo quando múltiplas
 // arestas a utilizam.
 type Door struct {
 	// ID é o identificador estável da Door, na ordem de criação.
 	ID DoorID
 	// RoomID é a Room à qual esta abertura pertence.
 	RoomID RoomID
-	// At é a Cell da Door; em v1 é sempre igual ao At da Room dona.
+	// At é uma Cell de borda pertencente ao footprint da Room dona.
 	At Cell
 	// Direction é a direção do primeiro passo interno do Corridor a
 	// partir da Room; com Cells vazias, é a direção entre as extremidades.

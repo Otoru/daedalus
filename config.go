@@ -13,6 +13,8 @@ const (
 	// de latência para geração sob demanda, não pedido para preencher o
 	// Grid.
 	MaxRooms = 256
+	// MaxFootprintCells é a quantidade máxima de Cells ocupadas por uma Room.
+	MaxFootprintCells = 4096
 )
 
 // Config é a entrada completa de uma solicitação de geração de dungeon.
@@ -64,9 +66,40 @@ type Config struct {
 	// ao Grid e sem sobreposição de Cells. Padrão vazio, que usa
 	// MinDistance uniforme e desliga biomas.
 	DensityRegions []DensityRegion
+	// RoomGeometry define a geometria das Rooms; nil solicita o perfil
+	// dinâmico padrão da especificação.
+	RoomGeometry *RoomGeometry
 	// PlantCatalog é o catálogo opcional de metadados de assets, ou nil
 	// quando ausente; nesse caso PlantID e Tags ficam vazios no Layout.
 	PlantCatalog *PlantCatalog
+}
+
+// RoomGeometry define dimensões, área, espaçamento e pesos das formas de
+// Room aceitas por uma solicitação.
+type RoomGeometry struct {
+	// MinWidth é a menor largura permitida para a bounding box, em Cells.
+	MinWidth uint32
+	// MaxWidth é a maior largura permitida para a bounding box, em Cells.
+	MaxWidth uint32
+	// MinHeight é a menor altura permitida para a bounding box, em Cells.
+	MinHeight uint32
+	// MaxHeight é a maior altura permitida para a bounding box, em Cells.
+	MaxHeight uint32
+	// MaxFootprintCells limita as Cells ocupadas por uma única Room.
+	MaxFootprintCells uint32
+	// MinRoomGap é a quantidade mínima de camadas vazias entre footprints,
+	// medida pela distância de Chebyshev entre Cells ocupadas.
+	MinRoomGap uint32
+	// Shapes lista pesos positivos por forma, sem formas duplicadas.
+	Shapes []RoomShapeWeight
+}
+
+// RoomShapeWeight associa uma Shape a um peso de seleção positivo.
+type RoomShapeWeight struct {
+	// Shape é uma das formas canônicas de Room.
+	Shape RoomShape
+	// Weight é o peso relativo positivo usado na seleção da forma.
+	Weight uint32
 }
 
 // RoomRoleRequest é um pedido declarativo de atribuição de um RoomRole e

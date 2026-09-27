@@ -4,7 +4,7 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -24,18 +24,29 @@ func TestPacoteRaizImportaApenasBibliotecaPadrao(t *testing.T) {
 	}
 	directory := filepath.Dir(thisFile)
 	fileSet := token.NewFileSet()
-	packages, err := parser.ParseDir(fileSet, directory, func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.ImportsOnly)
+	entries, err := os.ReadDir(directory)
 	if err != nil {
-		t.Fatalf("analisar arquivos de produção da raiz: %v", err)
+		t.Fatalf("listar arquivos de produção da raiz: %v", err)
 	}
 
-	rootPackage, ok := packages["daedalus"]
-	if !ok {
-		t.Fatal("pacote de produção daedalus não encontrado")
-	}
-	for fileName, file := range rootPackage.Files {
+	foundProductionFile := false
+	for _, entry := range entries {
+		fileName := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(fileName, ".go") || strings.HasSuffix(fileName, "_test.go") {
+			continue
+		}
+		matchesBuild, err := build.Default.MatchFile(directory, fileName)
+		if err != nil {
+			t.Fatalf("avaliar restrições de build de %s: %v", fileName, err)
+		}
+		if !matchesBuild {
+			continue
+		}
+		file, err := parser.ParseFile(fileSet, filepath.Join(directory, fileName), nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("analisar imports de %s: %v", fileName, err)
+		}
+		foundProductionFile = true
 		for _, importSpec := range file.Imports {
 			importPath, err := strconv.Unquote(importSpec.Path.Value)
 			if err != nil {
@@ -46,5 +57,8 @@ func TestPacoteRaizImportaApenasBibliotecaPadrao(t *testing.T) {
 				t.Errorf("%s importa pacote fora da biblioteca padrão: %q", filepath.Base(fileName), importPath)
 			}
 		}
+	}
+	if !foundProductionFile {
+		t.Fatal("pacote de produção daedalus não encontrado")
 	}
 }

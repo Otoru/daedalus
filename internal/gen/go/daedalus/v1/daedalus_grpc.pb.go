@@ -29,8 +29,8 @@ const (
 // DaedalusService é o subprocesso de geração de dungeons. Ele não tem estado
 // entre solicitações: cada Generate recebe uma Config completa, cria um
 // Layout, devolve-o e não retém Layout, Seed nem stream aleatório. O
-// transporte usa somente os algoritmos embutidos (poisson_disk_v1 e
-// prim_v1); algoritmos injetados pelo jogo existem apenas no SDK.
+// transporte usa somente os algoritmos embutidos (poisson_disk_rooms_v1 e
+// prim_rooms_v1); algoritmos injetados pelo jogo existem apenas no SDK.
 type DaedalusServiceClient interface {
 	// Generate cria um Layout completo a partir de uma Config. Falhas de
 	// validação retornam InvalidArgument, limites de produto excedidos
@@ -65,8 +65,8 @@ func (c *daedalusServiceClient) Generate(ctx context.Context, in *GenerateReques
 // DaedalusService é o subprocesso de geração de dungeons. Ele não tem estado
 // entre solicitações: cada Generate recebe uma Config completa, cria um
 // Layout, devolve-o e não retém Layout, Seed nem stream aleatório. O
-// transporte usa somente os algoritmos embutidos (poisson_disk_v1 e
-// prim_v1); algoritmos injetados pelo jogo existem apenas no SDK.
+// transporte usa somente os algoritmos embutidos (poisson_disk_rooms_v1 e
+// prim_rooms_v1); algoritmos injetados pelo jogo existem apenas no SDK.
 type DaedalusServiceServer interface {
 	// Generate cria um Layout completo a partir de uma Config. Falhas de
 	// validação retornam InvalidArgument, limites de produto excedidos

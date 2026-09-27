@@ -7,8 +7,8 @@ option go_package = "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1;daeda
 // DaedalusService é o subprocesso de geração de dungeons. Ele não tem estado
 // entre solicitações: cada Generate recebe uma Config completa, cria um
 // Layout, devolve-o e não retém Layout, Seed nem stream aleatório. O
-// transporte usa somente os algoritmos embutidos (poisson_disk_v1 e
-// prim_v1); algoritmos injetados pelo jogo existem apenas no SDK.
+// transporte usa somente os algoritmos embutidos (poisson_disk_rooms_v1 e
+// prim_rooms_v1); algoritmos injetados pelo jogo existem apenas no SDK.
 service DaedalusService {
   // Generate cria um Layout completo a partir de uma Config. Falhas de
   // validação retornam InvalidArgument, limites de produto excedidos
@@ -19,7 +19,7 @@ service DaedalusService {
 }
 
 // GenerateRequest carrega todos os dados de Config, inclusive
-// extra_edge_count, room_role_requests e density_regions.
+// extra_edge_count, room_role_requests, density_regions e room_geometry.
 message GenerateRequest {
   Config config = 1;
 }
@@ -61,6 +61,16 @@ enum CellKind {
   CELL_KIND_EMPTY = 1;
   CELL_KIND_ROOM = 2;
   CELL_KIND_CORRIDOR = 3;
+}
+
+// RoomShape identifica a máscara geométrica canônica de uma Room.
+enum RoomShape {
+  ROOM_SHAPE_UNSPECIFIED = 0;
+  ROOM_SHAPE_RECTANGLE = 1;
+  ROOM_SHAPE_L = 2;
+  ROOM_SHAPE_T = 3;
+  ROOM_SHAPE_CROSS = 4;
+  ROOM_SHAPE_CIRCLE = 5;
 }
 
 // Cell é uma coordenada inteira (x, y) do Grid, nunca posição em pixel.
@@ -105,6 +115,34 @@ message Config {
   // plant_catalog é opcional; ausente, plant_id e tags ficam vazios no
   // Layout.
   PlantCatalog plant_catalog = 12;
+  // room_geometry é a geometria opcional das Rooms; ausente usa o perfil
+  // dinâmico padrão da especificação.
+  optional RoomGeometry room_geometry = 13;
+}
+
+// RoomGeometry define dimensões, área, espaçamento e pesos das Rooms.
+message RoomGeometry {
+  // Dimensões da bounding box, em Cells; máximas ≥ mínimas e ≤ dimensão do
+  // Grid.
+  uint32 min_width = 1;
+  uint32 max_width = 2;
+  uint32 min_height = 3;
+  uint32 max_height = 4;
+  // max_footprint_cells limita as Cells ocupadas por uma única Room.
+  uint32 max_footprint_cells = 5;
+  // min_room_gap é o número mínimo de camadas vazias entre footprints,
+  // medido pela distância de Chebyshev entre Cells ocupadas.
+  uint32 min_room_gap = 6;
+  // shapes lista pesos positivos por forma, sem formas duplicadas.
+  repeated RoomShapeWeight shapes = 7;
+}
+
+// RoomShapeWeight associa uma forma a um peso de seleção positivo.
+message RoomShapeWeight {
+  // shape é uma das formas canônicas de Room.
+  RoomShape shape = 1;
+  // weight é o peso relativo positivo usado na seleção da forma.
+  uint32 weight = 2;
 }
 
 // RoomRoleRequest é um pedido declarativo de atribuição de um RoomRole e
@@ -179,7 +217,7 @@ message Grid {
   repeated CellState cells = 4;
 }
 
-// Room é um vértice topológico do Layout; em v1 ocupa exatamente uma Cell.
+// Room é um vértice topológico do Layout e contém seu footprint absoluto.
 message Room {
   uint32 id = 1;
   Cell at = 2;
@@ -190,8 +228,19 @@ message Room {
   string plant_id = 4;
   // tags é a cópia canônica das tags da Plant selecionada.
   repeated string tags = 5;
-  // door_ids lista as aberturas da Room em ordem cardinal; pode ser vazio.
+  // door_ids lista as aberturas em ordem de Cell (y, x) e Direction.
   repeated uint32 door_ids = 6;
+  // shape é a máscara discreta canônica do footprint.
+  RoomShape shape = 7;
+  // origin é o canto superior esquerdo da bounding box; pode não ser
+  // ocupada, como no CROSS.
+  Cell origin = 8;
+  // width é a largura da bounding box, em Cells.
+  uint32 width = 9;
+  // height é a altura da bounding box, em Cells.
+  uint32 height = 10;
+  // cells é o footprint absoluto da Room, em ordem Y e depois X.
+  repeated Cell cells = 11;
 }
 
 // Corridor é uma aresta topológica entre duas Rooms e suas Cells ortogonais
@@ -209,12 +258,12 @@ message Corridor {
   repeated string tags = 8;
 }
 
-// Door é a abertura lógica de uma Room identificada por Direction cardinal;
-// única por (room_id, direction).
+// Door é a abertura lógica de uma Room identificada por Cell e Direction;
+// única por (room_id, at, direction).
 message Door {
   uint32 id = 1;
   uint32 room_id = 2;
-  // at é sempre igual ao at da Room dona em v1.
+  // at é uma Cell de borda pertencente ao footprint da Room dona.
   Cell at = 3;
   Direction direction = 4;
   // corridor_ids lista em ordem crescente uma ou mais arestas que usam
