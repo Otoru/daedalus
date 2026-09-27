@@ -133,15 +133,21 @@ func validateAndMaterializePlacements(
 	occupancy := newPlacementOccupancy(effective.width, effective.height)
 	accepted := make([]acceptedPlacement, 0, len(placements))
 	rooms := make([]PlacedRoom, 0, len(placements))
+	acceptance := placementAcceptance{
+		gridWidth:         effective.width,
+		gridHeight:        effective.height,
+		maxFootprintCells: effective.roomGeometry.MaxFootprintCells,
+		minRoomGap:        effective.roomGeometry.MinRoomGap,
+		minDistance:       effective.minDistance,
+		densityRegions:    effective.densityRegions,
+		occupancy:         occupancy,
+	}
 	for index, placement := range placements {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		footprint, err := validatePlacementAndMaterialize(
-			placement, effective.width, effective.height,
-			effective.roomGeometry.MaxFootprintCells, effective.roomGeometry.MinRoomGap,
-			effective.minDistance, effective.densityRegions, accepted, occupancy,
-		)
+		acceptance.accepted = accepted
+		footprint, err := validatePlacementAndMaterialize(placement, acceptance)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid placement %d: %w", index, err)
 		}
@@ -174,28 +180,50 @@ func validateConnections(rooms []PlacedRoom, connections []Connection, extraEdge
 	seen := make(map[[2]RoomID]struct{}, len(connections))
 	adjacency := make([][]int, roomCount)
 	for index, connection := range connections {
+		if err := validateConnectionEdge(roomCount, index, connection, seen); err != nil {
+			return err
+		}
 		from := int(connection.FromRoomID)
 		to := int(connection.ToRoomID)
-		if from < 0 || from >= roomCount || to < 0 || to >= roomCount {
-			return fmt.Errorf("%w: edge %d references unknown RoomID", errInvalidConnection, index)
-		}
-		if from == to {
-			return fmt.Errorf("%w: edge %d is a self-edge", errInvalidConnection, index)
-		}
-		first := connection.FromRoomID
-		second := connection.ToRoomID
-		if second < first {
-			first, second = second, first
-		}
-		key := [2]RoomID{first, second}
-		if _, exists := seen[key]; exists {
-			return fmt.Errorf("%w: edge %d is duplicated", errInvalidConnection, index)
-		}
-		seen[key] = struct{}{}
 		adjacency[from] = append(adjacency[from], to)
 		adjacency[to] = append(adjacency[to], from)
 	}
+	return validateConnectorReachesEveryRoom(adjacency)
+}
 
+// validateConnectionEdge rejects an unknown Room, a self-edge, or a duplicate
+// undirected pair, in that order.
+func validateConnectionEdge(
+	roomCount int,
+	index int,
+	connection Connection,
+	seen map[[2]RoomID]struct{},
+) error {
+	from := int(connection.FromRoomID)
+	to := int(connection.ToRoomID)
+	if from < 0 || from >= roomCount || to < 0 || to >= roomCount {
+		return fmt.Errorf("%w: edge %d references unknown RoomID", errInvalidConnection, index)
+	}
+	if from == to {
+		return fmt.Errorf("%w: edge %d is a self-edge", errInvalidConnection, index)
+	}
+	first := connection.FromRoomID
+	second := connection.ToRoomID
+	if second < first {
+		first, second = second, first
+	}
+	key := [2]RoomID{first, second}
+	if _, exists := seen[key]; exists {
+		return fmt.Errorf("%w: edge %d is duplicated", errInvalidConnection, index)
+	}
+	seen[key] = struct{}{}
+	return nil
+}
+
+// validateConnectorReachesEveryRoom reports a connector graph that cannot reach
+// every Room from Room 0.
+func validateConnectorReachesEveryRoom(adjacency [][]int) error {
+	roomCount := len(adjacency)
 	visited := make([]bool, roomCount)
 	queue := make([]int, 0, roomCount)
 	visited[0] = true

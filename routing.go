@@ -163,18 +163,9 @@ func selectRoutedConnection(
 	order CorridorOrder,
 	search *routingSearch,
 ) (routedConnection, bool, error) {
-	pairs := make([]openingPairCandidate, 0, len(fromOpenings)*len(toOpenings))
-	for fromIndex, from := range fromOpenings {
-		for toIndex, to := range toOpenings {
-			if err := search.ctx.Err(); err != nil {
-				return routedConnection{}, false, err
-			}
-			pairs = append(pairs, openingPairCandidate{
-				fromIndex:  fromIndex,
-				toIndex:    toIndex,
-				lowerBound: openingPairLowerBound(from, to),
-			})
-		}
+	pairs, err := openingPairCandidates(search.ctx, fromOpenings, toOpenings)
+	if err != nil {
+		return routedConnection{}, false, err
 	}
 	sort.Slice(pairs, func(first, second int) bool {
 		return pairs[first].lowerBound < pairs[second].lowerBound
@@ -213,6 +204,29 @@ func selectRoutedConnection(
 		best.cells = append([]Cell(nil), best.cells...)
 	}
 	return best, found, nil
+}
+
+// openingPairCandidates lists every door pair in received opening order.
+// Cancellation is observed once per pair, before that pair's lower bound is recorded.
+func openingPairCandidates(
+	ctx context.Context,
+	fromOpenings []doorOpening,
+	toOpenings []doorOpening,
+) ([]openingPairCandidate, error) {
+	pairs := make([]openingPairCandidate, 0, len(fromOpenings)*len(toOpenings))
+	for fromIndex, from := range fromOpenings {
+		for toIndex, to := range toOpenings {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			pairs = append(pairs, openingPairCandidate{
+				fromIndex:  fromIndex,
+				toIndex:    toIndex,
+				lowerBound: openingPairLowerBound(from, to),
+			})
+		}
+	}
+	return pairs, nil
 }
 
 func openingPairLowerBound(from, to doorOpening) int64 {
@@ -273,36 +287,48 @@ func (search *routingSearch) breadthFirstRoute(from, to Cell, buffer []Cell) ([]
 			}
 		}
 		expansions++
-		currentIndex := search.queue[queueIndex]
-		current := search.cellAt(currentIndex)
-		for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
-			delta := direction.Delta()
-			neighborX := int64(current.X) + int64(delta.X)
-			neighborY := int64(current.Y) + int64(delta.Y)
-			if neighborX < minCellCoordinate || neighborX > maxCellCoordinate ||
-				neighborY < minCellCoordinate || neighborY > maxCellCoordinate {
-				continue
-			}
-			neighbor := Cell{X: int32(neighborX), Y: int32(neighborY)}
-			neighborIndex, free := search.freeIndex(neighbor)
-			if !free || search.visited[int(neighborIndex)] == search.generation {
-				continue
-			}
-			// Marking occurs on insertion, matching the behavior frozen by section
-			// 10.2; therefore the first parent is never replaced.
-			search.visited[int(neighborIndex)] = search.generation
-			search.parents[int(neighborIndex)] = currentIndex
-			search.queue = append(search.queue, neighborIndex)
-			if neighborIndex == toIndex {
-				found = true
-				break
-			}
+		if search.enqueueCardinalNeighbors(search.queue[queueIndex], toIndex) {
+			found = true
 		}
 	}
 	if !found {
 		return buffer[:0], false, nil
 	}
+	return search.cellsFromParents(toIndex, buffer), true, nil
+}
 
+// enqueueCardinalNeighbors expands the current Cell in order North, East, South, West.
+// A neighbor is appended to the FIFO queue at most once.
+func (search *routingSearch) enqueueCardinalNeighbors(currentIndex, toIndex int64) bool {
+	current := search.cellAt(currentIndex)
+	for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
+		delta := direction.Delta()
+		neighborX := int64(current.X) + int64(delta.X)
+		neighborY := int64(current.Y) + int64(delta.Y)
+		if neighborX < minCellCoordinate || neighborX > maxCellCoordinate ||
+			neighborY < minCellCoordinate || neighborY > maxCellCoordinate {
+			continue
+		}
+		neighbor := Cell{X: int32(neighborX), Y: int32(neighborY)}
+		neighborIndex, free := search.freeIndex(neighbor)
+		if !free || search.visited[int(neighborIndex)] == search.generation {
+			continue
+		}
+		// Marking occurs on insertion, matching the behavior frozen by section
+		// 10.2; therefore the first parent is never replaced.
+		search.visited[int(neighborIndex)] = search.generation
+		search.parents[int(neighborIndex)] = currentIndex
+		search.queue = append(search.queue, neighborIndex)
+		if neighborIndex == toIndex {
+			return true
+		}
+	}
+	return false
+}
+
+// cellsFromParents walks the first-discovery parents from the target back to the
+// root, then reverses that walk so index 0 is the source Cell.
+func (search *routingSearch) cellsFromParents(toIndex int64, buffer []Cell) []Cell {
 	buffer = buffer[:0]
 	for index := toIndex; index != routingNoParent; index = search.parents[int(index)] {
 		buffer = append(buffer, search.cellAt(index))
@@ -310,7 +336,7 @@ func (search *routingSearch) breadthFirstRoute(from, to Cell, buffer []Cell) ([]
 	for left, right := 0, len(buffer)-1; left < right; left, right = left+1, right-1 {
 		buffer[left], buffer[right] = buffer[right], buffer[left]
 	}
-	return buffer, true, nil
+	return buffer
 }
 
 func (search *routingSearch) nextGeneration() {
