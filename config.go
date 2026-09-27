@@ -119,6 +119,12 @@ type RoomRoleRequest struct {
 
 // DensityRegion é um retângulo de Grid que substitui Config.MinDistance por
 // uma distância local, permitindo biomas mais densos ou mais esparsos.
+// O retângulo é semiaberto: Min é inclusiva e Max é exclusiva, de modo que
+// a região cobre X em [Min.X, Max.X) e Y em [Min.Y, Max.Y). Logo Max pode
+// ser igual à dimensão do Grid, Max estritamente maior que ela é inválido, e
+// uma região de uma única Cell se escreve com Max = Min + (1,1). A
+// especificação declara apenas os dois campos; esta é a convenção normativa
+// adotada aqui, e o teste de pertinência do Placer usa exatamente a mesma.
 type DensityRegion struct {
 	// Min é o canto mínimo do retângulo, em Cells, inclusivo.
 	Min Cell

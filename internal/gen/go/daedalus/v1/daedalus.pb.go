@@ -823,7 +823,8 @@ func (x *RoomRoleRequest) GetRequiredTags() []string {
 }
 
 // DensityRegion é um retângulo de Grid que substitui min_distance por uma
-// distância local.
+// distância local. O retângulo é semiaberto: min é inclusiva e max é
+// exclusiva, cobrindo x em [min.x, max.x) e y em [min.y, max.y).
 type DensityRegion struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// min é o canto mínimo do retângulo, em Cells, inclusivo.

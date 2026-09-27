@@ -157,7 +157,8 @@ message RoomRoleRequest {
 }
 
 // DensityRegion é um retângulo de Grid que substitui min_distance por uma
-// distância local.
+// distância local. O retângulo é semiaberto: min é inclusiva e max é
+// exclusiva, cobrindo x em [min.x, max.x) e y em [min.y, max.y).
 message DensityRegion {
   // min é o canto mínimo do retângulo, em Cells, inclusivo.
   Cell min = 1;
