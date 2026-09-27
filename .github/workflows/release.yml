@@ -3,9 +3,8 @@ name: release
 on:
   push:
     tags:
-      # GitHub tag filters are globs, not regular expressions. The first job
-      # below enforces the exact vX.Y.Z form before any release work; invalid
-      # v* tags are ignored (specification section 13).
+      # GitHub tag filters are globs, not regular expressions. validate-tag
+      # enforces exact vX.Y.Z; any other v* tag is skipped.
       - 'v*'
 
 # Minimum permissions by default; contents: write only on the job that publishes.
@@ -40,20 +39,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          # Aligned with CI: go.mod owns the required toolchain.
+          # go.mod is the single source of the Go toolchain version.
           go-version-file: go.mod
       - name: Test
-        # The -race tests run BEFORE any artifact is generated or published;
-        # a release never publishes code that did not pass.
         run: go test -race ./...
       - name: Build release artifacts
-        # VERSION on the command line overrides the Makefile stamp and
-        # injects the exact tag via -ldflags, with -trimpath.
+        # VERSION overrides the Makefile stamp and injects the tag via -ldflags, with -trimpath.
         run: make build-all VERSION="${GITHUB_REF_NAME}"
       - name: Verify artifacts exist
-        # Fails loudly with a clear message if cmd/daedalus does not exist
-        # yet (core front) and build-all has degraded to a compile check
-        # without producing binaries.
         shell: bash
         run: |
           if ! compgen -G "bin/daedalus-*" > /dev/null; then
@@ -61,27 +54,16 @@ jobs:
             exit 1
           fi
       - name: Generate checksums
-        # Names RELATIVE to the artifacts directory: whoever downloads the
-        # files into a flat folder can run `sha256sum -c CHECKSUMS.txt`
-        # there. Recording paths with a prefix (bin/...) broke that check
-        # on Geppetto.
+        # Checksum paths are relative to bin/ so sha256sum -c works in a flat download folder.
         shell: bash
         run: (cd bin && sha256sum daedalus-* > CHECKSUMS.txt)
       - name: Verify checksums from a flat directory
-        # Simulates the consumer: artifacts plus checksums copied into a
-        # flat directory, and the check runs inside it.
         shell: bash
         run: |
           tmp="$(mktemp -d)"
           cp bin/daedalus-* bin/CHECKSUMS.txt "$tmp/"
           (cd "$tmp" && sha256sum -c CHECKSUMS.txt)
       - name: Publish GitHub release
-        # NOT EXERCISED: this step can only be validated with the repository
-        # on GitHub. GitHub-hosted runners provide gh; GH_TOKEN is the
-        # workflow-scoped token (contents: write on this job). Idempotent
-        # between create and update: if the tag's release already exists,
-        # the artifacts are replaced (--clobber); otherwise the release is
-        # created with generated notes.
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
