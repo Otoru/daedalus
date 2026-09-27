@@ -1,4 +1,4 @@
-// Package transport possui e limpa o listener do subprocesso.
+// Package transport owns and cleans up the subprocess listener.
 package transport
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/Otoru/daedalus/internal/config"
 )
 
-// Listener envolve o listener efetivo e seu endereço resolvido.
+// Listener wraps the effective listener and its resolved address.
 type Listener struct {
 	net.Listener
 
@@ -21,7 +21,7 @@ type Listener struct {
 	closeErr     error
 }
 
-// Listen abre o transporte configurado sem anunciar o processo.
+// Listen opens the configured transport without announcing the process.
 func Listen(processConfig config.Config) (*Listener, error) {
 	if err := processConfig.Validate(); err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func Listen(processConfig config.Config) (*Listener, error) {
 	case config.TransportTCP:
 		listener, err := net.Listen("tcp", processConfig.Addr)
 		if err != nil {
-			return nil, fmt.Errorf("abrir listener tcp: %w", err)
+			return nil, fmt.Errorf("open tcp listener: %w", err)
 		}
 		return &Listener{
 			Listener: listener, transport: config.TransportTCP,
@@ -46,21 +46,21 @@ func Listen(processConfig config.Config) (*Listener, error) {
 			resolvedAddr: processConfig.Addr, cleanup: cleanup,
 		}, nil
 	default:
-		return nil, fmt.Errorf("transporte desconhecido %q", processConfig.Transport)
+		return nil, fmt.Errorf("unknown transport %q", processConfig.Transport)
 	}
 }
 
-// Transport devolve o identificador de transporte do handshake.
+// Transport returns the handshake transport identifier.
 func (listener *Listener) Transport() string {
 	return listener.transport
 }
 
-// ResolvedAddr devolve o endereço efetivo anunciado no handshake.
+// ResolvedAddr returns the effective address announced in the handshake.
 func (listener *Listener) ResolvedAddr() string {
 	return listener.resolvedAddr
 }
 
-// Close fecha o listener e remove recursos locais de propriedade do processo.
+// Close closes the listener and removes local resources owned by the process.
 func (listener *Listener) Close() error {
 	listener.closeOnce.Do(func() {
 		listener.closeErr = listener.Listener.Close()

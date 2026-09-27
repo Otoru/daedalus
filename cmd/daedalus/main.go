@@ -25,15 +25,15 @@ import (
 
 const (
 	developmentVersion = "dev"
-	// lifecycleTimeout limita startup e shutdown para que sinais não deixem
-	// o subprocesso bloqueado indefinidamente.
+	// lifecycleTimeout limits startup and shutdown so signals do not leave
+	// the subprocess blocked indefinitely.
 	lifecycleTimeout = 15 * time.Second
-	// httpReadHeaderTimeout limita clientes locais que enviam cabeçalhos
-	// incompletos sem impor prazo adicional à geração.
+	// httpReadHeaderTimeout limits local clients that send incomplete headers
+	// without imposing an additional deadline on generation.
 	httpReadHeaderTimeout = 5 * time.Second
 )
 
-// Version recebe o valor de release por -ldflags "-X main.Version=vX.Y.Z".
+// Version receives the release value via -ldflags "-X main.Version=vX.Y.Z".
 var Version = developmentVersion
 
 type handshake struct {
@@ -73,14 +73,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	app := newApp(processConfig, stdout, stderr)
 	if err := app.Err(); err != nil {
-		return fmt.Errorf("compor subprocesso: %w", err)
+		return fmt.Errorf("compose subprocess: %w", err)
 	}
 
 	startContext, cancelStart := context.WithTimeout(context.Background(), lifecycleTimeout)
 	err = app.Start(startContext)
 	cancelStart()
 	if err != nil {
-		return fmt.Errorf("iniciar subprocesso: %w", err)
+		return fmt.Errorf("start subprocess: %w", err)
 	}
 
 	signalContext, stopSignals := notifyShutdown(context.Background())
@@ -90,7 +90,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	stopContext, cancelStop := context.WithTimeout(context.Background(), lifecycleTimeout)
 	defer cancelStop()
 	if err := app.Stop(stopContext); err != nil {
-		return fmt.Errorf("encerrar subprocesso: %w", err)
+		return fmt.Errorf("stop subprocess: %w", err)
 	}
 	return nil
 }
@@ -159,7 +159,7 @@ func (runtime *grpcRuntime) start(context.Context) error {
 		httpListener, err = net.Listen("tcp", runtime.processConfig.HTTPDebugAddr)
 		if err != nil {
 			_ = listener.Close()
-			return fmt.Errorf("abrir listener HTTP de debug: %w", err)
+			return fmt.Errorf("open HTTP debug listener: %w", err)
 		}
 	}
 
@@ -172,7 +172,7 @@ func (runtime *grpcRuntime) start(context.Context) error {
 	go func() {
 		serveErr := grpcServer.Serve(listener)
 		if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
-			runtime.logger.Error("servidor gRPC encerrou com erro", zap.Error(serveErr))
+			runtime.logger.Error("gRPC server stopped with error", zap.Error(serveErr))
 		}
 	}()
 	if httpListener != nil {
@@ -183,13 +183,13 @@ func (runtime *grpcRuntime) start(context.Context) error {
 		go func() {
 			serveErr := runtime.httpServer.Serve(httpListener)
 			if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-				runtime.logger.Error("servidor HTTP de debug encerrou com erro", zap.Error(serveErr))
+				runtime.logger.Error("HTTP debug server stopped with error", zap.Error(serveErr))
 			}
 		}()
 		runtime.logger.Info(
-			"servidor HTTP de debug iniciado",
+			"HTTP debug server started",
 			zap.String("addr", httpListener.Addr().String()),
-			zap.Bool("ativo", true),
+			zap.Bool("active", true),
 		)
 	}
 
@@ -207,10 +207,10 @@ func (runtime *grpcRuntime) start(context.Context) error {
 			_ = httpListener.Close()
 		}
 		_ = listener.Close()
-		return fmt.Errorf("escrever handshake no stdout: %w", err)
+		return fmt.Errorf("write handshake to stdout: %w", err)
 	}
 	runtime.logger.Info(
-		"servidor gRPC iniciado",
+		"gRPC server started",
 		zap.String("transport", listener.Transport()),
 		zap.String("addr", listener.ResolvedAddr()),
 	)
@@ -254,8 +254,8 @@ func (runtime *grpcRuntime) stop(ctx context.Context) error {
 		return errors.Join(httpErr, listenerErr)
 	}
 	if runtime.httpServer != nil {
-		runtime.logger.Info("servidor HTTP de debug encerrado")
+		runtime.logger.Info("HTTP debug server stopped")
 	}
-	runtime.logger.Info("servidor gRPC encerrado")
+	runtime.logger.Info("gRPC server stopped")
 	return nil
 }

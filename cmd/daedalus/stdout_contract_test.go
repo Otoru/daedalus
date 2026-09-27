@@ -13,19 +13,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBinarioEmiteExatamenteUmaLinhaNoStdoutReal executa o subprocesso de
-// verdade, e não uma composição fx com writer injetado.
+// TestBinaryEmitsExactlyOneLineOnRealStdout runs the actual subprocess,
+// and not an fx composition with an injected writer.
 //
-// Os demais testes deste pacote passam um bytes.Buffer para newApp e provam
-// que *aquele* writer recebe uma única linha. Isso não cobre o contrato da
-// seção 2.1, que é sobre o stdout do processo: um fmt.Println em qualquer
-// ponto do binário escreve direto em os.Stdout e escapa do buffer injetado,
-// quebrando o handshake para o cliente sem reprovar nenhum teste.
-func TestBinarioEmiteExatamenteUmaLinhaNoStdoutReal(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "daedalus-contrato")
+// The other tests in this package pass a bytes.Buffer to newApp and prove
+// that *that* writer receives a single line. This does not cover the contract
+// of section 2.1, which is about the process stdout: a fmt.Println at any
+// point in the binary writes directly to os.Stdout and escapes the injected
+// buffer, breaking the handshake for the client without failing any test.
+func TestBinaryEmitsExactlyOneLineOnRealStdout(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "daedalus-contract")
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Stderr = os.Stderr
-	require.NoError(t, build.Run(), "compilar o subprocesso")
+	require.NoError(t, build.Run(), "compile the subprocess")
 
 	command := exec.Command(binary)
 	stdout, err := command.StdoutPipe()
@@ -36,23 +36,23 @@ func TestBinarioEmiteExatamenteUmaLinhaNoStdoutReal(t *testing.T) {
 		_, _ = command.Process.Wait()
 	}()
 
-	// Dá tempo de o ciclo de vida completar e de qualquer escrita indevida
-	// aparecer, antes de encerrar e ler tudo o que o processo produziu.
+	// Gives the lifecycle time to finish and any improper write time to
+	// appear, before stopping and reading everything the process produced.
 	time.Sleep(2 * time.Second)
 	require.NoError(t, command.Process.Kill())
-	produzido, err := readAllAvailable(stdout)
+	produced, err := readAllAvailable(stdout)
 	require.NoError(t, err)
 
-	linhas := strings.Split(strings.TrimSuffix(produzido, "\n"), "\n")
-	require.Len(t, linhas, 1, "stdout é contrato de fio: só o handshake pode ser escrito nele, veio %q", produzido)
-	assert.True(t, strings.HasSuffix(produzido, "\n"), "o handshake termina em quebra de linha")
+	lines := strings.Split(strings.TrimSuffix(produced, "\n"), "\n")
+	require.Len(t, lines, 1, "stdout is a wire contract: only the handshake may be written to it, got %q", produced)
+	assert.True(t, strings.HasSuffix(produced, "\n"), "the handshake ends with a newline")
 
-	var anunciado handshake
-	require.NoError(t, json.Unmarshal([]byte(linhas[0]), &anunciado), "a única linha precisa ser o handshake JSON")
-	assert.NotEmpty(t, anunciado.Transport)
-	assert.NotEmpty(t, anunciado.Addr)
-	assert.Positive(t, anunciado.PID)
-	assert.NotEmpty(t, anunciado.Version)
+	var announced handshake
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &announced), "the only line must be the JSON handshake")
+	assert.NotEmpty(t, announced.Transport)
+	assert.NotEmpty(t, announced.Addr)
+	assert.Positive(t, announced.PID)
+	assert.NotEmpty(t, announced.Version)
 }
 
 func readAllAvailable(reader interface{ Read([]byte) (int, error) }) (string, error) {

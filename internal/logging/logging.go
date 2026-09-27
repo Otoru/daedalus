@@ -1,4 +1,4 @@
-// Package logging configura logs do subprocesso exclusivamente em stderr.
+// Package logging configures subprocess logs exclusively on stderr.
 package logging
 
 import (
@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// New cria um logger JSON sem qualquer referência a stdout.
+// New creates a JSON logger with no reference to stdout.
 func New(stderr io.Writer) *zap.Logger {
 	if stderr == nil {
 		stderr = io.Discard

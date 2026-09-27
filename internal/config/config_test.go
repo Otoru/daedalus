@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseAplicaDefaultsDoProcesso(t *testing.T) {
+func TestParseAppliesProcessDefaults(t *testing.T) {
 	t.Parallel()
 
 	got, err := Parse(nil, &bytes.Buffer{})
@@ -22,7 +22,7 @@ func TestParseAplicaDefaultsDoProcesso(t *testing.T) {
 	assert.Equal(t, DefaultHTTPDebugAddr, got.HTTPDebugAddr)
 }
 
-func TestParseAceitaFlagsDoProcesso(t *testing.T) {
+func TestParseAcceptsProcessFlags(t *testing.T) {
 	t.Parallel()
 
 	got, err := Parse([]string{
@@ -41,7 +41,7 @@ func TestParseAceitaFlagsDoProcesso(t *testing.T) {
 	assert.Equal(t, "127.0.0.1:18090", got.HTTPDebugAddr)
 }
 
-func TestParseRejeitaConcorrenciaNaoPositiva(t *testing.T) {
+func TestParseRejectsNonPositiveConcurrency(t *testing.T) {
 	t.Parallel()
 
 	_, err := Parse([]string{"--max-concurrent-generations=0"}, &bytes.Buffer{})
@@ -50,7 +50,7 @@ func TestParseRejeitaConcorrenciaNaoPositiva(t *testing.T) {
 	assert.Contains(t, err.Error(), "max-concurrent-generations")
 }
 
-func TestParseValidaEnderecoHTTPApenasQuandoHabilitado(t *testing.T) {
+func TestParseValidatesHTTPAddressOnlyWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	_, err := Parse([]string{"--http-debug-addr=0.0.0.0:8090"}, &bytes.Buffer{})
@@ -61,10 +61,10 @@ func TestParseValidaEnderecoHTTPApenasQuandoHabilitado(t *testing.T) {
 		addr string
 	}{
 		{name: "wildcard", addr: "0.0.0.0:8090"},
-		{name: "ip remoto", addr: "192.0.2.1:8090"},
+		{name: "remote ip", addr: "192.0.2.1:8090"},
 		{name: "hostname", addr: "localhost:8090"},
-		{name: "porta zero", addr: "127.0.0.1:0"},
-		{name: "sem porta", addr: "127.0.0.1"},
+		{name: "port zero", addr: "127.0.0.1:0"},
+		{name: "missing port", addr: "127.0.0.1"},
 	}
 	for _, testCase := range cases {
 		testCase := testCase
@@ -82,7 +82,7 @@ func TestParseValidaEnderecoHTTPApenasQuandoHabilitado(t *testing.T) {
 	}
 }
 
-func TestParseRejeitaTCPForaDeLoopback(t *testing.T) {
+func TestParseRejectsTCPOutsideLoopback(t *testing.T) {
 	t.Parallel()
 
 	_, err := Parse([]string{"--transport=tcp", "--addr=0.0.0.0:1234"}, &bytes.Buffer{})
@@ -91,11 +91,11 @@ func TestParseRejeitaTCPForaDeLoopback(t *testing.T) {
 	assert.Contains(t, err.Error(), "addr")
 }
 
-func TestParseDirecionaErrosDeFlagAoWriterInformado(t *testing.T) {
+func TestParseSendsFlagErrorsToProvidedWriter(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	_, err := Parse([]string{"--flag-inexistente"}, &stderr)
+	_, err := Parse([]string{"--nonexistent-flag"}, &stderr)
 
 	require.Error(t, err)
 	assert.NotEmpty(t, stderr.String())

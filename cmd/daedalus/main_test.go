@@ -22,7 +22,7 @@ import (
 
 const testLifecycleTimeout = 5 * time.Second
 
-func TestStartupEmiteUmaLinhaDeHandshakeEServeGRPC(t *testing.T) {
+func TestStartupEmitsOneHandshakeLineAndServesGRPC(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	processConfig := config.Default()
@@ -63,7 +63,7 @@ func TestStartupEmiteUmaLinhaDeHandshakeEServeGRPC(t *testing.T) {
 	assert.Equal(t, uint64(7), response.Layout.Seed)
 }
 
-func TestFalhaDeBindNaoAnunciaHandshake(t *testing.T) {
+func TestBindFailureDoesNotAnnounceHandshake(t *testing.T) {
 	occupied, err := net.Listen("tcp", config.DefaultTCPAddr)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, occupied.Close()) }()
@@ -82,7 +82,7 @@ func TestFalhaDeBindNaoAnunciaHandshake(t *testing.T) {
 	assert.Empty(t, stdout.String())
 }
 
-func TestShutdownFechaListenerGRPC(t *testing.T) {
+func TestShutdownClosesGRPCListener(t *testing.T) {
 	var stdout bytes.Buffer
 	app := newApp(config.Default(), &stdout, &bytes.Buffer{})
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
@@ -102,7 +102,7 @@ func TestShutdownFechaListenerGRPC(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestHTTPDesabilitadoNaoAbrePortaNemAlteraHandshake(t *testing.T) {
+func TestDisabledHTTPDoesNotOpenPortOrChangeHandshake(t *testing.T) {
 	probe, err := net.Listen("tcp", config.DefaultTCPAddr)
 	require.NoError(t, err)
 	httpAddr := probe.Addr().String()
@@ -132,8 +132,8 @@ func TestHTTPDesabilitadoNaoAbrePortaNemAlteraHandshake(t *testing.T) {
 	assert.NotEqual(t, httpAddr, got.Addr)
 }
 
-func TestHTTPHabilitadoServeRotasSemAlterarHandshakeGRPC(t *testing.T) {
-	httpAddr := reservarEnderecoTCP(t)
+func TestEnabledHTTPServesRoutesWithoutChangingGRPCHandshake(t *testing.T) {
+	httpAddr := reserveTCPAddress(t)
 	processConfig := config.Default()
 	processConfig.HTTPDebugEnabled = true
 	processConfig.HTTPDebugAddr = httpAddr
@@ -167,16 +167,16 @@ func TestHTTPHabilitadoServeRotasSemAlterarHandshakeGRPC(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, debugResponse.Body.Close()) }()
 	assert.Equal(t, http.StatusOK, debugResponse.StatusCode)
-	assert.Contains(t, stderr.String(), "servidor HTTP de debug iniciado")
+	assert.Contains(t, stderr.String(), "HTTP debug server started")
 	assert.Contains(t, stderr.String(), httpAddr)
 }
 
-func TestFalhaDeBindHTTPAbortaStartupSemAnunciarOuManterGRPC(t *testing.T) {
+func TestHTTPBindFailureAbortsStartupWithoutAnnouncingOrKeepingGRPC(t *testing.T) {
 	occupiedHTTP, err := net.Listen("tcp", config.DefaultTCPAddr)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, occupiedHTTP.Close()) }()
 
-	grpcAddr := reservarEnderecoTCP(t)
+	grpcAddr := reserveTCPAddress(t)
 	processConfig := config.Default()
 	processConfig.Addr = grpcAddr
 	processConfig.HTTPDebugEnabled = true
@@ -191,12 +191,12 @@ func TestFalhaDeBindHTTPAbortaStartupSemAnunciarOuManterGRPC(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout.String())
 	grpcProbe, listenErr := net.Listen("tcp", grpcAddr)
-	require.NoError(t, listenErr, "listener gRPC deve ser fechado após falha do HTTP")
+	require.NoError(t, listenErr, "gRPC listener must be closed after the HTTP failure")
 	require.NoError(t, grpcProbe.Close())
 }
 
-func TestShutdownFechaListenersGRPCEHTTP(t *testing.T) {
-	httpAddr := reservarEnderecoTCP(t)
+func TestShutdownClosesGRPCAndHTTPListeners(t *testing.T) {
+	httpAddr := reserveTCPAddress(t)
 	processConfig := config.Default()
 	processConfig.HTTPDebugEnabled = true
 	processConfig.HTTPDebugAddr = httpAddr
@@ -222,11 +222,11 @@ func TestShutdownFechaListenersGRPCEHTTP(t *testing.T) {
 		if err == nil {
 			_ = connection.Close()
 		}
-		require.Error(t, err, "listener %s permaneceu aberto", addr)
+		require.Error(t, err, "listener %s remained open", addr)
 	}
 }
 
-func reservarEnderecoTCP(t *testing.T) string {
+func reserveTCPAddress(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", config.DefaultTCPAddr)
 	require.NoError(t, err)

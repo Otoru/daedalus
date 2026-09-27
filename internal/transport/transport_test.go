@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListenTCPDevolveEnderecoResolvidoELoopback(t *testing.T) {
+func TestListenTCPReturnsResolvedLoopbackAddress(t *testing.T) {
 	t.Parallel()
 
 	listener, err := Listen(config.Config{
@@ -32,7 +32,7 @@ func TestListenTCPDevolveEnderecoResolvidoELoopback(t *testing.T) {
 	assert.NotEqual(t, "0", port)
 }
 
-func TestListenFalhaQuandoEnderecoTCPEstaOcupado(t *testing.T) {
+func TestListenFailsWhenTCPAddressIsOccupied(t *testing.T) {
 	t.Parallel()
 
 	occupied, err := net.Listen("tcp", config.DefaultTCPAddr)
@@ -48,9 +48,9 @@ func TestListenFalhaQuandoEnderecoTCPEstaOcupado(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestListenUDSLimpaArquivoAoFechar(t *testing.T) {
+func TestListenUDSRemovesFileOnClose(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("Unix domain socket é exercitado somente em sistemas Unix")
+		t.Skip("Unix domain socket is exercised only on Unix systems")
 	}
 	t.Parallel()
 
