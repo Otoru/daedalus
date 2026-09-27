@@ -99,7 +99,7 @@ func goldenCases() []goldenCase {
 
 	return []goldenCase{
 		{
-			name: "shapes_bounds_gap_catalog",
+			name:    "shapes_bounds_gap_catalog",
 			fixture: "formas_limites_gap_catalogo",
 			config: Config{
 				Width: 24, Height: 18, Seed: 0xF011,
@@ -115,7 +115,7 @@ func goldenCases() []goldenCase {
 			check:     checkShapeGolden,
 		},
 		{
-			name: "prim_tie_break_and_weights",
+			name:    "prim_tie_break_and_weights",
 			fixture: "desempate_prim_e_pesos",
 			config: Config{
 				Width: 11, Height: 11, Seed: 0xF012,
@@ -130,7 +130,7 @@ func goldenCases() []goldenCase {
 			check: checkTieGolden,
 		},
 		{
-			name: "winding_bfs",
+			name:    "winding_bfs",
 			fixture: "bfs_serpenteante",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF013,
@@ -155,7 +155,7 @@ func goldenCases() []goldenCase {
 			check: checkBFSGolden,
 		},
 		{
-			name: "corridors_share_cell",
+			name:    "corridors_share_cell",
 			fixture: "corridors_compartilham_cell",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF014,
@@ -178,7 +178,7 @@ func goldenCases() []goldenCase {
 			check: checkSharedCellGolden,
 		},
 		{
-			name: "poisson_rejection_and_density",
+			name:    "poisson_rejection_and_density",
 			fixture: "poisson_rejeicao_e_densidade",
 			config: Config{
 				Width: 20, Height: 20, Seed: 123,
@@ -315,6 +315,16 @@ func TestGoldenDiagnosticPointsToFirstChangedCell(t *testing.T) {
 	assert.Contains(t, diagnostic, "changed Cells: Rooms[0].Cells: expected=[{2 3}] actual=[{9 3}]")
 }
 
+func TestGoldenDiagnosticPrefersEarlierFieldOverLaterSliceLength(t *testing.T) {
+	expected := Layout{Rooms: []Room{{ID: 0}}, Corridors: []Corridor{{ID: 0}, {ID: 1}}}
+	actual := Layout{Rooms: []Room{{ID: 4}}, Corridors: []Corridor{{ID: 0}}}
+
+	diagnostic := goldenDifference(expected, actual)
+
+	assert.Contains(t, diagnostic, "first divergent path: Layout.Rooms[0].ID")
+	assert.Contains(t, diagnostic, "scalar expected=0 actual=4")
+}
+
 func goldenDifference(expected, actual Layout) string {
 	path, expectedScalar, actualScalar, found := firstGoldenDifference(
 		"Layout", reflect.ValueOf(expected), reflect.ValueOf(actual),
@@ -334,53 +344,67 @@ func goldenDifference(expected, actual Layout) string {
 	}, "\n")
 }
 
+// firstGoldenDifference walks Layout in field declaration order, then slice
+// index order, and stops at the first scalar, nil, or length mismatch.
 func firstGoldenDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
 	if expected.Type() != actual.Type() {
 		return path + ".type", expected.Type(), actual.Type(), true
 	}
-	if expected.Kind() == reflect.Pointer {
-		if expected.IsNil() != actual.IsNil() {
-			return path, goldenValue(expected), goldenValue(actual), true
-		}
-		if expected.IsNil() {
-			return "", nil, nil, false
-		}
-		return firstGoldenDifference(path, expected.Elem(), actual.Elem())
-	}
-
 	switch expected.Kind() {
+	case reflect.Pointer:
+		return firstPointerGoldenDifference(path, expected, actual)
 	case reflect.Struct:
-		for fieldIndex := 0; fieldIndex < expected.NumField(); fieldIndex++ {
-			fieldPath := path + "." + expected.Type().Field(fieldIndex).Name
-			if differingPath, want, got, found := firstGoldenDifference(
-				fieldPath, expected.Field(fieldIndex), actual.Field(fieldIndex),
-			); found {
-				return differingPath, want, got, true
-			}
-		}
+		return firstStructGoldenDifference(path, expected, actual)
 	case reflect.Slice:
-		if expected.IsNil() != actual.IsNil() {
-			return path + ".nil", expected.IsNil(), actual.IsNil(), true
-		}
-		sharedLength := expected.Len()
-		if actual.Len() < sharedLength {
-			sharedLength = actual.Len()
-		}
-		for index := 0; index < sharedLength; index++ {
-			itemPath := fmt.Sprintf("%s[%d]", path, index)
-			if differingPath, want, got, found := firstGoldenDifference(
-				itemPath, expected.Index(index), actual.Index(index),
-			); found {
-				return differingPath, want, got, true
-			}
-		}
-		if expected.Len() != actual.Len() {
-			return path + ".len", expected.Len(), actual.Len(), true
-		}
+		return firstSliceGoldenDifference(path, expected, actual)
 	default:
 		if !reflect.DeepEqual(expected.Interface(), actual.Interface()) {
 			return path, expected.Interface(), actual.Interface(), true
 		}
+		return "", nil, nil, false
+	}
+}
+
+func firstPointerGoldenDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
+	if expected.IsNil() != actual.IsNil() {
+		return path, goldenValue(expected), goldenValue(actual), true
+	}
+	if expected.IsNil() {
+		return "", nil, nil, false
+	}
+	return firstGoldenDifference(path, expected.Elem(), actual.Elem())
+}
+
+func firstStructGoldenDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
+	for fieldIndex := 0; fieldIndex < expected.NumField(); fieldIndex++ {
+		fieldPath := path + "." + expected.Type().Field(fieldIndex).Name
+		if differingPath, want, got, found := firstGoldenDifference(
+			fieldPath, expected.Field(fieldIndex), actual.Field(fieldIndex),
+		); found {
+			return differingPath, want, got, true
+		}
+	}
+	return "", nil, nil, false
+}
+
+func firstSliceGoldenDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
+	if expected.IsNil() != actual.IsNil() {
+		return path + ".nil", expected.IsNil(), actual.IsNil(), true
+	}
+	sharedLength := expected.Len()
+	if actual.Len() < sharedLength {
+		sharedLength = actual.Len()
+	}
+	for index := 0; index < sharedLength; index++ {
+		itemPath := fmt.Sprintf("%s[%d]", path, index)
+		if differingPath, want, got, found := firstGoldenDifference(
+			itemPath, expected.Index(index), actual.Index(index),
+		); found {
+			return differingPath, want, got, true
+		}
+	}
+	if expected.Len() != actual.Len() {
+		return path + ".len", expected.Len(), actual.Len(), true
 	}
 	return "", nil, nil, false
 }
