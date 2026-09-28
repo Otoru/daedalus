@@ -7,11 +7,12 @@ import "errors"
 // with context via fmt.Errorf and %w, and callers must test them exclusively
 // with errors.Is. No failure returns a partial Layout.
 //
-// In the gRPC service, the mapping is: ErrInvalidConfig → InvalidArgument,
-// ErrLimitExceeded → ResourceExhausted, ErrNoCompatiblePlant,
-// ErrUnroutableEdge, ErrUnconnectablePlacement, and ErrInvalidPlugin →
-// FailedPrecondition, deadline
-// expiration → DeadlineExceeded, and caller cancellation → Canceled.
+// In the gRPC service, the mapping is: ErrInvalidConfig and
+// ErrInvalidNavigation → InvalidArgument, ErrLimitExceeded →
+// ResourceExhausted, ErrNoCompatiblePlant, ErrUnroutableEdge,
+// ErrUnconnectablePlacement, and ErrInvalidPlugin → FailedPrecondition,
+// deadline expiration → DeadlineExceeded, and caller cancellation →
+// Canceled.
 // Cancellation and deadlines use context.Canceled and
 // context.DeadlineExceeded directly, without dedicated sentinels.
 var (
@@ -52,4 +53,10 @@ var (
 	// share this one category, and the wrapped message says which one failed
 	// and why.
 	ErrInvalidPlugin = errors.New("daedalus: invalid plugin output")
+
+	// ErrInvalidNavigation marks a malformed navigation request: a CostGrid whose
+	// Costs length disagrees with Width × Height, a zero dimension, a Source
+	// outside the Grid, a Source on an impassable Cell, a duplicate Source, or a
+	// bias out of range. Count and dimension ceilings are ErrLimitExceeded.
+	ErrInvalidNavigation = errors.New("daedalus: invalid navigation request")
 )
