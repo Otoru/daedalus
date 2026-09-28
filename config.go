@@ -68,6 +68,10 @@ type Config struct {
 	// Cross 1, Circle 2. A shape with no legal size on the Grid is dropped.
 	// Rectangle, including the 1×1 mask, always remains.
 	RoomGeometry *RoomGeometry
+	// CorridorGeometry defines the width distribution for Corridors. Nil means
+	// every Corridor is one Cell wide and the width stream is never consumed,
+	// which keeps the Layout identical to the historical one-Cell routes.
+	CorridorGeometry *CorridorGeometry
 	// PlantCatalog is the optional asset-metadata catalog, or nil when absent; in
 	// that case PlantID and Tags remain empty in the Layout.
 	PlantCatalog *PlantCatalog
@@ -91,6 +95,23 @@ type RoomGeometry struct {
 	MinRoomGap uint32
 	// Shapes lists positive weights by shape, with no duplicate shapes.
 	Shapes []RoomShapeWeight
+}
+
+// CorridorGeometry defines the width distribution for Corridors.
+// A nil pointer means every Corridor is one Cell wide.
+type CorridorGeometry struct {
+	// Widths lists positive weights by corridor width, with no duplicate widths.
+	// The list must be non-empty when CorridorGeometry itself is non-nil.
+	Widths []CorridorWidthWeight
+}
+
+// CorridorWidthWeight associates a corridor width, in Cells, with a positive
+// selection weight. Width is 1..64. Weight is 1..2^32-1.
+type CorridorWidthWeight struct {
+	// Width is the corridor width in Cells, from 1 to 64 inclusive.
+	Width uint32
+	// Weight is the positive relative weight used for width selection.
+	Weight uint32
 }
 
 // RoomShapeWeight associates a Shape with a positive selection weight.

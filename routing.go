@@ -43,14 +43,19 @@ type openingPairCandidate struct {
 }
 
 type routingSearch struct {
-	ctx          context.Context
-	occupancy    *placementOccupancy
-	generation   uint32
-	visited      []uint32
-	parents      []int64
-	queue        []int64
-	routeScratch []Cell
-	bestScratch  []Cell
+	ctx            context.Context
+	occupancy      *placementOccupancy
+	generation     uint32
+	visited        []uint32
+	parents        []int64
+	queue          []int64
+	routeScratch   []Cell
+	bestScratch    []Cell
+	clearance      *widthClearance
+	wideGeneration uint32
+	wideVisited    []uint32
+	wideParents    []int64
+	wideQueue      []int64
 }
 
 func newRoutingSearch(ctx context.Context, occupancy *placementOccupancy) *routingSearch {
@@ -65,7 +70,8 @@ func newRoutingSearch(ctx context.Context, occupancy *placementOccupancy) *routi
 
 // routeCorridors routes Connections in received order. Every buffer and
 // occupancy index belongs to the request; no Corridor Cell becomes an obstacle
-// for a later edge.
+// for a later edge. A nil CorridorGeometry is this entry point: it never draws
+// a width.
 func routeCorridors(
 	ctx context.Context,
 	width uint32,
@@ -73,6 +79,19 @@ func routeCorridors(
 	order CorridorOrder,
 	rooms []PlacedRoom,
 	connections []Connection,
+) ([]Corridor, []Door, error) {
+	return routeCorridorsWithWidths(ctx, width, height, order, rooms, connections, nil, nil)
+}
+
+func routeCorridorsWithWidths(
+	ctx context.Context,
+	width uint32,
+	height uint32,
+	order CorridorOrder,
+	rooms []PlacedRoom,
+	connections []Connection,
+	corridorWidths []CorridorWidthWeight,
+	widthStream *splitMix64,
 ) ([]Corridor, []Door, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -93,6 +112,13 @@ func routeCorridors(
 	corridors := make([]Corridor, 0, len(connections))
 	doors := make([]Door, 0, len(connections)*2)
 	search := newRoutingSearch(ctx, occupancy)
+	useWidths := len(corridorWidths) > 0
+	if useWidths {
+		if widthStream == nil {
+			return nil, nil, errGeneratorInvariant
+		}
+		search.clearance = newWidthClearance(occupancy)
+	}
 	for connectionIndex, connection := range connections {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -103,9 +129,21 @@ func routeCorridors(
 			return nil, nil, errTopologyUnknownRoom
 		}
 
-		best, found, err := selectRoutedConnection(
-			openings[fromIndex], openings[toIndex], order, search,
-		)
+		var best routedConnection
+		var found bool
+		var routedWidth uint32
+		var err error
+		if !useWidths {
+			// A nil CorridorGeometry never draws. The width stream is left untouched.
+			best, found, err = selectRoutedConnection(
+				openings[fromIndex], openings[toIndex], order, search, 0,
+			)
+		} else {
+			drawn := drawCorridorWidth(corridorWidths, widthStream)
+			best, routedWidth, found, err = routeDegraded(
+				openings[fromIndex], openings[toIndex], order, drawn, search,
+			)
+		}
 		if err != nil {
 			return nil, nil, err
 		}
@@ -116,11 +154,23 @@ func routeCorridors(
 			)
 		}
 		corridorID := CorridorID(connectionIndex)
-		fromDoorID := getOrCreateDoor(&doors, best.from, corridorID)
-		toDoorID := getOrCreateDoor(&doors, best.to, corridorID)
+		var fromDoorID, toDoorID DoorID
+		// A one-Cell Corridor is the width-1 case, not a separate kind: its
+		// Centerline is the route and its Doors span one Cell. Reporting a zero
+		// Span there would make every caller rewrite it to one.
+		if !useWidths {
+			routedWidth = 1
+		}
+		centerline := append([]Cell(nil), best.cells...)
+		cells := best.cells
+		if useWidths {
+			cells = occupyBand(best.cells, best.from.direction, best.to.direction, routedWidth)
+		}
+		fromDoorID = getOrCreateSpannedDoor(&doors, best.from, routedWidth, corridorID)
+		toDoorID = getOrCreateSpannedDoor(&doors, best.to, routedWidth, corridorID)
 		corridors = append(corridors, Corridor{
 			ID: corridorID, FromRoomID: connection.FromRoomID, ToRoomID: connection.ToRoomID,
-			FromDoorID: fromDoorID, ToDoorID: toDoorID, Cells: best.cells,
+			FromDoorID: fromDoorID, ToDoorID: toDoorID, Centerline: centerline, Cells: cells,
 		})
 	}
 	return corridors, doors, nil
@@ -162,6 +212,7 @@ func selectRoutedConnection(
 	toOpenings []doorOpening,
 	order CorridorOrder,
 	search *routingSearch,
+	width uint32,
 ) (routedConnection, bool, error) {
 	pairs, err := openingPairCandidates(search.ctx, fromOpenings, toOpenings)
 	if err != nil {
@@ -185,7 +236,14 @@ func selectRoutedConnection(
 		}
 		from := fromOpenings[pair.fromIndex]
 		to := toOpenings[pair.toIndex]
-		cells, ok, err := routeOpeningPair(from, to, order, search, search.routeScratch)
+		var cells []Cell
+		var ok bool
+		var err error
+		if width <= 1 {
+			cells, ok, err = routeOpeningPair(from, to, order, search, search.routeScratch)
+		} else {
+			cells, ok, err = search.routeOpeningPairWide(from, to, order, width, search.routeScratch)
+		}
 		if err != nil {
 			return routedConnection{}, false, err
 		}
@@ -428,22 +486,6 @@ func routeLexicographicallyLess(first, second []Cell) bool {
 		}
 	}
 	return false
-}
-
-func getOrCreateDoor(doors *[]Door, opening doorOpening, corridorID CorridorID) DoorID {
-	for doorIndex := range *doors {
-		door := &(*doors)[doorIndex]
-		if door.RoomID == opening.roomID && door.At == opening.at && door.Direction == opening.direction {
-			door.CorridorIDs = append(door.CorridorIDs, corridorID)
-			return door.ID
-		}
-	}
-	doorID := DoorID(len(*doors))
-	*doors = append(*doors, Door{
-		ID: doorID, RoomID: opening.roomID, At: opening.at,
-		Direction: opening.direction, CorridorIDs: []CorridorID{corridorID},
-	})
-	return doorID
 }
 
 // lRoute materializes a bend between two external Cells, including both

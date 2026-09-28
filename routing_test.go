@@ -49,8 +49,8 @@ func TestRoutingChoosesDoorPairWithShortestCorridor(t *testing.T) {
 	require.Len(t, corridors, 1)
 	require.Len(t, doors, 2)
 	assert.Equal(t, []Cell{{X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}}, corridors[0].Cells)
-	assert.Equal(t, Door{ID: 0, RoomID: 0, At: Cell{X: 1, Y: 2}, Direction: DirectionEast, CorridorIDs: []CorridorID{0}}, doors[0])
-	assert.Equal(t, Door{ID: 1, RoomID: 1, At: Cell{X: 5, Y: 2}, Direction: DirectionWest, CorridorIDs: []CorridorID{0}}, doors[1])
+	assert.Equal(t, Door{ID: 0, RoomID: 0, At: Cell{X: 1, Y: 2}, Direction: DirectionEast, Span: 1, CorridorIDs: []CorridorID{0}}, doors[0])
+	assert.Equal(t, Door{ID: 1, RoomID: 1, At: Cell{X: 5, Y: 2}, Direction: DirectionWest, Span: 1, CorridorIDs: []CorridorID{0}}, doors[1])
 }
 
 // TestDeterministicBFSDetoursAroundRoomBlockingBothLRoutes checks that when

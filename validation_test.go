@@ -23,6 +23,7 @@ func TestNormalizationAppliesDefaults(t *testing.T) {
 	assert.Empty(t, effective.roomRoleRequests)
 	assert.Empty(t, effective.densityRegions)
 	assert.Nil(t, effective.plantCatalog)
+	assert.Nil(t, effective.corridorWidths)
 }
 
 func TestSingleCellGridNormalizationKeepsRectangle(t *testing.T) {

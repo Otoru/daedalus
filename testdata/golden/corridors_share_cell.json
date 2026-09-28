@@ -578,6 +578,20 @@
       "ToRoomID": 1,
       "FromDoorID": 0,
       "ToDoorID": 1,
+      "Centerline": [
+        {
+          "X": 2,
+          "Y": 3
+        },
+        {
+          "X": 3,
+          "Y": 3
+        },
+        {
+          "X": 4,
+          "Y": 3
+        }
+      ],
       "Cells": [
         {
           "X": 2,
@@ -601,6 +615,20 @@
       "ToRoomID": 3,
       "FromDoorID": 2,
       "ToDoorID": 3,
+      "Centerline": [
+        {
+          "X": 3,
+          "Y": 2
+        },
+        {
+          "X": 3,
+          "Y": 3
+        },
+        {
+          "X": 3,
+          "Y": 4
+        }
+      ],
       "Cells": [
         {
           "X": 3,
@@ -624,6 +652,20 @@
       "ToRoomID": 2,
       "FromDoorID": 4,
       "ToDoorID": 2,
+      "Centerline": [
+        {
+          "X": 1,
+          "Y": 2
+        },
+        {
+          "X": 2,
+          "Y": 2
+        },
+        {
+          "X": 3,
+          "Y": 2
+        }
+      ],
       "Cells": [
         {
           "X": 1,
@@ -651,6 +693,7 @@
         "Y": 3
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         0
       ]
@@ -663,6 +706,7 @@
         "Y": 3
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         0
       ]
@@ -675,6 +719,7 @@
         "Y": 1
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         1,
         2
@@ -688,6 +733,7 @@
         "Y": 5
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         1
       ]
@@ -700,6 +746,7 @@
         "Y": 3
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         2
       ]

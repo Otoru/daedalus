@@ -83,9 +83,14 @@ type Corridor struct {
 	FromDoorID DoorID
 	// ToDoorID is the Door used in the destination Room.
 	ToDoorID DoorID
-	// Cells are the route's internal Cells, ordered from the From side to the To
-	// side, excluding the endpoint Rooms' Cells. It is empty when the Rooms are
-	// adjacent. The sequence is always 4-connected.
+	// Centerline is the ordered route from the From side to the To side,
+	// excluding the endpoint Rooms' Cells. It is 4-connected and empty when the
+	// Rooms are adjacent. It is always present, whatever the routed width; at
+	// width 1 it holds the same Cells as the band.
+	Centerline []Cell
+	// Cells is the full occupied band in row-major order (Y then X). At width 1
+	// the band is the route itself, so Cells equals Centerline. Above that,
+	// every bend includes its W×W block, so the region stays 4-connected.
 	Cells []Cell
 	// PlantID is the asset metadata selected from the catalog, or the empty
 	// string when Config.PlantCatalog is absent. It never changes topology.
@@ -102,11 +107,17 @@ type Door struct {
 	ID DoorID
 	// RoomID is the Room to which this opening belongs.
 	RoomID RoomID
-	// At is a boundary Cell belonging to the owning Room's footprint.
+	// At is a boundary Cell belonging to the owning Room's footprint. With
+	// Span 1 it is the opening Cell. With a wider Span it is the Cell of the
+	// span with the smallest (Y, X).
 	At Cell
 	// Direction is the direction of the Corridor's first internal step away from
 	// the Room; with empty Cells, it is the direction between endpoints.
 	Direction Direction
+	// Span is the number of boundary Cells in this opening, and is never zero:
+	// a one-Cell doorway spans 1. It equals the width the Corridor was routed
+	// at, which is 1 whenever Config.CorridorGeometry is nil.
+	Span uint32
 	// CorridorIDs lists, in ascending order, one or more edges using this opening.
 	CorridorIDs []CorridorID
 }

@@ -4264,6 +4264,20 @@
       "ToRoomID": 14,
       "FromDoorID": 0,
       "ToDoorID": 1,
+      "Centerline": [
+        {
+          "X": 10,
+          "Y": 9
+        },
+        {
+          "X": 11,
+          "Y": 9
+        },
+        {
+          "X": 12,
+          "Y": 9
+        }
+      ],
       "Cells": [
         {
           "X": 10,
@@ -4287,6 +4301,20 @@
       "ToRoomID": 1,
       "FromDoorID": 2,
       "ToDoorID": 3,
+      "Centerline": [
+        {
+          "X": 13,
+          "Y": 8
+        },
+        {
+          "X": 14,
+          "Y": 8
+        },
+        {
+          "X": 15,
+          "Y": 8
+        }
+      ],
       "Cells": [
         {
           "X": 13,
@@ -4310,6 +4338,12 @@
       "ToRoomID": 3,
       "FromDoorID": 4,
       "ToDoorID": 5,
+      "Centerline": [
+        {
+          "X": 16,
+          "Y": 7
+        }
+      ],
       "Cells": [
         {
           "X": 16,
@@ -4325,6 +4359,16 @@
       "ToRoomID": 10,
       "FromDoorID": 4,
       "ToDoorID": 6,
+      "Centerline": [
+        {
+          "X": 16,
+          "Y": 7
+        },
+        {
+          "X": 16,
+          "Y": 8
+        }
+      ],
       "Cells": [
         {
           "X": 16,
@@ -4344,6 +4388,16 @@
       "ToRoomID": 15,
       "FromDoorID": 7,
       "ToDoorID": 8,
+      "Centerline": [
+        {
+          "X": 18,
+          "Y": 7
+        },
+        {
+          "X": 19,
+          "Y": 7
+        }
+      ],
       "Cells": [
         {
           "X": 18,
@@ -4363,6 +4417,16 @@
       "ToRoomID": 17,
       "FromDoorID": 9,
       "ToDoorID": 10,
+      "Centerline": [
+        {
+          "X": 17,
+          "Y": 6
+        },
+        {
+          "X": 18,
+          "Y": 6
+        }
+      ],
       "Cells": [
         {
           "X": 17,
@@ -4382,6 +4446,16 @@
       "ToRoomID": 6,
       "FromDoorID": 11,
       "ToDoorID": 12,
+      "Centerline": [
+        {
+          "X": 18,
+          "Y": 4
+        },
+        {
+          "X": 17,
+          "Y": 4
+        }
+      ],
       "Cells": [
         {
           "X": 18,
@@ -4401,6 +4475,16 @@
       "ToRoomID": 4,
       "FromDoorID": 13,
       "ToDoorID": 14,
+      "Centerline": [
+        {
+          "X": 15,
+          "Y": 4
+        },
+        {
+          "X": 14,
+          "Y": 4
+        }
+      ],
       "Cells": [
         {
           "X": 15,
@@ -4420,6 +4504,16 @@
       "ToRoomID": 8,
       "FromDoorID": 15,
       "ToDoorID": 16,
+      "Centerline": [
+        {
+          "X": 13,
+          "Y": 3
+        },
+        {
+          "X": 13,
+          "Y": 2
+        }
+      ],
       "Cells": [
         {
           "X": 13,
@@ -4439,6 +4533,20 @@
       "ToRoomID": 9,
       "FromDoorID": 17,
       "ToDoorID": 18,
+      "Centerline": [
+        {
+          "X": 13,
+          "Y": 0
+        },
+        {
+          "X": 14,
+          "Y": 0
+        },
+        {
+          "X": 15,
+          "Y": 0
+        }
+      ],
       "Cells": [
         {
           "X": 13,
@@ -4462,6 +4570,20 @@
       "ToRoomID": 18,
       "FromDoorID": 19,
       "ToDoorID": 20,
+      "Centerline": [
+        {
+          "X": 17,
+          "Y": 0
+        },
+        {
+          "X": 18,
+          "Y": 0
+        },
+        {
+          "X": 19,
+          "Y": 0
+        }
+      ],
       "Cells": [
         {
           "X": 17,
@@ -4485,6 +4607,20 @@
       "ToRoomID": 5,
       "FromDoorID": 21,
       "ToDoorID": 22,
+      "Centerline": [
+        {
+          "X": 12,
+          "Y": 1
+        },
+        {
+          "X": 11,
+          "Y": 1
+        },
+        {
+          "X": 10,
+          "Y": 1
+        }
+      ],
       "Cells": [
         {
           "X": 12,
@@ -4508,6 +4644,20 @@
       "ToRoomID": 19,
       "FromDoorID": 23,
       "ToDoorID": 24,
+      "Centerline": [
+        {
+          "X": 13,
+          "Y": 10
+        },
+        {
+          "X": 13,
+          "Y": 11
+        },
+        {
+          "X": 13,
+          "Y": 12
+        }
+      ],
       "Cells": [
         {
           "X": 13,
@@ -4531,6 +4681,16 @@
       "ToRoomID": 13,
       "FromDoorID": 25,
       "ToDoorID": 26,
+      "Centerline": [
+        {
+          "X": 13,
+          "Y": 14
+        },
+        {
+          "X": 12,
+          "Y": 14
+        }
+      ],
       "Cells": [
         {
           "X": 13,
@@ -4550,6 +4710,24 @@
       "ToRoomID": 16,
       "FromDoorID": 27,
       "ToDoorID": 28,
+      "Centerline": [
+        {
+          "X": 9,
+          "Y": 2
+        },
+        {
+          "X": 8,
+          "Y": 2
+        },
+        {
+          "X": 7,
+          "Y": 2
+        },
+        {
+          "X": 6,
+          "Y": 2
+        }
+      ],
       "Cells": [
         {
           "X": 9,
@@ -4577,6 +4755,28 @@
       "ToRoomID": 12,
       "FromDoorID": 29,
       "ToDoorID": 30,
+      "Centerline": [
+        {
+          "X": 11,
+          "Y": 15
+        },
+        {
+          "X": 10,
+          "Y": 15
+        },
+        {
+          "X": 9,
+          "Y": 15
+        },
+        {
+          "X": 8,
+          "Y": 15
+        },
+        {
+          "X": 7,
+          "Y": 15
+        }
+      ],
       "Cells": [
         {
           "X": 11,
@@ -4608,6 +4808,24 @@
       "ToRoomID": 7,
       "FromDoorID": 31,
       "ToDoorID": 32,
+      "Centerline": [
+        {
+          "X": 6,
+          "Y": 14
+        },
+        {
+          "X": 5,
+          "Y": 14
+        },
+        {
+          "X": 4,
+          "Y": 14
+        },
+        {
+          "X": 3,
+          "Y": 14
+        }
+      ],
       "Cells": [
         {
           "X": 6,
@@ -4635,6 +4853,28 @@
       "ToRoomID": 11,
       "FromDoorID": 33,
       "ToDoorID": 34,
+      "Centerline": [
+        {
+          "X": 2,
+          "Y": 15
+        },
+        {
+          "X": 1,
+          "Y": 15
+        },
+        {
+          "X": 0,
+          "Y": 15
+        },
+        {
+          "X": 0,
+          "Y": 16
+        },
+        {
+          "X": 0,
+          "Y": 17
+        }
+      ],
       "Cells": [
         {
           "X": 2,
@@ -4666,6 +4906,28 @@
       "ToRoomID": 2,
       "FromDoorID": 35,
       "ToDoorID": 36,
+      "Centerline": [
+        {
+          "X": 2,
+          "Y": 13
+        },
+        {
+          "X": 2,
+          "Y": 12
+        },
+        {
+          "X": 2,
+          "Y": 11
+        },
+        {
+          "X": 2,
+          "Y": 10
+        },
+        {
+          "X": 2,
+          "Y": 9
+        }
+      ],
       "Cells": [
         {
           "X": 2,
@@ -4701,6 +4963,7 @@
         "Y": 9
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         0
       ]
@@ -4713,6 +4976,7 @@
         "Y": 9
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         0
       ]
@@ -4725,6 +4989,7 @@
         "Y": 9
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         1
       ]
@@ -4737,6 +5002,7 @@
         "Y": 7
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         1
       ]
@@ -4749,6 +5015,7 @@
         "Y": 7
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         2,
         3
@@ -4762,6 +5029,7 @@
         "Y": 7
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         2
       ]
@@ -4774,6 +5042,7 @@
         "Y": 9
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         3
       ]
@@ -4786,6 +5055,7 @@
         "Y": 7
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         4
       ]
@@ -4798,6 +5068,7 @@
         "Y": 8
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         4
       ]
@@ -4810,6 +5081,7 @@
         "Y": 7
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         5
       ]
@@ -4822,6 +5094,7 @@
         "Y": 5
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         5
       ]
@@ -4834,6 +5107,7 @@
         "Y": 5
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         6
       ]
@@ -4846,6 +5120,7 @@
         "Y": 4
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         6
       ]
@@ -4858,6 +5133,7 @@
         "Y": 4
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         7
       ]
@@ -4870,6 +5146,7 @@
         "Y": 4
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         7
       ]
@@ -4882,6 +5159,7 @@
         "Y": 4
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         8
       ]
@@ -4894,6 +5172,7 @@
         "Y": 1
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         8
       ]
@@ -4906,6 +5185,7 @@
         "Y": 1
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         9
       ]
@@ -4918,6 +5198,7 @@
         "Y": 0
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         9
       ]
@@ -4930,6 +5211,7 @@
         "Y": 0
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         10
       ]
@@ -4942,6 +5224,7 @@
         "Y": 1
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         10
       ]
@@ -4954,6 +5237,7 @@
         "Y": 1
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         11
       ]
@@ -4966,6 +5250,7 @@
         "Y": 1
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         11
       ]
@@ -4978,6 +5263,7 @@
         "Y": 9
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         12
       ]
@@ -4990,6 +5276,7 @@
         "Y": 13
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         12
       ]
@@ -5002,6 +5289,7 @@
         "Y": 13
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         13
       ]
@@ -5014,6 +5302,7 @@
         "Y": 14
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         13
       ]
@@ -5026,6 +5315,7 @@
         "Y": 1
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         14
       ]
@@ -5038,6 +5328,7 @@
         "Y": 2
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         14
       ]
@@ -5050,6 +5341,7 @@
         "Y": 14
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         15
       ]
@@ -5062,6 +5354,7 @@
         "Y": 15
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         15
       ]
@@ -5074,6 +5367,7 @@
         "Y": 15
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         16
       ]
@@ -5086,6 +5380,7 @@
         "Y": 14
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         16
       ]
@@ -5098,6 +5393,7 @@
         "Y": 14
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         17
       ]
@@ -5110,6 +5406,7 @@
         "Y": 18
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         17
       ]
@@ -5122,6 +5419,7 @@
         "Y": 14
       },
       "Direction": 0,
+      "Span": 1,
       "CorridorIDs": [
         18
       ]
@@ -5134,6 +5432,7 @@
         "Y": 8
       },
       "Direction": 2,
+      "Span": 1,
       "CorridorIDs": [
         18
       ]

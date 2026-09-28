@@ -33,6 +33,7 @@ func TestDerivedStreamsAreDistinct(t *testing.T) {
 		streams.roomPlant.state,
 		streams.roomGeometry.state,
 		streams.corridorPlant.state,
+		streams.corridorWidth.state,
 	}
 	want := []uint64{
 		0xc28d5fdbc9ad2973,
@@ -40,8 +41,9 @@ func TestDerivedStreamsAreDistinct(t *testing.T) {
 		0x1f733cd593b32ebe,
 		0x094e8a43ce39fbe0,
 		0x7a76321e37168f90,
+		0xc5b661f1f596eb97,
 	}
-	assert.Equal(t, want, states, "frozen derivation of the five streams")
+	assert.Equal(t, want, states, "frozen derivation of the six streams")
 
 	for i := range states {
 		for j := i + 1; j < len(states); j++ {
@@ -146,4 +148,5 @@ func TestConsumingOneStreamDoesNotChangeOthers(t *testing.T) {
 	assert.Equal(t, baseline.roomPlant.next(), consumed.roomPlant.next())
 	assert.Equal(t, baseline.roomGeometry.next(), consumed.roomGeometry.next())
 	assert.Equal(t, baseline.corridorPlant.next(), consumed.corridorPlant.next())
+	assert.Equal(t, baseline.corridorWidth.next(), consumed.corridorWidth.next())
 }

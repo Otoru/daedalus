@@ -100,9 +100,7 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 		return Layout{}, err
 	}
 
-	corridors, doors, err := routeCorridors(
-		ctx, effective.width, effective.height, effective.corridorOrder, rooms, connections,
-	)
+	corridors, doors, err := routeConfiguredCorridors(ctx, effective, rooms, connections)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -115,6 +113,26 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 		return Layout{}, err
 	}
 	return layout, nil
+}
+
+// routeConfiguredCorridors draws a corridor width only when the request named
+// a CorridorGeometry. A nil geometry does not construct the width stream, so
+// that stream is never consumed.
+func routeConfiguredCorridors(
+	ctx context.Context,
+	effective effectiveConfig,
+	rooms []PlacedRoom,
+	connections []Connection,
+) ([]Corridor, []Door, error) {
+	var widthStream *splitMix64
+	if len(effective.corridorWidths) > 0 {
+		streams := newRNGStreams(effective.seed)
+		widthStream = &streams.corridorWidth
+	}
+	return routeCorridorsWithWidths(
+		ctx, effective.width, effective.height, effective.corridorOrder,
+		rooms, connections, effective.corridorWidths, widthStream,
+	)
 }
 
 func validateAndMaterializePlacements(

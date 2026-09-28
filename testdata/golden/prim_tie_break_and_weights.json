@@ -1194,6 +1194,12 @@
       "ToRoomID": 1,
       "FromDoorID": 0,
       "ToDoorID": 1,
+      "Centerline": [
+        {
+          "X": 4,
+          "Y": 5
+        }
+      ],
       "Cells": [
         {
           "X": 4,
@@ -1211,6 +1217,12 @@
       "ToRoomID": 2,
       "FromDoorID": 2,
       "ToDoorID": 3,
+      "Centerline": [
+        {
+          "X": 6,
+          "Y": 5
+        }
+      ],
       "Cells": [
         {
           "X": 6,
@@ -1232,6 +1244,7 @@
         "Y": 5
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         0
       ]
@@ -1244,6 +1257,7 @@
         "Y": 5
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         0
       ]
@@ -1256,6 +1270,7 @@
         "Y": 5
       },
       "Direction": 1,
+      "Span": 1,
       "CorridorIDs": [
         1
       ]
@@ -1268,6 +1283,7 @@
         "Y": 5
       },
       "Direction": 3,
+      "Span": 1,
       "CorridorIDs": [
         1
       ]

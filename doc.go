@@ -41,10 +41,13 @@
 // A Corridor is both a topological edge and the orthogonal Cells walked
 // outside every footprint, from the exterior neighbour of the source Door to
 // the exterior neighbour of the destination Door. Those Cells are omitted when
-// two Doors face each other directly and no Room Cell is crossed. A Door is a
-// logical opening on a boundary Cell of a Room, identified by RoomID, At, and
-// a cardinal Direction that points out of the Room. Diagonals are invalid.
-// The canonical Direction order is North, East, South, West.
+// two Doors face each other directly and no Room Cell is crossed. When
+// CorridorGeometry is nil, Cells is that route. When it is set, Centerline is
+// the route and Cells is the occupied band. A Door is a logical opening on a
+// boundary Cell of a Room, identified by RoomID, At, and a cardinal Direction
+// that points out of the Room. A routed width records Door.Span as the number
+// of boundary Cells, and At is the Cell of that span with the smallest (Y, X).
+// Diagonals are invalid. The canonical Direction order is North, East, South, West.
 //
 // A Layout is the complete successful result: the Seed that produced it, the
 // Grid, and the Rooms, Corridors, and Doors in creation order. IDs start at 0
@@ -100,7 +103,48 @@
 // MinRoomGap counts empty layers by Chebyshev distance between occupied Cells
 // of different Rooms. Gap 0 forbids overlap and still allows edge contact,
 // including a diagonal touch. Gap 1 demands a full empty layer, diagonal
-// included. The default profile uses 1.
+// included. The default profile uses 1. The dynamic profile keeps MinRoomGap
+// 1. A Corridor wider than the gap between two Rooms cannot pass between them
+// and degrades, so a caller asking for wide Corridors should raise MinRoomGap
+// to match. That is documentation, not validation: Rooms are not everywhere,
+// and a wide Corridor can often route around.
+//
+// # Corridor geometry
+//
+// CorridorGeometry sets the width distribution for Corridors. A nil
+// CorridorGeometry means every Corridor is one Cell wide, which is the
+// historical behaviour: the width stream is never consumed, Centerline stays
+// nil, Door.Span stays 0, and Cells remains the ordered route. An explicit
+// value requires Widths to be non-empty and duplicate-free. Each Width is
+// 1..64 and each Weight is 1..2^32-1. A width above 64 is ErrInvalidConfig,
+// not ErrLimitExceeded: it is a nonsense value, not a product limit.
+//
+// One draw is taken per Corridor, in creation order, immediately before that
+// Corridor is routed. Candidates are sorted by Width ascending before the
+// draw, so the order of Widths in the request cannot change the result. The
+// draw uses the same weighted selection as the Plant catalog: a ticket from 1
+// to the total weight, then the first candidate whose cumulative weight
+// reaches that ticket. If the drawn width W cannot be routed, the router tries
+// W-1, then W-2, down to 1, and the first width that routes wins. Only if
+// width 1 fails is the error ErrUnroutableEdge. Degradation consumes no
+// further randomness.
+//
+// The centerline is the route as computed for a one-Cell Corridor. The band is
+// the centerline dilated perpendicular to the direction of travel. Odd W:
+// symmetric, (W-1)/2 Cells each side; even W: the extra Cell goes to the +X
+// side for vertical travel and the +Y side for horizontal travel. At every
+// bend, the band includes the full W×W block centred by the same rule, so the
+// corner does not leave a diagonal pinch and 4-connectivity holds at the
+// vertex. A W-wide route is legal only when the entire band is inside the Grid
+// and crosses no Room footprint. Corridors may still share Cells with each
+// other.
+//
+// Cells is that band in row-major order. Centerline is the ordered
+// 4-connected route from the From side to the To side. A W-wide Corridor
+// meeting a Room opens a W-wide doorway. Door.Span is the number of boundary
+// Cells, and Door.At is the Cell with the smallest (Y, X) of the span. If the
+// Room's usable boundary run is shorter than W, the Corridor degrades to that
+// run. A Door with Span 1 is the one-Cell doorway.
 //
 // # Pipeline
 //
@@ -216,7 +260,11 @@
 // Neighbours expand North, East, South, West. The queue is FIFO. A Cell is
 // marked when it is inserted, not when it is removed, and the parent is the
 // one from first discovery. Storage is row-major. There is no map iteration,
-// so the path does not depend on hash order. The same opening is
+// so the path does not depend on hash order. When CorridorGeometry is set and
+// the width is greater than one, both L-routes and the breadth-first fallback
+// keep a Cell only when its clearance admits that width, so the whole band
+// stays inside the Grid and off every Room footprint. Width 1 uses the same
+// one-Cell search. The same opening is
 // reused when another Corridor needs the same triple, and CorridorIDs on a
 // shared Cell stay sorted. Door.At need not equal Room.At. Only when no pair
 // has a route does the call fail. The router is not a public Strategy: edge
@@ -267,10 +315,12 @@
 // promise. CellSize is frozen only as the value copied into the Layout; it
 // does not move a Room.
 //
-// Five independent SplitMix64 streams are derived from the Seed, each as
+// Six independent SplitMix64 streams are derived from the Seed, each as
 // Mix64 of the Seed xor a frozen salt: PlacementSeed, ConnectorSeed,
-// RoomPlantSeed, RoomGeometrySeed, and CorridorPlantSeed. Consuming one does
-// not advance the others. Placement draws the active index once per outer
+// RoomPlantSeed, RoomGeometrySeed, CorridorPlantSeed, and CorridorWidthSeed.
+// Consuming one does not advance the others. A nil CorridorGeometry consumes
+// no draw from CorridorWidthSeed, so a Config without that field reproduces
+// the Layout of the one-Cell routes. Placement draws the active index once per outer
 // iteration, then offsetX and offsetY on each attempt. Geometry is a separate
 // stream, drawn only after the anchor lands inside the Grid: the shape, by
 // positive integer weights in canonical shape order, and then a dimension pair
@@ -304,7 +354,9 @@
 // accompanied by a partial Layout.
 //
 // ErrInvalidConfig reports a request that violates a range, numeric
-// finiteness, catalog shape, density region, role request, or RoomGeometry.
+// finiteness, catalog shape, density region, role request, RoomGeometry, or
+// CorridorGeometry. A Corridor width outside 1..64 is this error, not
+// ErrLimitExceeded.
 // ErrLimitExceeded reports a request past a v1 product limit: a Grid dimension
 // above 256, a Width×Height above MaxCells, a MaxRooms above MaxRooms, or a
 // RoomGeometry.MaxFootprintCells above MaxFootprintCells. Both are detected
@@ -368,6 +420,11 @@
 //
 // CorridorOrder defaults to X-then-Y. The other value swaps the preferred
 // elbow wherever both L-routes are legal; it does not change the Rooms.
+// CorridorGeometry defaults to nil, which keeps every Corridor one Cell wide.
+// Naming a width distribution draws one width per Corridor. The dynamic
+// profile keeps MinRoomGap 1, and a Corridor wider than the gap between two
+// Rooms cannot pass between them and degrades, so a caller asking for wide
+// Corridors should raise MinRoomGap to match.
 // ExtraEdgeCount defaults to 0, which keeps the backbone a tree. Raising it
 // adds the shortest discarded edges and the cycles those edges create.
 // RoomRoleRequests defaults to empty. A Treasure count of zero asks for no

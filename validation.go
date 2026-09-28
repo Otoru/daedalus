@@ -3,6 +3,7 @@ package daedalus
 import (
 	"fmt"
 	"math"
+	"sort"
 	"unicode/utf8"
 )
 
@@ -22,6 +23,9 @@ const (
 	defaultGeometryMaxSize   = 9
 	defaultMaxFootprintCells = 81
 	defaultMinRoomGap        = 1
+	// maximumCorridorWidth is the largest Corridor width a request may name.
+	// A larger value is nonsense, not a product limit, so it is ErrInvalidConfig.
+	maximumCorridorWidth = 64
 
 	// Default dynamic geometry profile weights, in canonical order.
 	defaultRectangleWeight = 4
@@ -63,6 +67,7 @@ type effectiveConfig struct {
 	densityRegions       []DensityRegion
 	roomGeometry         RoomGeometry
 	geometryCombinations []roomGeometryCombination
+	corridorWidths       []CorridorWidthWeight
 	plantCatalog         *PlantCatalog
 }
 
@@ -108,6 +113,10 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 	if err != nil {
 		return effectiveConfig{}, err
 	}
+	corridorWidths, err := normalizeCorridorGeometry(config.CorridorGeometry)
+	if err != nil {
+		return effectiveConfig{}, err
+	}
 	catalog, err := validatePlantCatalog(config.PlantCatalog)
 	if err != nil {
 		return effectiveConfig{}, err
@@ -127,6 +136,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		densityRegions:       densityRegions,
 		roomGeometry:         geometry,
 		geometryCombinations: combinations,
+		corridorWidths:       corridorWidths,
 		plantCatalog:         catalog,
 	}, nil
 }
@@ -190,6 +200,39 @@ func validateExtraEdgeCount(count, maxRooms uint32) error {
 		return fmt.Errorf("%w: ExtraEdgeCount exceeds the possible edges", ErrInvalidConfig)
 	}
 	return nil
+}
+
+// normalizeCorridorGeometry accepts a nil geometry as "every Corridor is one
+// Cell wide" and returns a nil slice so routing never draws a width. A non-nil
+// geometry must list widths in 1..64, duplicate-free, each with a positive
+// weight. The returned slice is sorted by Width so the draw does not depend
+// on the request order.
+func normalizeCorridorGeometry(source *CorridorGeometry) ([]CorridorWidthWeight, error) {
+	if source == nil {
+		return nil, nil
+	}
+	if len(source.Widths) == 0 {
+		return nil, fmt.Errorf("%w: CorridorGeometry.Widths must not be empty", ErrInvalidConfig)
+	}
+	weights := make([]CorridorWidthWeight, len(source.Widths))
+	seen := make(map[uint32]struct{}, len(source.Widths))
+	for index, item := range source.Widths {
+		if item.Width < 1 || item.Width > maximumCorridorWidth {
+			return nil, fmt.Errorf("%w: Corridor width must be from 1 to 64", ErrInvalidConfig)
+		}
+		if item.Weight == 0 {
+			return nil, fmt.Errorf("%w: Corridor width weight must be positive", ErrInvalidConfig)
+		}
+		if _, exists := seen[item.Width]; exists {
+			return nil, fmt.Errorf("%w: duplicate Corridor width", ErrInvalidConfig)
+		}
+		seen[item.Width] = struct{}{}
+		weights[index] = item
+	}
+	sort.Slice(weights, func(first, second int) bool {
+		return weights[first].Width < weights[second].Width
+	})
+	return weights, nil
 }
 
 func normalizeRoomGeometry(source *RoomGeometry, gridWidth, gridHeight uint32) (RoomGeometry, []roomGeometryCombination, error) {
