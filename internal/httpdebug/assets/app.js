@@ -27,6 +27,13 @@ const exampleRequest = `{
         {"shape": "ROOM_SHAPE_CROSS", "weight": 1},
         {"shape": "ROOM_SHAPE_CIRCLE", "weight": 2}
       ]
+    },
+    "corridor_geometry": {
+      "widths": [
+        {"width": 1, "weight": 5},
+        {"width": 2, "weight": 2},
+        {"width": 3, "weight": 1}
+      ]
     }
   }
 }`;
@@ -40,6 +47,7 @@ const elements = {
   zoom: document.querySelector("#zoom"),
   zoomValue: document.querySelector("#zoom-value"),
   fitMap: document.querySelector("#fit-map"),
+  showCenterline: document.querySelector("#show-centerline"),
   viewport: document.querySelector("#map-viewport"),
   canvas: document.querySelector("#map-canvas"),
   placeholder: document.querySelector("#map-placeholder"),
@@ -62,6 +70,7 @@ const state = {
   origin: {x: 0, y: 0},
   scale: Number(elements.zoom.value),
   fitted: true,
+  showCenterline: true,
   openDrawer: null,
 };
 
@@ -98,6 +107,10 @@ elements.zoom.addEventListener("input", () => {
 });
 
 elements.fitMap.addEventListener("click", fitMap);
+elements.showCenterline.addEventListener("change", () => {
+  state.showCenterline = elements.showCenterline.checked;
+  renderLayout();
+});
 elements.canvas.addEventListener("click", selectCellFromPointer);
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
 elements.requestTrigger.addEventListener("click", () => toggleDrawer("request"));
@@ -333,9 +346,9 @@ function renderLayout() {
   });
 
   drawRoomBoundaries(context, scale);
-  drawCorridorRoutes(context, scale);
-  drawDoors(context, scale);
   drawGrid(context, grid.width, grid.height, scale);
+  drawCorridorBands(context, scale);
+  drawDoors(context, scale);
   drawSelection(context, scale);
   context.restore();
 }
@@ -385,55 +398,103 @@ function drawRoomBoundaries(context, scale) {
   context.restore();
 }
 
-function drawCorridorRoutes(context, scale) {
+function drawCorridorBands(context, scale) {
   const corridors = Array.isArray(state.layout.corridors) ? state.layout.corridors : [];
-  context.save();
-  context.strokeStyle = cellColors.corridorRoute;
-  context.lineCap = "square";
-  context.lineJoin = "miter";
-  context.lineWidth = Math.max(1, scale * 0.22);
+  // cells is the occupied band in row-major order, not a path. Refilling it
+  // after the grid covers the internal lattice, so a wide hall reads as one
+  // slab. Rooms stay gridded and outlined, and the lightness ladder stays
+  // empty, then corridor, then room — separable without hue.
+  const band = [];
+  const seen = new Set();
   corridors.forEach((corridor) => {
-    const cells = corridor.cells || [];
-    if (cells.length === 0) {
-      return;
-    }
-    context.beginPath();
-    context.moveTo((cells[0].x + 0.5) * scale, (cells[0].y + 0.5) * scale);
-    cells.slice(1).forEach((cell) => {
-      context.lineTo((cell.x + 0.5) * scale, (cell.y + 0.5) * scale);
+    (corridor.cells || []).forEach((cell) => {
+      const key = `${cell.x},${cell.y}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      band.push(cell);
     });
-    context.stroke();
   });
+  context.save();
+  context.fillStyle = cellColors.corridor;
+  band.forEach((cell) => {
+    context.fillRect(cell.x * scale, cell.y * scale, scale, scale);
+  });
+  if (state.showCenterline) {
+    context.strokeStyle = cellColors.corridorRoute;
+    context.lineCap = "square";
+    context.lineJoin = "miter";
+    context.lineWidth = Math.max(1, scale * 0.18);
+    corridors.forEach((corridor) => {
+      const centerline = corridor.centerline || [];
+      if (centerline.length === 0) {
+        return;
+      }
+      context.beginPath();
+      context.moveTo((centerline[0].x + 0.5) * scale, (centerline[0].y + 0.5) * scale);
+      centerline.slice(1).forEach((cell) => {
+        context.lineTo((cell.x + 0.5) * scale, (cell.y + 0.5) * scale);
+      });
+      context.stroke();
+    });
+  }
   context.restore();
 }
 
 function drawDoors(context, scale) {
   const doors = Array.isArray(state.layout.doors) ? state.layout.doors : [];
   context.save();
+  context.fillStyle = cellColors.door;
+  context.strokeStyle = cellColors.doorMark;
+  context.lineCap = "square";
+  context.lineWidth = Math.max(1, scale * 0.1);
   doors.forEach((door) => {
-    if (!door.at) {
+    const span = doorSpan(door, scale);
+    if (!span) {
       return;
     }
-    const centerX = (door.at.x + 0.5) * scale;
-    const centerY = (door.at.y + 0.5) * scale;
+    const inset = Math.min(Math.max(1, scale * 0.18), (Math.min(span.width, span.height) - 1) / 2);
+    context.fillRect(span.x + inset, span.y + inset, span.width - inset * 2, span.height - inset * 2);
+    context.strokeRect(span.x + inset, span.y + inset, span.width - inset * 2, span.height - inset * 2);
     const direction = directionVector(door.direction);
-    const radius = Math.max(1.5, scale * 0.28);
-    context.fillStyle = cellColors.door;
-    context.strokeStyle = cellColors.doorMark;
-    context.lineWidth = Math.max(1, scale * 0.1);
-    context.beginPath();
-    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
+    const centerX = span.x + span.width / 2;
+    const centerY = span.y + span.height / 2;
     context.beginPath();
     context.moveTo(centerX, centerY);
-    context.lineTo(
-      centerX + direction.x * scale * 0.45,
-      centerY + direction.y * scale * 0.45,
-    );
+    context.lineTo(centerX + direction.x * scale * 0.42, centerY + direction.y * scale * 0.42);
     context.stroke();
   });
   context.restore();
+}
+
+// Door.at is the span Cell with the smallest (y, x). A north or south opening
+// runs along X; an east or west opening runs along Y. Span counts those Cells
+// and is never zero.
+function doorSpan(door, scale) {
+  if (!door.at) {
+    return null;
+  }
+  const count = Math.max(1, Number(door.span) || 1);
+  const alongX = door.direction === "DIRECTION_NORTH" || door.direction === "DIRECTION_SOUTH";
+  return {
+    x: door.at.x * scale,
+    y: door.at.y * scale,
+    width: (alongX ? count : 1) * scale,
+    height: (alongX ? 1 : count) * scale,
+  };
+}
+
+function doorCoversCell(door, x, y) {
+  if (!door.at) {
+    return false;
+  }
+  const count = Math.max(1, Number(door.span) || 1);
+  const alongX = door.direction === "DIRECTION_NORTH" || door.direction === "DIRECTION_SOUTH";
+  if (alongX) {
+    return y === door.at.y && x >= door.at.x && x < door.at.x + count;
+  }
+  return x === door.at.x && y >= door.at.y && y < door.at.y + count;
 }
 
 function directionVector(direction) {
@@ -527,12 +588,21 @@ function updateInspector(x, y) {
   const index = y * grid.width + x;
   const cell = (grid.cells || [])[index] || {at: {x, y}, kind: "CELL_KIND_EMPTY"};
   const rooms = (state.layout.rooms || []).filter((room) => room.id === cell.room_id);
-  const corridorIDs = cell.corridor_ids || [];
+  const doors = (state.layout.doors || []).filter((door) => doorCoversCell(door, x, y));
+  const corridorIDs = [...(cell.corridor_ids || [])];
+  doors.forEach((door) => {
+    (door.corridor_ids || []).forEach((id) => {
+      if (!corridorIDs.includes(id)) {
+        corridorIDs.push(id);
+      }
+    });
+  });
+  corridorIDs.sort((first, second) => Number(first) - Number(second));
   const corridors = (state.layout.corridors || []).filter((corridor) => corridorIDs.includes(corridor.id));
-  const doors = (state.layout.doors || []).filter((door) => door.at && door.at.x === x && door.at.y === y);
   const details = {
     coordinates: {x, y},
     kind: readableEnum(cell.kind, "CELL_KIND_"),
+    corridor_ids: corridorIDs,
     rooms: rooms.map((room) => ({
       id: room.id,
       shape: readableEnum(room.shape, "ROOM_SHAPE_"),
@@ -554,6 +624,7 @@ function updateInspector(x, y) {
       id: door.id,
       room_id: door.room_id,
       direction: readableEnum(door.direction, "DIRECTION_"),
+      span: Math.max(1, Number(door.span) || 1),
       corridor_ids: door.corridor_ids || [],
     })),
   };

@@ -197,6 +197,16 @@ h3 {
   accent-color: var(--accent);
 }
 
+.centerline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.centerline-toggle input {
+  width: auto;
+}
+
 .zoom-controls output {
   min-width: 36px;
 }

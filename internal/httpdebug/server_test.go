@@ -125,6 +125,66 @@ func TestAllEmbeddedAssetsDoNotReferenceAnExternalHost(t *testing.T) {
 	assert.GreaterOrEqual(t, checked, 3, "HTML, CSS and JavaScript must be checked")
 }
 
+// TestDebugMapExampleDrawsWideCorridors checks that the embedded example asks
+// for a corridor width distribution that is mostly one Cell wide, and that the
+// page draws the occupied band, the ordered centerline and a door's real span.
+func TestDebugMapExampleDrawsWideCorridors(t *testing.T) {
+	t.Parallel()
+
+	script, err := fs.ReadFile(assets, "assets/app.js")
+	require.NoError(t, err)
+	page, err := fs.ReadFile(assets, "assets/index.html")
+	require.NoError(t, err)
+
+	var request struct {
+		Config struct {
+			CorridorGeometry struct {
+				Widths []struct {
+					Width  uint32 `json:"width"`
+					Weight uint32 `json:"weight"`
+				} `json:"widths"`
+			} `json:"corridor_geometry"`
+		} `json:"config"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(exampleRequestFromScript(t, string(script))), &request))
+
+	var narrowWeight uint32
+	var wideWeight uint32
+	var widest uint32
+	for _, item := range request.Config.CorridorGeometry.Widths {
+		require.Positive(t, item.Weight)
+		if item.Width == 1 {
+			narrowWeight += item.Weight
+		}
+		if item.Width > 1 {
+			wideWeight += item.Weight
+			if item.Width > widest {
+				widest = item.Width
+			}
+		}
+	}
+	assert.Greater(t, narrowWeight, wideWeight, "the example stays mostly one Cell wide")
+	assert.Greater(t, widest, uint32(1), "the example includes a wider run")
+
+	source := string(script)
+	assert.Contains(t, source, "centerline")
+	assert.Contains(t, source, "door.span")
+	assert.Contains(t, source, "corridor_ids")
+	assert.Contains(t, string(page), `id="show-centerline"`)
+}
+
+func exampleRequestFromScript(t *testing.T, script string) string {
+	t.Helper()
+
+	const marker = "const exampleRequest = `"
+	start := strings.Index(script, marker)
+	require.NotEqual(t, -1, start, "example request template")
+	rest := script[start+len(marker):]
+	end := strings.Index(rest, "`;")
+	require.NotEqual(t, -1, end, "example request terminator")
+	return rest[:end]
+}
+
 // TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout checks
 // that a valid ProtoJSON POST returns the same Layout the SDK Generate
 // produces for that Config and Seed, using proto field names.
