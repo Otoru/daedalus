@@ -14,18 +14,19 @@ const exampleRequest = `{
     "room_role_requests": [],
     "density_regions": [],
     "room_geometry": {
-      "min_width": 3,
-      "max_width": 9,
-      "min_height": 3,
-      "max_height": 9,
       "max_footprint_cells": 81,
       "min_room_gap": 1,
       "shapes": [
-        {"shape": "ROOM_SHAPE_RECTANGLE", "weight": 4},
-        {"shape": "ROOM_SHAPE_L", "weight": 2},
-        {"shape": "ROOM_SHAPE_T", "weight": 2},
-        {"shape": "ROOM_SHAPE_CROSS", "weight": 1},
-        {"shape": "ROOM_SHAPE_CIRCLE", "weight": 2}
+        {"shape": "ROOM_SHAPE_RECTANGLE", "weight": 4,
+         "width": {"min": 3, "max": 9}, "height": {"min": 3, "max": 9}},
+        {"shape": "ROOM_SHAPE_L", "weight": 2,
+         "width": {"min": 3, "max": 9}, "height": {"min": 3, "max": 9}},
+        {"shape": "ROOM_SHAPE_T", "weight": 2,
+         "width": {"min": 3, "max": 9}, "height": {"min": 3, "max": 9}},
+        {"shape": "ROOM_SHAPE_CROSS", "weight": 1,
+         "width": {"min": 3, "max": 9}, "height": {"min": 3, "max": 9}},
+        {"shape": "ROOM_SHAPE_CIRCLE", "weight": 2,
+         "width": {"min": 5, "max": 9}, "height": {"min": 5, "max": 9}}
       ]
     },
     "corridor_geometry": {

@@ -2,15 +2,15 @@
 
 Deterministic 2D dungeon generation for Go. One `Config` and one `Seed` in, one immutable `Layout` out: a grid of cells, rooms, corridors and doors.
 
-![A 96×96 dungeon from seed 20260928: rooms carry their own hue, corridors are ochre bands one to three cells wide with the centerline drawn through them, doors are pale bars as wide as their opening, and a faint lattice is the grid.](.github/assets/map.png)
+![A 96×96 dungeon from seed 20260928: boxes and circles only, each room in its own hue, corridors one or three cells wide in ochre, doors as pale bars matching their opening, and a faint lattice is the grid.](.github/assets/map.png)
 
 ## Features
 
 - **Deterministic.** The same effective `Config` and `Seed` reproduce a `Layout` bit for bit, in the SDK and over gRPC, on amd64 and arm64. The output is frozen for the whole v1 major and pinned by golden fixtures.
 - **No dependencies in the core.** The root package imports only the standard library, enforced by a test that parses its AST. gRPC, protobuf, fx and zap live outside it.
-- **Rooms have shape.** Five canonical masks — rectangle, L, T, cross and circle — placed by Poisson disk over their real footprint, with a configurable gap between them.
+- **Rooms have shape and their own size.** Five canonical masks — rectangle, L, T, cross and circle — each carrying its own width and height range, placed by Poisson disk over the real footprint. A circle is square, odd and at least 5 across, because a disc on a square grid needs a centre cell.
 - **Connected by construction.** A Prim spanning tree guarantees every room is reachable; `ExtraEdgeCount` adds cycles back on top of it.
-- **Corridors have a width.** A weighted distribution, drawn per corridor, so a floor mixes tight passages with the occasional hall. Omit it and every corridor is one cell, as before.
+- **Corridors have a width, and keep to themselves.** A weighted distribution drawn per corridor, and only the widths you declare: ask for 1 and 3 and you never get a 2. Two corridors never share a cell, and never run side by side except where they converge on a room wall.
 - **Thematic roles.** Ask for a start, a boss and treasure rooms, and get them placed by distance rather than by luck.
 - **Density regions.** Different room spacing per area of the same floor.
 - **Three ways to run it.** Import it as a library, run it as a gRPC subprocess that announces itself on stdout, or open the local HTTP debug interface — the map above is a screenshot of it.
@@ -18,7 +18,7 @@ Deterministic 2D dungeon generation for Go. One `Config` and one `Seed` in, one 
 
 ## Input
 
-The `Config` that produced the map above:
+The `Config` that produced the map above — boxes and circles, corridors of one or three cells:
 
 ```go
 config := daedalus.Config{
@@ -32,20 +32,23 @@ config := daedalus.Config{
 		{Role: daedalus.RoomRoleTreasure, Count: 3},
 	},
 	RoomGeometry: &daedalus.RoomGeometry{
-		MinWidth: 3, MaxWidth: 9, MinHeight: 3, MaxHeight: 9,
 		MaxFootprintCells: 81, MinRoomGap: 3,
 		Shapes: []daedalus.RoomShapeWeight{
-			{Shape: daedalus.RoomShapeRectangle, Weight: 4},
-			{Shape: daedalus.RoomShapeL, Weight: 2},
-			{Shape: daedalus.RoomShapeT, Weight: 2},
-			{Shape: daedalus.RoomShapeCross, Weight: 1},
-			{Shape: daedalus.RoomShapeCircle, Weight: 2},
+			{
+				Shape: daedalus.RoomShapeRectangle, Weight: 4,
+				Width:  daedalus.DimensionRange{Min: 6, Max: 9},
+				Height: daedalus.DimensionRange{Min: 6, Max: 9},
+			},
+			{
+				Shape: daedalus.RoomShapeCircle, Weight: 2,
+				Width:  daedalus.DimensionRange{Min: 7, Max: 9},
+				Height: daedalus.DimensionRange{Min: 7, Max: 9},
+			},
 		},
 	},
 	CorridorGeometry: &daedalus.CorridorGeometry{
 		Widths: []daedalus.CorridorWidthWeight{
 			{Width: 1, Weight: 5},
-			{Width: 2, Weight: 3},
 			{Width: 3, Weight: 2},
 		},
 	},
@@ -54,13 +57,17 @@ config := daedalus.Config{
 layout, err := daedalus.Generator{}.Generate(config)
 ```
 
-Every field has a default except `Width` and `Height`. A nil `RoomGeometry` is the dynamic profile, not one-cell rooms; a nil `CorridorGeometry` is one-cell corridors. A corridor wider than the gap between two rooms cannot pass between them and degrades to a width that fits, so `MinRoomGap` is raised to 3 here to let the wide runs happen.
+Each shape carries its own size, because the shapes disagree about what a legal size is. A rectangle takes anything down to 1×1; a circle must be square, odd and at least 5 across. Asking for a 6×6 circle is `ErrInvalidConfig`, not a silent drop.
 
-Over gRPC and HTTP the request is the same thing as ProtoJSON. Field names are the proto names, and `seed` is a decimal string because it is a `uint64`:
+Only the widths you declare are used. If 3 does not fit, the corridor falls to the next declared width — never to an undeclared 2 — and if nothing declared fits, the call returns `ErrUnroutableEdge` rather than quietly bending the request.
+
+Over gRPC and HTTP the request is the same thing as ProtoJSON, with the proto field names and `seed` as a decimal string:
 
 ```json
 {"config": {"width": 96, "height": 96, "seed": "20260928",
-            "corridor_geometry": {"widths": [{"width": 2, "weight": 1}]}}}
+            "room_geometry": {"shapes": [{"shape": "ROOM_SHAPE_CIRCLE", "weight": 1,
+                                          "width": {"min": 7, "max": 9},
+                                          "height": {"min": 7, "max": 9}}]}}}
 ```
 
 ## Output
@@ -69,29 +76,29 @@ Over gRPC and HTTP the request is the same thing as ProtoJSON. Field names are t
 fmt.Printf("rooms=%d corridors=%d doors=%d cells=%d\n",
 	len(layout.Rooms), len(layout.Corridors), len(layout.Doors), len(layout.Grid.Cells))
 
-corridor := layout.Corridors[6]
-fmt.Printf("corridor %d: centerline=%d band=%d\n", corridor.ID, len(corridor.Centerline), len(corridor.Cells))
+room := layout.Rooms[0]
+fmt.Printf("room %d: shape=%d %dx%d origin=%v cells=%d\n",
+	room.ID, room.Shape, room.Width, room.Height, room.Origin, len(room.Cells))
 
-door := layout.Doors[corridor.FromDoorID]
-fmt.Printf("door %d: room=%d at=%v span=%d\n", door.ID, door.RoomID, door.At, door.Span)
+for _, corridor := range layout.Corridors {
+	if len(corridor.Cells) > len(corridor.Centerline) {
+		door := layout.Doors[corridor.FromDoorID]
+		fmt.Printf("corridor %d: centerline=%d band=%d door span=%d\n",
+			corridor.ID, len(corridor.Centerline), len(corridor.Cells), door.Span)
+		break
+	}
+}
 ```
 
 ```
-rooms=78 corridors=83 doors=165 cells=9216
-corridor 6: centerline=4 band=12
-door 12: room=14 at={22 62} span=3
+rooms=54 corridors=59 doors=118 cells=9216
+room 0: shape=0 8x7 origin={47 47} cells=56
+corridor 1: centerline=3 band=9 door span=3
 ```
 
-`Centerline` is the ordered route; `Cells` is the band it occupies, so a four-cell route three wide covers twelve. `Span` is how many boundary cells the doorway takes, never zero. `RoomID` is nil on anything but a room cell, and `CorridorIDs` is ascending, with two ids meaning two corridors share the cell.
+`Centerline` is the ordered route; `Cells` is the band it occupies, so a three-cell route three wide covers nine. `Span` is how many boundary cells the doorway takes, never zero. `RoomID` is nil on anything but a room cell, and `CorridorIDs` is ascending. Since two corridors never share a cell, a corridor cell names exactly one corridor.
 
-Over HTTP and gRPC the same `Layout` comes back as ProtoJSON. The first cell of each kind, in row-major order, and one cell shared by two corridors — note that the first room cell belongs to room 70, because scan order is not `RoomID` order:
-
-```json
-{"at": {"x": 0, "y": 0}, "kind": "CELL_KIND_EMPTY", "corridor_ids": []}
-{"at": {"x": 2, "y": 0}, "kind": "CELL_KIND_ROOM", "room_id": 70, "corridor_ids": []}
-{"at": {"x": 40, "y": 0}, "kind": "CELL_KIND_CORRIDOR", "corridor_ids": [68]}
-{"at": {"x": 6, "y": 14}, "kind": "CELL_KIND_CORRIDOR", "corridor_ids": [21, 22]}
-```
+Room 0 is always the start room when one is requested, and it is the room nearest the centre of the grid.
 
 ## Reference
 
