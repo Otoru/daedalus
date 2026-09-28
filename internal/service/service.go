@@ -9,6 +9,7 @@ import (
 
 	"github.com/Otoru/daedalus"
 	daedalusv1 "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1"
+	"github.com/Otoru/daedalus/utils/pathfinding"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -86,6 +87,46 @@ func (server *Server) Generate(
 	return &daedalusv1.GenerateResponse{Layout: LayoutToProto(layout)}, nil
 }
 
+// ComputeSteps answers one cardinal step per position. Limits are rejected
+// before a slot is taken, so an oversized request fails even while admission
+// is stopped. The service stores nothing: the cost grid travels on the call,
+// and no field is retained after the response is built.
+func (server *Server) ComputeSteps(
+	ctx context.Context,
+	request *daedalusv1.ComputeStepsRequest,
+) (*daedalusv1.ComputeStepsResponse, error) {
+	if request == nil || request.CostGrid == nil {
+		return nil, status.Error(codes.InvalidArgument, "request must contain cost grid")
+	}
+	if err := checkNavigationLimits(request); err != nil {
+		return nil, StatusError(err)
+	}
+	grid, queries, err := navigationFromProto(request)
+	if err != nil {
+		return nil, StatusError(err)
+	}
+	if err := server.admission.acquire(ctx); err != nil {
+		if errors.Is(err, errAdmissionStopped) {
+			return nil, status.Error(codes.Unavailable, "service is shutting down")
+		}
+		return nil, StatusError(err)
+	}
+	defer server.admission.release()
+
+	navigationContext, cancel := context.WithCancel(ctx)
+	stopShutdownCancellation := context.AfterFunc(server.context, cancel)
+	defer func() {
+		stopShutdownCancellation()
+		cancel()
+	}()
+
+	results, err := pathfinding.Answer(navigationContext, grid, queries)
+	if err != nil {
+		return nil, StatusError(err)
+	}
+	return stepsToProto(results), nil
+}
+
 // BeginShutdown marks the service as not serving, stops admissions, and
 // cancels in-flight work. It is idempotent.
 func (server *Server) BeginShutdown() {
@@ -106,9 +147,9 @@ func (server *Server) Wait(ctx context.Context) error {
 }
 
 // StatusError converts SDK and Context categories into gRPC status.
-// Invalid Config is InvalidArgument, a resource limit is
-// ResourceExhausted, a deadline is DeadlineExceeded, and caller
-// cancellation is Canceled. A missing plant, an unroutable edge, and
+// Invalid Config and an invalid navigation request are InvalidArgument, a
+// resource limit is ResourceExhausted, a deadline is DeadlineExceeded, and
+// caller cancellation is Canceled. A missing plant, an unroutable edge, and
 // dishonest plugin output are FailedPrecondition. Anything else is
 // Internal. The status text has no stack trace and no sensitive data.
 func StatusError(err error) error {
@@ -121,6 +162,8 @@ func StatusError(err error) error {
 		return status.Error(codes.Canceled, "generation canceled")
 	case errors.Is(err, daedalus.ErrInvalidConfig):
 		return status.Error(codes.InvalidArgument, "invalid configuration")
+	case errors.Is(err, daedalus.ErrInvalidNavigation):
+		return status.Error(codes.InvalidArgument, "invalid navigation request")
 	case errors.Is(err, daedalus.ErrLimitExceeded):
 		return status.Error(codes.ResourceExhausted, "resource limit exceeded")
 	case errors.Is(err, daedalus.ErrNoCompatiblePlant):
