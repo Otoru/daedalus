@@ -9,7 +9,7 @@ Deterministic 2D dungeon generation for Go. One `Config` and one `Seed` in, one 
 - **Deterministic.** The same effective `Config` and `Seed` reproduce a `Layout` bit for bit, in the SDK and over gRPC, on amd64 and arm64. The output is frozen for the whole v1 major and pinned by golden fixtures.
 - **No dependencies in the core.** The root package imports only the standard library, enforced by a test that parses its AST. gRPC, protobuf, fx and zap live outside it.
 - **Rooms have shape and their own size.** Five canonical masks — rectangle, L, T, cross and circle — each carrying its own width and height range, placed by Poisson disk over the real footprint. A circle is square, odd and at least 5 across, because a disc on a square grid needs a centre cell.
-- **Connected by construction.** A Prim spanning tree guarantees every room is reachable; `ExtraEdgeCount` adds cycles back on top of it.
+- **Connected by construction.** The spanning tree is grown against the router, so an edge that cannot be routed is replaced rather than fatal; `ExtraEdgeCount` adds cycles back on top of it.
 - **Corridors have a width, and keep to themselves.** A weighted distribution drawn per corridor, and only the widths you declare: ask for 1 and 3 and you never get a 2. Two corridors never share a cell and never come within one cell of each other, anywhere on the floor.
 - **Thematic roles.** Ask for a start, a boss and treasure rooms, and get them placed by distance rather than by luck.
 - **Density regions.** Different room spacing per area of the same floor.
@@ -59,7 +59,7 @@ layout, err := daedalus.Generator{}.Generate(config)
 
 Each shape carries its own size, because the shapes disagree about what a legal size is. A rectangle takes anything down to 1×1; a circle must be square, odd and at least 5 across. Asking for a 6×6 circle is `ErrInvalidConfig`, not a silent drop.
 
-Only the widths you declare are used. If 3 does not fit, the corridor falls to the next declared width — never to an undeclared 2 — and if nothing declared fits, the call returns `ErrUnroutableEdge` rather than quietly bending the request.
+Only the widths you declare are used. If 3 does not fit, the corridor falls to the next declared width — never to an undeclared 2. If no declared width fits that pair of rooms, the generator connects them another way instead of failing; only a room left with no routable edge at all stops the call, with `ErrUnconnectablePlacement` naming that room.
 
 Over gRPC and HTTP the request is the same thing as ProtoJSON, with the proto field names and `seed` as a decimal string:
 
