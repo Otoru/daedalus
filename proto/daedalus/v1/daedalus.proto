@@ -16,6 +16,10 @@ service DaedalusService {
   // expiry returns DeadlineExceeded and caller cancellation returns Canceled.
   // It never returns a partial Layout.
   rpc Generate(GenerateRequest) returns (GenerateResponse);
+  // ComputeSteps answers, for each position, the next cardinal step toward
+  // the nearest goal of that query. The service stores nothing: the grid
+  // travels on every call and no field survives the response.
+  rpc ComputeSteps(ComputeStepsRequest) returns (ComputeStepsResponse);
 }
 
 // GenerateRequest carries every Config datum, including extra_edge_count,
@@ -27,6 +31,71 @@ message GenerateRequest {
 // GenerateResponse carries the complete Layout that was generated successfully.
 message GenerateResponse {
   Layout layout = 1;
+}
+
+// CostGrid is one entry cost per Cell, row-major. costs is bytes rather than
+// a packed repeated uint32: at the 256×256 ceiling one length-delimited block
+// is exactly 65,536 payload bytes, always, while a packed repeated uint32
+// varint-encodes to as much as 128 KiB and the size depends on the data,
+// which a latency budget cannot absorb. bytes also decodes as one slice
+// instead of a 256 KiB []uint32 that then needs a narrowing pass. The domain
+// is 0..255, which bytes cannot misrepresent and uint32 admits as four
+// billion invalid values.
+message CostGrid {
+  uint32 width = 1;
+  uint32 height = 2;
+  // costs holds exactly width × height bytes, row-major, the same order as
+  // Grid.cells: the cost of (x, y) is costs[y*width+x]. 0 is impassable;
+  // 1..255 are entry costs.
+  bytes costs = 3;
+}
+
+// Source is one goal of a distance field. Its field numbers stay in 1..15 so
+// each tag is one byte: Source repeats once per NPC, as Step and Cell do.
+message Source {
+  Cell at = 1;
+  uint32 bias = 2;
+}
+
+// Query is one goal set and the positions to answer against it. One call
+// carries every query of a turn, so the grid travels once per turn rather
+// than once per goal or once per NPC.
+message Query {
+  repeated Source sources = 1;
+  repeated Cell positions = 2;
+  bool flee = 3;
+  optional sint32 flee_numerator = 4;
+  optional uint32 flee_denominator = 5;
+}
+
+// ComputeStepsRequest carries a whole turn. Nothing in it is stored after
+// the response: no handle, no session and no cache.
+message ComputeStepsRequest {
+  CostGrid cost_grid = 1;
+  repeated Query queries = 2;
+}
+
+// Step is the answer for one position. distance is sint32 because it is -1
+// on the common unreachable case, and a plain int32 varint encodes -1 in ten
+// bytes on a field that repeats once per NPC. Field numbers stay in 1..15,
+// as on Source and Cell, so each tag is one byte.
+message Step {
+  // direction is meaningful only when status is STEP_STATUS_MOVED.
+  Direction direction = 1;
+  // distance is -1 when the position is unreachable or outside the grid.
+  sint32 distance = 2;
+  StepStatus status = 3;
+}
+
+// QueryResult holds one Step per position of the matching Query, in order.
+message QueryResult {
+  repeated Step steps = 1;
+}
+
+// ComputeStepsResponse returns one QueryResult per Query, in request order.
+// No field is retained after the call returns.
+message ComputeStepsResponse {
+  repeated QueryResult results = 1;
 }
 
 // CorridorOrder chooses the preferred elbow of the orthogonal L-shaped route.
@@ -71,6 +140,21 @@ enum RoomShape {
   ROOM_SHAPE_T = 3;
   ROOM_SHAPE_CROSS = 4;
   ROOM_SHAPE_CIRCLE = 5;
+}
+
+// StepStatus distinguishes the five outcomes of one position. Moved, arrived,
+// unreachable and outside are four results a game needs; a bare Direction
+// would force DIRECTION_UNSPECIFIED to mean three of them. BLOCKED is the
+// fifth: the goal is reachable but no neighbour is strictly nearer, which is
+// the correct answer on a flee field — the position is as safe as this map
+// gets and should hold.
+enum StepStatus {
+  STEP_STATUS_UNSPECIFIED = 0;
+  STEP_STATUS_MOVED = 1;
+  STEP_STATUS_ARRIVED = 2;
+  STEP_STATUS_UNREACHABLE = 3;
+  STEP_STATUS_OUTSIDE = 4;
+  STEP_STATUS_BLOCKED = 5;
 }
 
 // Cell is an integer (x, y) coordinate on the Grid, never a pixel position.
