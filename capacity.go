@@ -302,11 +302,51 @@ func axisGap(firstLow, firstHigh, secondLow, secondHigh int32) int32 {
 	return gap
 }
 
+// openingConflictWordBits is the width of the packed conflict word. A wider
+// candidate list keeps the unpacked search; v1 shapes at the default sizes
+// stay inside one word (a 9×9 mask has at most 36 openings).
+const openingConflictWordBits = 64
+
 func maximumCompatibleOpenings(openings []doorway) int {
 	count := len(openings)
 	if count == 0 {
 		return 0
 	}
+	if count > openingConflictWordBits {
+		return maximumCompatibleOpeningsWide(openings)
+	}
+	conflictBits := make([]uint64, count)
+	window := 0
+	for left := 0; left < count; left++ {
+		for right := left + 1; right < count; right++ {
+			if !doorwaysConflict(openings[left], openings[right]) {
+				continue
+			}
+			conflictBits[left] |= 1 << uint(right)
+			conflictBits[right] |= 1 << uint(left)
+			span := right - left
+			wrap := count - span
+			if wrap < span {
+				span = wrap
+			}
+			if span > window {
+				window = span
+			}
+		}
+	}
+	if window == 0 {
+		return count
+	}
+	if window <= doorwayWindowLimit && count >= window*2 {
+		return circularDoorwayMIS(count, window, conflictBits)
+	}
+	return exactDoorwayMIS(count, func(left, right int) bool {
+		return conflictBits[left]&(1<<uint(right)) != 0
+	})
+}
+
+func maximumCompatibleOpeningsWide(openings []doorway) int {
+	count := len(openings)
 	conflict := func(left, right int) bool {
 		return doorwaysConflict(openings[left], openings[right])
 	}
@@ -330,12 +370,126 @@ func maximumCompatibleOpenings(openings []doorway) int {
 		return count
 	}
 	if window <= doorwayWindowLimit && count >= window*2 {
-		return circularDoorwayMIS(count, window, conflict)
+		return circularDoorwayMISWide(count, window, conflict)
 	}
 	return exactDoorwayMIS(count, conflict)
 }
 
-func circularDoorwayMIS(count, window int, conflict func(int, int) bool) int {
+// circularDoorwayMIS is the maximum independent set on a circular conflict
+// graph whose edges reach at most window steps along the boundary. The
+// geometric doorway test is resolved once into conflictBits; every later
+// transition is a shift of that word. Re-testing Cells inside the state loop
+// is what made Typical spend most of its time here.
+func circularDoorwayMIS(count, window int, conflictBits []uint64) int {
+	states := 1 << window
+	maskLimit := states - 1
+	shiftConflict := make([]int, count)
+	for pos := 0; pos < count; pos++ {
+		bits := 0
+		for shift := 0; shift < window; shift++ {
+			previous := pos - 1 - shift
+			if previous < 0 {
+				break
+			}
+			if conflictBits[pos]&(uint64(1)<<uint(previous)) != 0 {
+				bits |= 1 << uint(shift)
+			}
+		}
+		shiftConflict[pos] = bits
+	}
+
+	scoreA := make([]int, states)
+	scoreB := make([]int, states)
+	// stamp records the generation that last wrote each mask of the buffer
+	// currently being filled. Generations only increase, so a stale write from
+	// the other buffer cannot be mistaken for this step.
+	stamp := make([]int, states)
+	liveA := make([]int, 0, states)
+	liveB := make([]int, 0, states)
+	generation := 0
+	best := 0
+
+	for prefix := 0; prefix < states; prefix++ {
+		if !prefixConsistentBits(prefix, window, conflictBits) {
+			continue
+		}
+		start := encodeRecentMask(prefix, window)
+		scoreA[start] = 0
+		liveA = append(liveA[:0], start)
+
+		curScore, nextScore := scoreA, scoreB
+		curLive, nextLive := liveA, liveB
+		for pos := window; pos < count; pos++ {
+			generation++
+			nextLive = nextLive[:0]
+			for _, mask := range curLive {
+				base := curScore[mask]
+				skipped := (mask << 1) & maskLimit
+				if stamp[skipped] != generation {
+					stamp[skipped] = generation
+					nextScore[skipped] = base
+					nextLive = append(nextLive, skipped)
+				} else if base > nextScore[skipped] {
+					nextScore[skipped] = base
+				}
+				if mask&shiftConflict[pos] == 0 {
+					taken := skipped | 1
+					value := base + 1
+					if stamp[taken] != generation {
+						stamp[taken] = generation
+						nextScore[taken] = value
+						nextLive = append(nextLive, taken)
+					} else if value > nextScore[taken] {
+						nextScore[taken] = value
+					}
+				}
+			}
+			curScore, nextScore = nextScore, curScore
+			curLive, nextLive = nextLive, curLive
+		}
+
+		prefixCount := bitCount(prefix)
+		for _, mask := range curLive {
+			if !suffixAgreesBits(mask, prefix, count, window, conflictBits) {
+				continue
+			}
+			total := curScore[mask] + prefixCount
+			if total > best {
+				best = total
+			}
+		}
+	}
+	return best
+}
+
+func prefixConsistentBits(prefix, window int, conflictBits []uint64) bool {
+	windowMask := (uint64(1) << uint(window)) - 1
+	for left := 0; left < window; left++ {
+		if prefix&(1<<uint(left)) == 0 {
+			continue
+		}
+		if uint64(prefix)&conflictBits[left]&windowMask != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func suffixAgreesBits(mask, prefix, count, window int, conflictBits []uint64) bool {
+	prefixBits := uint64(prefix)
+	for shift := 0; shift < window; shift++ {
+		if mask&(1<<uint(shift)) == 0 {
+			continue
+		}
+		pos := count - 1 - shift
+		if prefixBits&conflictBits[pos] != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func circularDoorwayMISWide(count, window int, conflict func(int, int) bool) int {
 	states := 1 << window
 	best := 0
 	current := make([]int, states)

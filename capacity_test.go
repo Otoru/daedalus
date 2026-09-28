@@ -83,6 +83,41 @@ func TestBoundaryTraceListsEveryExitOnce(t *testing.T) {
 	}
 }
 
+func TestOpeningCapacityIsStableAcrossDefaultShapes(t *testing.T) {
+	shapes := []RoomShape{
+		RoomShapeRectangle, RoomShapeL, RoomShapeT, RoomShapeCross, RoomShapeCircle,
+	}
+	// Sum of the exact opening budgets for every default-sized mask, with and
+	// without Grid clipping. This is the value the packed search has to keep:
+	// a faster bound that changed a single footprint would move it.
+	const frozenOpeningCapacitySum = 6963
+	sum := 0
+	for _, shape := range shapes {
+		for width := uint32(1); width <= 9; width++ {
+			for height := uint32(1); height <= 9; height++ {
+				if !ValidRoomShapeDimensions(shape, width, height) {
+					continue
+				}
+				cells := RoomShapeOffsets(shape, width, height)
+				for _, corridor := range []uint32{1, 2, 3} {
+					sum += roomOpeningCapacity(cells, 0, 0, corridor)
+					sum += roomOpeningCapacity(cells, 12, 12, corridor)
+					for _, grid := range []struct{ width, height uint32 }{{0, 0}, {12, 12}} {
+						slots := traceBoundarySlots(cells)
+						openings := doorwayOpenings(slots, corridor, grid.width, grid.height, footprintSet(cells))
+						if len(openings) == 0 || len(openings) > openingConflictWordBits {
+							continue
+						}
+						assert.Equal(t, maximumCompatibleOpeningsWide(openings), maximumCompatibleOpenings(openings),
+							"%s %dx%d corridor %d grid %dx%d openings %d", shape, width, height, corridor, grid.width, grid.height, len(openings))
+					}
+				}
+			}
+		}
+	}
+	assert.Equal(t, frozenOpeningCapacitySum, sum)
+}
+
 func TestCircularPackingMatchesExactSearchOnSmallFootprints(t *testing.T) {
 	shapes := []RoomShape{
 		RoomShapeRectangle, RoomShapeL, RoomShapeT, RoomShapeCross, RoomShapeCircle,
