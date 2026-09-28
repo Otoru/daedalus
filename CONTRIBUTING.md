@@ -11,7 +11,7 @@
 - `make generate` runs `buf generate`. The generated bindings under `internal/gen` are committed, and CI fails if regenerating them produces a diff.
 - `make lint` runs `buf lint` and `golangci-lint`.
 - `make test` runs `go test ./...`.
-- `make bench` runs `BenchmarkGenerate` for the three loads, with `-benchmem`.
+- `make bench` runs `BenchmarkGenerate` and `BenchmarkComputeSteps` for the three loads each, with `-benchmem`.
 - `make build` writes `bin/daedalus` and stamps `main.Version` from `git describe`.
 - `make build-all` cross-compiles `linux/amd64`, `darwin/arm64` and `windows/amd64`.
 
@@ -29,6 +29,22 @@ Regenerating them is deliberately **not** a Make target. It rewrites the v1 fixt
 
 ```
 go test ./ -run '^TestFrozenGoldenLayouts$' -update -count=1
+```
+
+### utils/pathfinding/testdata/golden
+
+`TestFrozenGoldenFields` freezes the navigation choices the distance array does not decide: the North, East, South, West step tie-break, and the flee composition (scale by −12/10, truncation toward zero, then rescan). The distance array is stored in the same files. The dungeon fixtures above and these navigation fixtures move independently.
+
+Check the fixtures in place:
+
+```
+go test ./utils/pathfinding -run '^TestFrozenGoldenFields$' -count=1
+```
+
+Regenerating them is deliberately **not** a Make target. It records a reviewed result, not a way to make a red test go green:
+
+```
+go test ./utils/pathfinding -run '^TestFrozenGoldenFields$' -update -count=1
 ```
 
 If a change makes the goldens fail, the question is whether the change was meant to alter observable output. If it was not, the change is wrong. If it was, it needs a new major version or a new algorithm id.

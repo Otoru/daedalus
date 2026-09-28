@@ -64,10 +64,12 @@ test:
 # to rewrite them runs:
 #   go test ./ -run '^TestFrozenGoldenLayouts$' -update -count=1
 
-# Generation benchmarks live in the root package (specification section 13);
-# -benchmem records the allocations of the three normative loads.
+# Generation benchmarks live in the root package. Navigation benchmarks
+# live in utils/pathfinding. -benchmem records the allocations. The name
+# is anchored so a substring cannot pull in another Benchmark.
 bench:
 	$(GO) test -run '^$$' -bench '^BenchmarkGenerate$$' -benchmem .
+	$(GO) test -run '^$$' -bench '^BenchmarkComputeSteps$$' -benchmem ./utils/pathfinding
 
 build:
 ifeq ($(HAS_CMD),)

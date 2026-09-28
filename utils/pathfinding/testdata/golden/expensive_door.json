@@ -1,0 +1,100 @@
+{
+  "name": "expensive_door",
+  "width": 7,
+  "height": 3,
+  "flee": false,
+  "costs": [
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      0,
+      15,
+      0,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  ],
+  "sources": [
+    {
+      "x": 0,
+      "y": 1,
+      "bias": 0
+    }
+  ],
+  "distances": [
+    [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    [
+      0,
+      -1,
+      18,
+      -1,
+      6,
+      7,
+      8
+    ],
+    [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  ],
+  "steps": [
+    {
+      "x": 0,
+      "y": 1,
+      "status": "arrived",
+      "distance": 0
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "status": "moved",
+      "direction": "west",
+      "distance": 2
+    },
+    {
+      "x": 5,
+      "y": 0,
+      "status": "moved",
+      "direction": "west",
+      "distance": 5
+    },
+    {
+      "x": 6,
+      "y": 2,
+      "status": "moved",
+      "direction": "west",
+      "distance": 6
+    }
+  ]
+}

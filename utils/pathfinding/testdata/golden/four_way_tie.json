@@ -1,0 +1,95 @@
+{
+  "name": "four_way_tie",
+  "width": 3,
+  "height": 3,
+  "flee": false,
+  "costs": [
+    [
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1
+    ]
+  ],
+  "sources": [
+    {
+      "x": 1,
+      "y": 0,
+      "bias": 0
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "bias": 0
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "bias": 0
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "bias": 0
+    }
+  ],
+  "distances": [
+    [
+      1,
+      0,
+      1
+    ],
+    [
+      0,
+      1,
+      0
+    ],
+    [
+      1,
+      0,
+      1
+    ]
+  ],
+  "steps": [
+    {
+      "x": 1,
+      "y": 1,
+      "status": "moved",
+      "direction": "north",
+      "distance": 0
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "status": "arrived",
+      "distance": 0
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "status": "arrived",
+      "distance": 0
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "status": "arrived",
+      "distance": 0
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "status": "arrived",
+      "distance": 0
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "name": "wall_split_unreachable",
+  "width": 5,
+  "height": 3,
+  "flee": false,
+  "costs": [
+    [
+      1,
+      1,
+      0,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      0,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      0,
+      1,
+      1
+    ]
+  ],
+  "sources": [
+    {
+      "x": 0,
+      "y": 0,
+      "bias": 0
+    }
+  ],
+  "distances": [
+    [
+      0,
+      1,
+      -1,
+      -1,
+      -1
+    ],
+    [
+      1,
+      2,
+      -1,
+      -1,
+      -1
+    ],
+    [
+      2,
+      3,
+      -1,
+      -1,
+      -1
+    ]
+  ],
+  "steps": [
+    {
+      "x": 0,
+      "y": 0,
+      "status": "arrived",
+      "distance": 0
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "status": "moved",
+      "direction": "west",
+      "distance": 0
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "status": "moved",
+      "direction": "north",
+      "distance": 1
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "status": "unreachable",
+      "distance": -1
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "status": "unreachable",
+      "distance": -1
+    }
+  ]
+}

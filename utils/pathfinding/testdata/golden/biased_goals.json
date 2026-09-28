@@ -1,0 +1,68 @@
+{
+  "name": "biased_goals",
+  "width": 7,
+  "height": 1,
+  "flee": false,
+  "costs": [
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  ],
+  "sources": [
+    {
+      "x": 0,
+      "y": 0,
+      "bias": 0
+    },
+    {
+      "x": 6,
+      "y": 0,
+      "bias": 3
+    }
+  ],
+  "distances": [
+    [
+      0,
+      1,
+      2,
+      3,
+      4,
+      4,
+      3
+    ]
+  ],
+  "steps": [
+    {
+      "x": 0,
+      "y": 0,
+      "status": "arrived",
+      "distance": 0
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "status": "moved",
+      "direction": "west",
+      "distance": 3
+    },
+    {
+      "x": 5,
+      "y": 0,
+      "status": "moved",
+      "direction": "east",
+      "distance": 3
+    },
+    {
+      "x": 6,
+      "y": 0,
+      "status": "arrived",
+      "distance": 3
+    }
+  ]
+}
