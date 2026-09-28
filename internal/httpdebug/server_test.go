@@ -178,6 +178,73 @@ func TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout(t *te
 	assert.Contains(t, response.Body.String(), `"seed":"18446744073709551615"`)
 }
 
+// TestGenerateCarriesCenterlineAndDoorSpan checks that a request with
+// corridor_geometry returns the ordered route and a doorway wider than one
+// Cell, and that a request without it still succeeds with every span at 1.
+func TestGenerateCarriesCenterlineAndDoorSpan(t *testing.T) {
+	t.Parallel()
+
+	generator := daedalus.Generator{}
+	server := newTestServer(t, generator.GenerateContext, service.NewAdmission(1), zap.NewNop())
+
+	wide := executeRequest(server.Handler(), http.MethodPost, "/api/v1/generate", strings.NewReader(`{
+		"config": {
+			"width": 20,
+			"height": 14,
+			"seed": "0",
+			"max_rooms": 4,
+			"min_distance": 5,
+			"room_geometry": {
+				"min_width": 2,
+				"max_width": 3,
+				"min_height": 2,
+				"max_height": 3,
+				"max_footprint_cells": 9,
+				"min_room_gap": 2,
+				"shapes": [{"shape": "ROOM_SHAPE_RECTANGLE", "weight": 1}]
+			},
+			"corridor_geometry": {
+				"widths": [{"width": 2, "weight": 1}]
+			}
+		}
+	}`))
+	require.Equal(t, http.StatusOK, wide.Code, wide.Body.String())
+
+	var wideLayout daedalusv1.Layout
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(wide.Body.Bytes(), &wideLayout))
+	var widest uint32
+	centerlineCells := 0
+	for _, door := range wideLayout.Doors {
+		if door.GetSpan() > widest {
+			widest = door.GetSpan()
+		}
+	}
+	for _, corridor := range wideLayout.Corridors {
+		centerlineCells += len(corridor.GetCenterline())
+	}
+	assert.Greater(t, widest, uint32(1))
+	assert.Greater(t, centerlineCells, 0)
+	assert.Contains(t, wide.Body.String(), `"centerline"`)
+	assert.Contains(t, wide.Body.String(), `"span"`)
+
+	plain := executeRequest(server.Handler(), http.MethodPost, "/api/v1/generate", strings.NewReader(`{
+		"config": {
+			"width": 16,
+			"height": 16,
+			"seed": "0",
+			"max_rooms": 4
+		}
+	}`))
+	require.Equal(t, http.StatusOK, plain.Code, plain.Body.String())
+
+	var plainLayout daedalusv1.Layout
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(plain.Body.Bytes(), &plainLayout))
+	require.NotEmpty(t, plainLayout.Doors)
+	for _, door := range plainLayout.Doors {
+		assert.Equal(t, uint32(1), door.GetSpan())
+	}
+}
+
 // TestGenerateRequiresCanonicalProtoJSONAndRequiredFields checks that invalid
 // JSON, Content-Type or Config returns a structured 400, with no panic and no
 // Layout. Error text is English; this test does not scan message wording.

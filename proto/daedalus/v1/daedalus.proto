@@ -19,7 +19,7 @@ service DaedalusService {
 }
 
 // GenerateRequest carries every Config datum, including extra_edge_count,
-// room_role_requests, density_regions and room_geometry.
+// room_role_requests, density_regions, room_geometry and corridor_geometry.
 message GenerateRequest {
   Config config = 1;
 }
@@ -119,6 +119,11 @@ message Config {
   // room_geometry is the optional Room geometry; when absent, the
   // specification's default dynamic profile is used.
   optional RoomGeometry room_geometry = 13;
+  // corridor_geometry is the optional Corridor width distribution. When
+  // absent, every Corridor is one Cell wide, the same as a nil pointer in Go.
+  // A present message must list at least one width; an empty message is not
+  // the absent case.
+  optional CorridorGeometry corridor_geometry = 14;
 }
 
 // RoomGeometry defines the dimensions, area, spacing and weights of Rooms.
@@ -143,6 +148,24 @@ message RoomShapeWeight {
   // shape is one of the canonical Room shapes.
   RoomShape shape = 1;
   // weight is the positive relative weight used when selecting the shape.
+  uint32 weight = 2;
+}
+
+// CorridorGeometry defines the width distribution for Corridors.
+// A present message requires a non-empty widths list. Absence, not an empty
+// message, means every Corridor is one Cell wide.
+message CorridorGeometry {
+  // widths lists positive weights per corridor width, with no duplicate
+  // widths. Each width is 1..64 and each weight is 1..2^32-1.
+  repeated CorridorWidthWeight widths = 1;
+}
+
+// CorridorWidthWeight associates a corridor width, in Cells, with a positive
+// selection weight.
+message CorridorWidthWeight {
+  // width is the corridor width in Cells, from 1 to 64 inclusive.
+  uint32 width = 1;
+  // weight is the positive relative weight used when selecting the width.
   uint32 weight = 2;
 }
 
@@ -247,19 +270,24 @@ message Room {
   repeated Cell cells = 11;
 }
 
-// Corridor is a topological edge between two Rooms and its ordered internal
-// orthogonal Cells.
+// Corridor is a topological edge between two Rooms. cells is the occupied
+// band; centerline is the ordered route.
 message Corridor {
   uint32 id = 1;
   uint32 from_room_id = 2;
   uint32 to_room_id = 3;
   uint32 from_door_id = 4;
   uint32 to_door_id = 5;
-  // cells are the route's internal Cells, from the From side to the To side;
-  // empty when the Rooms are adjacent.
+  // cells is the occupied band in row-major order (Y then X). At width 1 the
+  // band is the route itself, so cells equals centerline. Empty when the
+  // Rooms are adjacent.
   repeated Cell cells = 6;
   string plant_id = 7;
   repeated string tags = 8;
+  // centerline is the ordered route from the From side to the To side,
+  // excluding the endpoint Rooms. It is 4-connected and empty when the Rooms
+  // are adjacent. It is recorded at every routed width.
+  repeated Cell centerline = 9;
 }
 
 // Door is a Room's logical opening, identified by Cell and Direction; unique
@@ -267,12 +295,18 @@ message Corridor {
 message Door {
   uint32 id = 1;
   uint32 room_id = 2;
-  // at is a border Cell that belongs to the owning Room's footprint.
+  // at is a border Cell that belongs to the owning Room's footprint. With
+  // span 1 it is the opening Cell. With a wider span it is the Cell of the
+  // span with the smallest (y, x).
   Cell at = 3;
   Direction direction = 4;
   // corridor_ids lists, in ascending order, one or more edges that use this
   // opening.
   repeated uint32 corridor_ids = 5;
+  // span is the number of boundary Cells in this opening and is never zero:
+  // a one-Cell doorway spans 1. It equals the width the Corridor was routed
+  // at, which is 1 when corridor_geometry was absent.
+  uint32 span = 6;
 }
 
 // Layout is the complete, immutable result of a request that was generated

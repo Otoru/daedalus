@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestStatusErrorMapsSDKCategories(t *testing.T) {
@@ -149,6 +150,7 @@ func TestConfigFromProtoRejectsMissingNestedMessages(t *testing.T) {
 		{RoomRoleRequests: []*daedalusv1.RoomRoleRequest{nil}},
 		{PlantCatalog: &daedalusv1.PlantCatalog{Rooms: []*daedalusv1.RoomPlant{nil}}},
 		{RoomGeometry: &daedalusv1.RoomGeometry{Shapes: []*daedalusv1.RoomShapeWeight{nil}}},
+		{CorridorGeometry: &daedalusv1.CorridorGeometry{Widths: []*daedalusv1.CorridorWidthWeight{nil}}},
 	}
 	for _, protoConfig := range cases {
 		_, err := ConfigFromProto(protoConfig)
@@ -156,6 +158,119 @@ func TestConfigFromProtoRejectsMissingNestedMessages(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, daedalus.ErrInvalidConfig)
 	}
+}
+
+func TestAbsentCorridorGeometryStaysNil(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{Width: 16, Height: 16, Seed: 1, MaxRooms: 4})
+
+	require.NoError(t, err)
+	assert.Nil(t, got.CorridorGeometry)
+}
+
+func TestPresentCorridorGeometryCopiesWidths(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{
+		Width: 20, Height: 14, Seed: 0, MaxRooms: 4, MinDistance: 5,
+		CorridorGeometry: &daedalusv1.CorridorGeometry{
+			Widths: []*daedalusv1.CorridorWidthWeight{
+				{Width: 3, Weight: 2},
+				{Width: 1, Weight: 5},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, got.CorridorGeometry)
+	assert.Equal(t, []daedalus.CorridorWidthWeight{
+		{Width: 3, Weight: 2},
+		{Width: 1, Weight: 5},
+	}, got.CorridorGeometry.Widths)
+}
+
+func TestCorridorGeometryRoundTripsThroughProto(t *testing.T) {
+	t.Parallel()
+
+	source := &daedalusv1.Config{
+		Width: 20, Height: 14, CellSize: 1, Seed: 7,
+		MinDistance: 5, MaxAttempts: 30, MaxRooms: 4,
+		CorridorOrder: daedalusv1.CorridorOrder_CORRIDOR_ORDER_Y_THEN_X,
+		CorridorGeometry: &daedalusv1.CorridorGeometry{
+			Widths: []*daedalusv1.CorridorWidthWeight{
+				{Width: 2, Weight: 1},
+				{Width: 1, Weight: 3},
+			},
+		},
+		RoomGeometry: &daedalusv1.RoomGeometry{
+			MinWidth: 2, MaxWidth: 3, MinHeight: 2, MaxHeight: 3,
+			MaxFootprintCells: 9, MinRoomGap: 2,
+			Shapes: []*daedalusv1.RoomShapeWeight{{
+				Shape: daedalusv1.RoomShape_ROOM_SHAPE_RECTANGLE, Weight: 1,
+			}},
+		},
+	}
+
+	got, err := ConfigFromProto(source)
+	require.NoError(t, err)
+	assert.True(t, proto.Equal(source, ConfigToProto(got)))
+}
+
+func TestEmptyCorridorGeometryStaysPresent(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{
+		Width: 8, Height: 8, Seed: 1,
+		CorridorGeometry: &daedalusv1.CorridorGeometry{},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, got.CorridorGeometry)
+	assert.Empty(t, got.CorridorGeometry.Widths)
+}
+
+func TestGenerateKeepsAbsentCorridorGeometryValidAndRejectsAnEmptyOne(t *testing.T) {
+	t.Parallel()
+
+	server := New(daedalus.Generator{}.GenerateContext, NewAdmission(1))
+
+	_, absentErr := server.Generate(context.Background(), &daedalusv1.GenerateRequest{
+		Config: &daedalusv1.Config{Width: 16, Height: 16, Seed: 0, MaxRooms: 4},
+	})
+	require.NoError(t, absentErr)
+
+	_, emptyErr := server.Generate(context.Background(), &daedalusv1.GenerateRequest{
+		Config: &daedalusv1.Config{
+			Width: 8, Height: 8, Seed: 1,
+			CorridorGeometry: &daedalusv1.CorridorGeometry{},
+		},
+	})
+	require.Error(t, emptyErr)
+	assert.Equal(t, codes.InvalidArgument, status.Code(emptyErr))
+}
+
+func TestLayoutToProtoCarriesCenterlineAndDoorSpan(t *testing.T) {
+	t.Parallel()
+
+	got := LayoutToProto(daedalus.Layout{
+		Corridors: []daedalus.Corridor{{
+			Cells:      []daedalus.Cell{{X: 1, Y: 2}, {X: 2, Y: 2}, {X: 1, Y: 3}},
+			Centerline: []daedalus.Cell{{X: 1, Y: 2}, {X: 2, Y: 2}},
+		}},
+		Doors: []daedalus.Door{{
+			Span: 2, Direction: daedalus.DirectionEast, At: daedalus.Cell{X: 0, Y: 2},
+		}},
+	})
+
+	require.Len(t, got.Corridors, 1)
+	require.Len(t, got.Corridors[0].Centerline, 2)
+	assert.Equal(t, int32(1), got.Corridors[0].Centerline[0].X)
+	assert.Equal(t, int32(2), got.Corridors[0].Centerline[0].Y)
+	assert.Equal(t, int32(2), got.Corridors[0].Centerline[1].X)
+	require.Len(t, got.Corridors[0].Cells, 3)
+	require.Len(t, got.Doors, 1)
+	assert.Equal(t, uint32(2), got.Doors[0].Span)
 }
 
 func TestLayoutToProtoPreservesPresenceAndFootprints(t *testing.T) {

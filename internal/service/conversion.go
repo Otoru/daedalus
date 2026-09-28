@@ -74,6 +74,23 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 		}
 	}
 
+	if source.CorridorGeometry != nil {
+		geometry := source.CorridorGeometry
+		target.CorridorGeometry = &daedalus.CorridorGeometry{
+			Widths: make([]daedalus.CorridorWidthWeight, len(geometry.Widths)),
+		}
+		for index, weight := range geometry.Widths {
+			if weight == nil {
+				return daedalus.Config{}, fmt.Errorf(
+					"%w: corridor_geometry.widths[%d] missing", daedalus.ErrInvalidConfig, index,
+				)
+			}
+			target.CorridorGeometry.Widths[index] = daedalus.CorridorWidthWeight{
+				Width: weight.Width, Weight: weight.Weight,
+			}
+		}
+	}
+
 	if source.PlantCatalog != nil {
 		catalog, err := plantCatalogFromProto(source.PlantCatalog)
 		if err != nil {
@@ -113,6 +130,97 @@ func plantCatalogFromProto(source *daedalusv1.PlantCatalog) (*daedalus.PlantCata
 		}
 	}
 	return target, nil
+}
+
+// ConfigToProto converts an SDK Config into a wire message. A nil
+// CorridorGeometry stays absent. A present value is copied even when Widths
+// is empty, because that empty geometry is invalid and is not the one-Cell
+// default.
+func ConfigToProto(source daedalus.Config) *daedalusv1.Config {
+	target := &daedalusv1.Config{
+		Width: source.Width, Height: source.Height, CellSize: source.CellSize,
+		Seed: uint64(source.Seed), MinDistance: source.MinDistance,
+		MaxAttempts: source.MaxAttempts, MaxRooms: source.MaxRooms,
+		CorridorOrder:    mapCorridorOrderToProto(source.CorridorOrder),
+		ExtraEdgeCount:   source.ExtraEdgeCount,
+		RoomRoleRequests: make([]*daedalusv1.RoomRoleRequest, len(source.RoomRoleRequests)),
+		DensityRegions:   make([]*daedalusv1.DensityRegion, len(source.DensityRegions)),
+		RoomGeometry:     roomGeometryToProto(source.RoomGeometry),
+		CorridorGeometry: corridorGeometryToProto(source.CorridorGeometry),
+		PlantCatalog:     plantCatalogToProto(source.PlantCatalog),
+	}
+	for index, request := range source.RoomRoleRequests {
+		target.RoomRoleRequests[index] = &daedalusv1.RoomRoleRequest{
+			Role: mapRoomRoleToProto(request.Role), Count: request.Count,
+			RequiredTags: append([]string(nil), request.RequiredTags...),
+		}
+	}
+	for index, region := range source.DensityRegions {
+		target.DensityRegions[index] = &daedalusv1.DensityRegion{
+			Min: cellToProto(region.Min), Max: cellToProto(region.Max),
+			MinDistance: region.MinDistance,
+		}
+	}
+	return target
+}
+
+func roomGeometryToProto(source *daedalus.RoomGeometry) *daedalusv1.RoomGeometry {
+	if source == nil {
+		return nil
+	}
+	target := &daedalusv1.RoomGeometry{
+		MinWidth: source.MinWidth, MaxWidth: source.MaxWidth,
+		MinHeight: source.MinHeight, MaxHeight: source.MaxHeight,
+		MaxFootprintCells: source.MaxFootprintCells, MinRoomGap: source.MinRoomGap,
+		Shapes: make([]*daedalusv1.RoomShapeWeight, len(source.Shapes)),
+	}
+	for index, weight := range source.Shapes {
+		target.Shapes[index] = &daedalusv1.RoomShapeWeight{
+			Shape: mapRoomShapeToProto(weight.Shape), Weight: weight.Weight,
+		}
+	}
+	return target
+}
+
+func corridorGeometryToProto(source *daedalus.CorridorGeometry) *daedalusv1.CorridorGeometry {
+	if source == nil {
+		return nil
+	}
+	target := &daedalusv1.CorridorGeometry{
+		Widths: make([]*daedalusv1.CorridorWidthWeight, len(source.Widths)),
+	}
+	for index, weight := range source.Widths {
+		target.Widths[index] = &daedalusv1.CorridorWidthWeight{
+			Width: weight.Width, Weight: weight.Weight,
+		}
+	}
+	return target
+}
+
+func plantCatalogToProto(source *daedalus.PlantCatalog) *daedalusv1.PlantCatalog {
+	if source == nil {
+		return nil
+	}
+	target := &daedalusv1.PlantCatalog{
+		Rooms:     make([]*daedalusv1.RoomPlant, len(source.Rooms)),
+		Corridors: make([]*daedalusv1.CorridorPlant, len(source.Corridors)),
+	}
+	for index, plant := range source.Rooms {
+		target.Rooms[index] = &daedalusv1.RoomPlant{
+			Id: string(plant.ID), Tags: append([]string(nil), plant.Tags...),
+			Weight: plant.Weight, DoorDirections: make([]daedalusv1.Direction, len(plant.DoorDirections)),
+		}
+		for directionIndex, direction := range plant.DoorDirections {
+			target.Rooms[index].DoorDirections[directionIndex] = mapDirectionToProto(direction)
+		}
+	}
+	for index, plant := range source.Corridors {
+		target.Corridors[index] = &daedalusv1.CorridorPlant{
+			Id: string(plant.ID), Tags: append([]string(nil), plant.Tags...),
+			Weight: plant.Weight,
+		}
+	}
+	return target
 }
 
 // LayoutToProto converts the complete result into a message owned by the
@@ -185,10 +293,14 @@ func corridorToProto(source daedalus.Corridor) *daedalusv1.Corridor {
 		Id: uint32(source.ID), FromRoomId: uint32(source.FromRoomID),
 		ToRoomId: uint32(source.ToRoomID), FromDoorId: uint32(source.FromDoorID),
 		ToDoorId: uint32(source.ToDoorID), Cells: make([]*daedalusv1.Cell, len(source.Cells)),
-		PlantId: string(source.PlantID), Tags: append([]string(nil), source.Tags...),
+		Centerline: make([]*daedalusv1.Cell, len(source.Centerline)),
+		PlantId:    string(source.PlantID), Tags: append([]string(nil), source.Tags...),
 	}
 	for index, cell := range source.Cells {
 		target.Cells[index] = cellToProto(cell)
+	}
+	for index, cell := range source.Centerline {
+		target.Centerline[index] = cellToProto(cell)
 	}
 	return target
 }
@@ -197,6 +309,7 @@ func doorToProto(source daedalus.Door) *daedalusv1.Door {
 	target := &daedalusv1.Door{
 		Id: uint32(source.ID), RoomId: uint32(source.RoomID), At: cellToProto(source.At),
 		Direction:   mapDirectionToProto(source.Direction),
+		Span:        source.Span,
 		CorridorIds: make([]uint32, len(source.CorridorIDs)),
 	}
 	for index, corridorID := range source.CorridorIDs {
@@ -222,6 +335,17 @@ func mapCorridorOrder(source daedalusv1.CorridorOrder) daedalus.CorridorOrder {
 		return daedalus.CorridorOrderYThenX
 	default:
 		return invalidCorridorOrder
+	}
+}
+
+func mapCorridorOrderToProto(source daedalus.CorridorOrder) daedalusv1.CorridorOrder {
+	switch source {
+	case daedalus.CorridorOrderYThenX:
+		return daedalusv1.CorridorOrder_CORRIDOR_ORDER_Y_THEN_X
+	case daedalus.CorridorOrderXThenY:
+		return daedalusv1.CorridorOrder_CORRIDOR_ORDER_X_THEN_Y
+	default:
+		return daedalusv1.CorridorOrder_CORRIDOR_ORDER_UNSPECIFIED
 	}
 }
 
