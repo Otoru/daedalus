@@ -277,6 +277,21 @@
 // another rounding step on the frozen path. Prim receives its stream and
 // consumes no draw.
 //
+// Generator installs ConnectionRequest.TryRoute and RewireRoute before Connect.
+// TryRoute routes the pair against corridors already reserved and, on success,
+// reserves that band and its one-Cell Chebyshev halo, beside a Room wall the
+// same as in open ground. Failure reserves nothing and consumes no width draw.
+// prim_rooms_v1 still considers candidates cheapest first, with the tie-break
+// above, and accepts an edge only after TryRoute succeeds. A pair that does
+// not fit is marked infeasible, in both orientations, and the next candidate
+// is taken. That loss is not an error. The tree is greedy under this
+// routability constraint. It is not a minimum spanning tree: a cheaper edge
+// that cannot be routed gives way to a longer one that can, and the total
+// weight is not the minimum. It does not minimize routed Cells either. A Room
+// with no routable edge left returns ErrUnconnectablePlacement, naming that
+// Room. An edge that only lost to another candidate must not surface as
+// ErrUnroutableEdge.
+//
 // Before the first edge, each Room's opening budget is computed once from its
 // footprint and from ConnectionRequest.MaxCorridorWidth (the widest declared
 // Corridor width, or 1 when CorridorGeometry is nil). An opening claims that
@@ -285,17 +300,24 @@
 // on adjacent sides are incompatible when their outside Cells would lie within
 // Chebyshev distance 1, so corners count. Prim still takes the cheapest edge
 // under the tie-break above, but only among edges that would not exceed either
-// endpoint's remaining budget. A greedy choice can fill every Room already in
-// the tree and leave another Room unvisited. That Room is spliced into the
-// tree: the nearest in-tree Room is chosen with the same ordering, one of its
-// existing edges is removed, and the stranded Room — which must be able to
-// host two openings — is inserted between those two endpoints. The two Rooms
-// that were already joined keep the same degree. If no such splice exists,
-// Connect returns ErrUnconnectablePlacement instead of a tree that routing
-// would later fail to draw. The tree is the minimum total weight among the
-// feasible spanning trees Prim actually considers; it does not minimize routed
-// Cells. It is always the backbone. The Layout is a tree only when
-// ExtraEdgeCount is 0.
+// endpoint's remaining budget and that TryRoute accepts. A greedy choice can
+// fill every Room already in the tree and leave another Room unvisited. That
+// Room is spliced into the tree: the nearest in-tree Room is chosen with the
+// same ordering, one of its existing edges is removed, and the stranded Room —
+// which must be able to host two openings — is inserted between those two
+// endpoints. The two Rooms that were already joined keep the same degree.
+// RewireRoute releases the removed corridor and reserves the two replacements;
+// if they do not fit, that splice is skipped and the next candidate in the
+// same order is tried. If no splice reserves, Connect returns
+// ErrUnconnectablePlacement. The tree is always the backbone. The Layout is a
+// tree only when ExtraEdgeCount is 0.
+//
+// TryRoute is nil when Connect is invoked outside Generator. prim_rooms_v1
+// then keeps the opening-budget tree and does not consult the router. A
+// game-supplied Connector may call TryRoute or ignore it. Ignoring it keeps
+// propose-then-route: Generator routes each returned edge in order and returns
+// ErrUnroutableEdge when one does not fit, because that Connector never
+// negotiated. Edges it did reserve stay reserved, in call order.
 //
 // Thematic roles are a projection onto that tree, not a third plugin. If Start
 // is requested it is RoomID 0, the first Room accepted, which is also the one
@@ -314,8 +336,11 @@
 // increasing Euclidean distance and the same Prim tie-break, and appends
 // candidates in that order until ExtraEdgeCount of them have been kept or the
 // list runs out. A candidate that would put either Room past its opening
-// budget is skipped, and the next candidate is considered. The choice is
-// ordered, not random, and it consumes no draw. Zero skips the phase entirely.
+// budget is skipped, and the next candidate is considered. A candidate that
+// TryRoute refuses is skipped the same way. The shortcut budget does not
+// shrink because an earlier candidate did not fit, and that miss is not
+// ErrUnroutableEdge. The choice is ordered, not random. Zero skips the phase
+// entirely. A width draw happens only for a shortcut that is actually reserved.
 // The graph stays connected either way; extra edges are the only way it gains
 // a cycle. Fewer shortcuts than requested is a successful Layout when the
 // budget runs out.
@@ -363,7 +388,10 @@
 // closure is injectable without declaring a type. Placer returns
 // RoomPlacements and nothing
 // else: no Plants, no Doors, no IDs, and no mutation of a Layout. Connector
-// returns edges and nothing else: it does not route Cells. Generator checks
+// returns edges and does not write Corridor Cells onto the Layout. The built-in
+// asks TryRoute to reserve a route before it accepts an edge. An injected
+// Connector that leaves TryRoute untouched still returns edges, and Generator
+// routes those edges afterwards. Generator checks
 // every placement against the normalized geometry and the Grid, and it rejects
 // a connection that is duplicated, a self-loop, unknown, or disconnected.
 // With ExtraEdgeCount 0 the accepted graph must be a tree. Above that,
@@ -441,10 +469,12 @@
 // never silently truncated. ErrNoCompatiblePlant reports a valid Config whose
 // catalog has no Room plant that supports a Room's Directions and the assigned
 // role's required tags. ErrUnconnectablePlacement reports a footprint set that
-// cannot host a spanning tree under the one-Cell separation rule; the
-// Connector returns it before routing begins. ErrUnroutableEdge reports an
-// edge for which both L-routes are blocked and the breadth-first search finds
-// no orthogonal path.
+// cannot host a spanning tree once every Corridor keeps a one-Cell Chebyshev
+// gap. The built-in Connector returns it when a Room has no routable edge
+// left. ErrUnroutableEdge reports an edge the Connector returned without a
+// reservation and for which both L-routes are blocked and the breadth-first
+// search finds no orthogonal path. A candidate the built-in skipped is not
+// this error.
 //
 // Cancellation and deadlines are not sentinels. GenerateContext returns
 // context.Canceled or context.DeadlineExceeded, still with the zero Layout.
@@ -509,8 +539,10 @@
 // in open ground. A caller asking for wide Corridors should raise MinRoomGap
 // to match, and should expect small Rooms to accept fewer connections: the
 // Connector will not ask a Room for more openings than that width can separate.
-// On a crowded Grid the request may be ErrUnroutableEdge; that is a miss, not
-// a cue to invent a narrower width.
+// On a crowded Grid the built-in may return ErrUnconnectablePlacement when a
+// Room has no routable edge. An injected Connector that returns an edge it did
+// not reserve may still receive ErrUnroutableEdge. Neither miss is a cue to
+// invent a narrower width.
 // ExtraEdgeCount defaults to 0, which keeps the backbone a tree. Raising it
 // adds the shortest discarded edges and the cycles those edges create.
 // RoomRoleRequests defaults to empty. A Treasure count of zero asks for no

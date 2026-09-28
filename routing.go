@@ -193,12 +193,20 @@ func routeCorridorsWithWidths(
 // Every free neighbour within Chebyshev distance 1 is reserved too, diagonal
 // contact included, whether or not it sits on a Room wall. Cells already
 // owned, including Room footprints, are left unchanged.
-func blockCorridorHalo(occupancy *placementOccupancy, band []Cell) {
-	for _, cell := range band {
+func blockCorridorHalo(occupancy *placementOccupancy, band []Cell) []Cell {
+	marked := make([]Cell, 0, len(band)*9)
+	markFree := func(cell Cell) {
 		if _, occupied := occupancy.ownerAt(cell); occupied {
-			continue
+			return
+		}
+		if _, inside := occupancy.index(cell); !inside {
+			return
 		}
 		occupancy.mark(corridorObstacleOwner, []Cell{cell})
+		marked = append(marked, cell)
+	}
+	for _, cell := range band {
+		markFree(cell)
 	}
 	for _, cell := range band {
 		for dy := int32(-1); dy <= 1; dy++ {
@@ -206,14 +214,11 @@ func blockCorridorHalo(occupancy *placementOccupancy, band []Cell) {
 				if dx == 0 && dy == 0 {
 					continue
 				}
-				neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
-				if _, occupied := occupancy.ownerAt(neighbor); occupied {
-					continue
-				}
-				occupancy.mark(corridorObstacleOwner, []Cell{neighbor})
+				markFree(Cell{X: cell.X + dx, Y: cell.Y + dy})
 			}
 		}
 	}
+	return marked
 }
 
 func chebyshevDistance(first, second Cell) int32 {

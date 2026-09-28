@@ -87,15 +87,20 @@ type PlacementRequest struct {
 // request. It is one of only two Strategy interfaces in v1; functions and
 // closures satisfy it idiomatically.
 //
-// Connector returns only edges: it does not route Cells or mutate Layout. The
-// result must be a simple graph that makes every Room reachable; Generator
-// rejects duplicate, self, unknown, or disconnected Connections. The final
-// result contains between n-1 and n-1+ConnectionRequest.ExtraEdgeCount edges;
-// with ExtraEdgeCount == 0 Generator rejects every cycle and requires a tree.
-// The built-in Connector is prim_rooms_v1, which returns the backbone tree;
-// ExtraEdgeCount shortcuts are added by Generator during the cycle phase, not
-// by Connector. A game-injected implementation is responsible for its own
-// determinism, cancellation, and concurrency safety.
+// Connector returns only edges: it does not write Corridor Cells onto the
+// Layout. The result must be a simple graph that makes every Room reachable;
+// Generator rejects duplicate, self, unknown, or disconnected Connections. The
+// final result contains between n-1 and n-1+ConnectionRequest.ExtraEdgeCount
+// edges; with ExtraEdgeCount == 0 Generator rejects every cycle and requires a
+// tree. The built-in Connector is prim_rooms_v1, which returns the backbone
+// tree. When ConnectionRequest.TryRoute is set, prim_rooms_v1 asks it to
+// reserve each edge before accepting it, so the tree is greedy under
+// routability rather than a minimum spanning tree. ExtraEdgeCount shortcuts
+// are added by Generator during the cycle phase, not by Connector. A
+// game-injected Connector may call TryRoute or ignore it. Ignoring it leaves
+// propose-then-route in place, and an unroutable returned edge still fails
+// with ErrUnroutableEdge. The plugin is responsible for its own determinism,
+// cancellation, and concurrency safety.
 type Connector interface {
 	// Connect chooses the request's Room-to-Room edges, or returns an error. It
 	// must observe req.Context and abandon work when canceled.
@@ -160,6 +165,17 @@ type ConnectionRequest struct {
 	// can keep Chebyshev-separated, and a game-supplied Connector needs the
 	// same number to apply the same limit.
 	MaxCorridorWidth uint32
+	// TryRoute, when non-nil, routes one pair against corridors already
+	// reserved for this request. Success reserves that band and its one-Cell
+	// Chebyshev halo. Failure reserves nothing. Generator installs it.
+	// prim_rooms_v1 calls it before accepting an edge. A game-supplied
+	// Connector may call it or ignore it.
+	TryRoute func(from, to RoomID) (bool, error)
+	// RewireRoute releases one reserved edge and reserves two replacements.
+	// Failure restores the released edge. Generator installs it together with
+	// TryRoute so a splice can move a corridor that was already reserved.
+	// A game-supplied Connector can ignore it.
+	RewireRoute func(remove, first, second Connection) (bool, error)
 }
 
 // Connection is a topological edge chosen by Connector between two distinct Rooms.

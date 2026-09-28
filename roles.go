@@ -51,13 +51,14 @@ func applyTopologyOptions(
 	gridWidth uint32,
 	gridHeight uint32,
 	corridorWidth uint32,
+	tryRoute func(from, to RoomID) (bool, error),
 ) ([]*RoomRole, []Connection, error) {
 	roles, err := assignRoomRoles(ctx, rooms, backbone, requests)
 	if err != nil {
 		return nil, nil, err
 	}
 	connections, err := addExtraConnections(
-		ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth,
+		ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth, tryRoute,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -282,6 +283,7 @@ func addExtraConnections(
 	gridWidth uint32,
 	gridHeight uint32,
 	corridorWidth uint32,
+	tryRoute func(from, to RoomID) (bool, error),
 ) ([]Connection, error) {
 	ctx = topologyContext(ctx)
 	if err := ctx.Err(); err != nil {
@@ -345,6 +347,15 @@ func addExtraConnections(
 		}
 		if used[fromIndex] >= capacity[fromIndex] || used[toIndex] >= capacity[toIndex] {
 			continue
+		}
+		if tryRoute != nil {
+			ok, routeErr := tryRoute(candidate.connection.FromRoomID, candidate.connection.ToRoomID)
+			if routeErr != nil {
+				return nil, routeErr
+			}
+			if !ok {
+				continue
+			}
 		}
 		connections = append(connections, candidate.connection)
 		used[fromIndex]++

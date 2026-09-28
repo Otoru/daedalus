@@ -37,8 +37,9 @@ var (
 
 	// ErrUnconnectablePlacement marks a Room set whose footprints cannot host
 	// a spanning tree once every Corridor keeps a one-Cell Chebyshev gap,
-	// including beside a Room. It is raised by the Connector, before routing,
-	// so the failure is not reported later as a missing path.
+	// including beside a Room. The built-in Connector returns it when a Room
+	// has no routable edge left. An edge that lost to a cheaper routable
+	// candidate is not this error.
 	ErrUnconnectablePlacement = errors.New("daedalus: placement cannot be connected under the separation rule")
 
 	// ErrInvalidPlugin marks a caller-supplied Placer or Connector whose return

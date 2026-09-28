@@ -264,6 +264,114 @@ func TestPrimKeepsTheUnconstrainedTreeWhenEveryRoomHasSpareOpenings(t *testing.T
 	assert.Equal(t, referencePrim(rooms), edges)
 }
 
+func TestPrimSkipsAnUnroutableEdgeAndStillSpans(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 2, 0),
+		placedRoomAt(2, 0, 2),
+	}
+	var attempts []Connection
+	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
+		Context: context.Background(),
+		Rooms:   rooms,
+		TryRoute: func(from, to RoomID) (bool, error) {
+			attempts = append(attempts, Connection{FromRoomID: from, ToRoomID: to})
+			if connectionJoins(Connection{FromRoomID: from, ToRoomID: to}, 0, 1) {
+				return false, nil
+			}
+			return true, nil
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []Connection{
+		{FromRoomID: 0, ToRoomID: 2},
+		{FromRoomID: 2, ToRoomID: 1},
+	}, edges)
+	assert.NotContains(t, edges, Connection{FromRoomID: 0, ToRoomID: 1})
+	assert.Equal(t, []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 0, ToRoomID: 2},
+		{FromRoomID: 2, ToRoomID: 1},
+	}, attempts, "the rejected pair is the cheaper candidate, and it is not a failure")
+}
+
+func TestPrimNamesARoomWithNoRoutableEdge(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 4, 0),
+		placedRoomAt(2, 0, 4),
+	}
+	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
+		Context: context.Background(),
+		Rooms:   rooms,
+		TryRoute: func(RoomID, RoomID) (bool, error) {
+			return false, nil
+		},
+	})
+
+	require.ErrorIs(t, err, ErrUnconnectablePlacement)
+	assert.NotErrorIs(t, err, ErrUnroutableEdge)
+	assert.Nil(t, edges)
+}
+
+func TestPrimTryRouteCancellationReturnsNoEdges(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 3, 0),
+	}
+	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
+		Context: context.Background(),
+		Rooms:   rooms,
+		TryRoute: func(RoomID, RoomID) (bool, error) {
+			return false, context.Canceled
+		},
+	})
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, edges)
+}
+
+func TestExtraEdgePhaseSkipsAnUnroutableShortcut(t *testing.T) {
+	// 3×3 rooms have spare openings, so the skip is the refused route and not
+	// the opening budget. Centers keep 2→3 as the shortest discarded edge and
+	// 0→3 as the next one under the Prim tie-break.
+	rooms := []PlacedRoom{
+		rectanglePlacedRoom(0, 0, 0, 3, 3),
+		rectanglePlacedRoom(1, 10, 0, 3, 3),
+		rectanglePlacedRoom(2, 0, 10, 3, 3),
+		rectanglePlacedRoom(3, 10, 10, 3, 3),
+	}
+	backbone := []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 0, ToRoomID: 2},
+		{FromRoomID: 1, ToRoomID: 3},
+	}
+	var attempts []Connection
+	connections, err := addExtraConnections(
+		context.Background(), rooms, backbone, 1, 0, 0, 1,
+		func(from, to RoomID) (bool, error) {
+			attempts = append(attempts, Connection{FromRoomID: from, ToRoomID: to})
+			if from == 2 && to == 3 {
+				return false, nil
+			}
+			return true, nil
+		},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 0, ToRoomID: 2},
+		{FromRoomID: 1, ToRoomID: 3},
+		{FromRoomID: 0, ToRoomID: 3},
+	}, connections)
+	assert.Equal(t, []Connection{
+		{FromRoomID: 2, ToRoomID: 3},
+		{FromRoomID: 0, ToRoomID: 3},
+	}, attempts)
+}
+
 func TestExtraEdgePhaseSkipsAShortcutThatOverfillsARoom(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRoomAt(0, 0, 0),
@@ -276,7 +384,7 @@ func TestExtraEdgePhaseSkipsAShortcutThatOverfillsARoom(t *testing.T) {
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 	}
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1)
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1, nil)
 
 	require.NoError(t, err)
 	assert.NotContains(t, connections, Connection{FromRoomID: 0, ToRoomID: 3})

@@ -79,10 +79,16 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 		connector = primRoomsConnector{}
 	}
 	corridorWidth := widestDeclaredCorridorWidth(effective.corridorWidths)
+	session, err := openRouteSession(ctx, effective, rooms)
+	if err != nil {
+		return Layout{}, err
+	}
 	backbone, err := connector.Connect(ConnectionRequest{
 		Context: ctx, Rooms: rooms, Width: effective.width, Height: effective.height,
 		ExtraEdgeCount: effective.extraEdgeCount, Seed: effective.seed,
 		MaxCorridorWidth: corridorWidth,
+		TryRoute:         session.tryCommit,
+		RewireRoute:      session.rewire,
 	})
 	if err != nil {
 		return Layout{}, err
@@ -90,11 +96,14 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 	if err := validateConnections(rooms, backbone, effective.extraEdgeCount); err != nil {
 		return Layout{}, fmt.Errorf("%w: %w", ErrInvalidPlugin, err)
 	}
+	if err := session.ensureCommitted(backbone); err != nil {
+		return Layout{}, err
+	}
 	if err := ctx.Err(); err != nil {
 		return Layout{}, err
 	}
 
-	roles, connections, err := applyGeneratorTopologyOptions(ctx, rooms, backbone, effective)
+	roles, connections, err := applyGeneratorTopologyOptions(ctx, rooms, backbone, effective, session.tryCommit)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -102,7 +111,7 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 		return Layout{}, err
 	}
 
-	corridors, doors, err := routeConfiguredCorridors(ctx, effective, rooms, connections)
+	corridors, doors, err := session.materialize(connections)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -115,26 +124,6 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 		return Layout{}, err
 	}
 	return layout, nil
-}
-
-// routeConfiguredCorridors draws a corridor width only when the request named
-// a CorridorGeometry. A nil geometry does not construct the width stream, so
-// that stream is never consumed.
-func routeConfiguredCorridors(
-	ctx context.Context,
-	effective effectiveConfig,
-	rooms []PlacedRoom,
-	connections []Connection,
-) ([]Corridor, []Door, error) {
-	var widthStream *splitMix64
-	if len(effective.corridorWidths) > 0 {
-		streams := newRNGStreams(effective.seed)
-		widthStream = &streams.corridorWidth
-	}
-	return routeCorridorsWithWidths(
-		ctx, effective.width, effective.height, effective.corridorOrder,
-		rooms, connections, effective.corridorWidths, widthStream,
-	)
 }
 
 func validateAndMaterializePlacements(
@@ -271,6 +260,7 @@ func applyGeneratorTopologyOptions(
 	rooms []PlacedRoom,
 	connections []Connection,
 	effective effectiveConfig,
+	tryRoute func(from, to RoomID) (bool, error),
 ) ([]*RoomRole, []Connection, error) {
 	minimumEdges := len(rooms) - topologyNextRoomOffset
 	existingExtraEdges := len(connections) - minimumEdges
@@ -278,6 +268,7 @@ func applyGeneratorTopologyOptions(
 		return applyTopologyOptions(
 			ctx, rooms, connections, effective.roomRoleRequests, effective.extraEdgeCount,
 			effective.width, effective.height, widestDeclaredCorridorWidth(effective.corridorWidths),
+			tryRoute,
 		)
 	}
 
@@ -294,6 +285,7 @@ func applyGeneratorTopologyOptions(
 	finalConnections, err := addExtraConnections(
 		ctx, rooms, connections, remainingExtraEdges,
 		effective.width, effective.height, widestDeclaredCorridorWidth(effective.corridorWidths),
+		tryRoute,
 	)
 	if err != nil {
 		return nil, nil, err
