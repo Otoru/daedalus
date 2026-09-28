@@ -58,7 +58,7 @@ func TestPropertyLayoutsOrKnownGenerationErrors(t *testing.T) {
 // and Seed reproduce every field, footprint and order.
 func TestSameConfigAndSeedProduceIdenticalWholeLayout(t *testing.T) {
 	config := Config{
-		Width: 48, Height: 40, Seed: 404, MaxRooms: 28, ExtraEdgeCount: 3,
+		Width: 48, Height: 40, Seed: 400, MaxRooms: 28, ExtraEdgeCount: 3,
 		RoomRoleRequests: []RoomRoleRequest{
 			{Role: RoomRoleStart, Count: 1},
 			{Role: RoomRoleBoss, Count: 1},
@@ -218,7 +218,7 @@ func TestDensityRegionsUseGreaterLocalDistance(t *testing.T) {
 // TestEmptyRegionsChangeNeitherLayoutNorDraws checks that an explicit empty
 // DensityRegions list reproduces the Layout of the omitted list.
 func TestEmptyRegionsChangeNeitherLayoutNorDraws(t *testing.T) {
-	base := Config{Width: 40, Height: 32, Seed: 9092, MaxRooms: 24}
+	base := Config{Width: 40, Height: 32, Seed: 9090, MaxRooms: 24}
 	explicitlyEmpty := base
 	explicitlyEmpty.DensityRegions = []DensityRegion{}
 

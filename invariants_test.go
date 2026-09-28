@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // layoutInvariantFailures is the single oracle for a successful Layout: Grid
@@ -29,6 +31,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 	state.checkRoomFootprints()
 	state.checkRoomPairGapAndDistance()
 	state.checkCorridors()
+	state.checkCorridorSeparationAndWidth()
 	state.checkCorridorCountAndConnectivity()
 	state.checkDoors()
 	state.checkAssignedDoorOrder()
@@ -261,6 +264,10 @@ func (state *layoutInvariantCheck) checkCorridorDoors(path string, corridor Corr
 }
 
 func (state *layoutInvariantCheck) checkCorridorCells(path string, corridor Corridor) {
+	// Nil geometry stores the route in Cells, in walk order. A declared width
+	// stores the band in row-major order, which is 4-connected as a set and is
+	// not itself a walk. Centerline stays the walk in either case.
+	routeOrdered := reflect.DeepEqual(corridor.Cells, corridor.Centerline)
 	for cellIndex, cell := range corridor.Cells {
 		cellPath := fmt.Sprintf("%s.Cells[%d]", path, cellIndex)
 		if !cellInsideGrid(cell, state.effective.width, state.effective.height) {
@@ -270,31 +277,187 @@ func (state *layoutInvariantCheck) checkCorridorCells(path string, corridor Corr
 			state.fail(cellPath, "outside the footprints", fmt.Sprintf("RoomID %d", owner))
 		}
 		state.corridorCells[cell] = append(state.corridorCells[cell], corridor.ID)
-		if cellIndex > 0 && manhattanDistance(corridor.Cells[cellIndex-1], cell) != 1 {
+		if routeOrdered && cellIndex > 0 && manhattanDistance(corridor.Cells[cellIndex-1], cell) != 1 {
 			state.fail(cellPath, "adjacent to previous Cell", cell)
 		}
 	}
+	if len(corridor.Cells) > 0 && !cellsAreFourConnected(corridor.Cells) {
+		state.fail(path+".Cells", "4-connected", "disconnected")
+	}
+	for cellIndex := 1; cellIndex < len(corridor.Centerline); cellIndex++ {
+		if manhattanDistance(corridor.Centerline[cellIndex-1], corridor.Centerline[cellIndex]) != 1 {
+			state.fail(fmt.Sprintf("%s.Centerline[%d]", path, cellIndex), "adjacent to previous Cell", corridor.Centerline[cellIndex])
+		}
+	}
+}
+
+// checkCorridorSeparationAndWidth records two routing rules on a finished
+// Layout: no two Corridors share a Cell, and no two Corridors lie within
+// Chebyshev distance 1 unless both Cells are orthogonally adjacent to some
+// Room's footprint. Contact beside a Room wall is legal. Contact in open
+// ground is not. Every routed width must be one the request declared. A nil
+// CorridorGeometry declares width 1. Failures follow Corridor order, then
+// Cell order, then North-to-West neighbour offsets, so the first diagnostic
+// is stable.
+func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
+	owners := make(map[Cell]CorridorID)
+	for corridorIndex, corridor := range state.layout.Corridors {
+		path := fmt.Sprintf("Layout.Corridors[%d]", corridorIndex)
+		state.checkDeclaredCorridorWidth(path, corridor)
+		for _, cell := range corridor.Cells {
+			previous, shared := owners[cell]
+			if shared {
+				state.fail(path+".Cells", fmt.Sprintf("owned only by CorridorID %d", corridor.ID), fmt.Sprintf("%v also owned by CorridorID %d", cell, previous))
+				continue
+			}
+			owners[cell] = corridor.ID
+		}
+	}
+	besideRoom := cellsBesideRoomFootprints(state.layout.Rooms)
+	reported := make(map[corridorSeparationPair]struct{})
+	for corridorIndex, corridor := range state.layout.Corridors {
+		for _, cell := range corridor.Cells {
+			for dy := int32(-1); dy <= 1; dy++ {
+				for dx := int32(-1); dx <= 1; dx++ {
+					if dx == 0 && dy == 0 {
+						continue
+					}
+					neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
+					other, exists := owners[neighbor]
+					if !exists || other == corridor.ID {
+						continue
+					}
+					if besideRoom[cell] && besideRoom[neighbor] {
+						continue
+					}
+					pair := corridorSeparationPair{low: corridor.ID, high: other}
+					if pair.low > pair.high {
+						pair.low, pair.high = pair.high, pair.low
+					}
+					if _, seen := reported[pair]; seen {
+						continue
+					}
+					reported[pair] = struct{}{}
+					state.fail(
+						fmt.Sprintf("Layout.Corridors[%d]", corridorIndex),
+						fmt.Sprintf("Chebyshev distance >= 2 from CorridorID %d away from Room walls", other),
+						fmt.Sprintf("Cell %v touches CorridorID %d", cell, other),
+					)
+				}
+			}
+		}
+	}
+}
+
+// cellsBesideRoomFootprints is the set of Cells that share an edge with some
+// Room footprint. Diagonal contact with a Room does not qualify. Corridor
+// adjacency is legal only between Cells in this set.
+func cellsBesideRoomFootprints(rooms []Room) map[Cell]bool {
+	footprints := make(map[Cell]struct{})
+	for _, room := range rooms {
+		for _, cell := range room.Cells {
+			footprints[cell] = struct{}{}
+		}
+	}
+	beside := make(map[Cell]bool)
+	for cell := range footprints {
+		for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
+			delta := direction.Delta()
+			neighbor := Cell{X: cell.X + delta.X, Y: cell.Y + delta.Y}
+			if _, isFootprint := footprints[neighbor]; isFootprint {
+				continue
+			}
+			beside[neighbor] = true
+		}
+	}
+	return beside
+}
+
+type corridorSeparationPair struct {
+	low  CorridorID
+	high CorridorID
+}
+
+func (state *layoutInvariantCheck) checkDeclaredCorridorWidth(path string, corridor Corridor) {
+	fromDoor, fromOK := doorAt(state.layout.Doors, corridor.FromDoorID)
+	toDoor, toOK := doorAt(state.layout.Doors, corridor.ToDoorID)
+	if !fromOK || !toOK {
+		return
+	}
+	if fromDoor.Span != toDoor.Span {
+		state.fail(path+".Span", fromDoor.Span, toDoor.Span)
+	}
+	if !spanIsDeclared(state.effective.corridorWidths, fromDoor.Span) {
+		state.fail(path+".Span", declaredWidthText(state.effective.corridorWidths), fromDoor.Span)
+	}
+}
+
+func spanIsDeclared(widths []CorridorWidthWeight, span uint32) bool {
+	if len(widths) == 0 {
+		return span == 1
+	}
+	for _, candidate := range widths {
+		if candidate.Width == span {
+			return true
+		}
+	}
+	return false
+}
+
+func declaredWidthText(widths []CorridorWidthWeight) string {
+	if len(widths) == 0 {
+		return "declared width 1"
+	}
+	parts := make([]string, len(widths))
+	for index, candidate := range widths {
+		parts[index] = fmt.Sprintf("%d", candidate.Width)
+	}
+	return "declared width in [" + strings.Join(parts, ", ") + "]"
 }
 
 func (state *layoutInvariantCheck) checkCorridorDoorGeometry(path string, corridor Corridor, fromDoor, toDoor Door, fromOK, toOK bool) {
 	if !fromOK || !toOK {
 		return
 	}
-	fromOutside := addCell(fromDoor.At, fromDoor.Direction.Delta())
-	toOutside := addCell(toDoor.At, toDoor.Direction.Delta())
-	if len(corridor.Cells) == 0 {
+	if len(corridor.Centerline) == 0 {
+		fromOutside := addCell(fromDoor.At, fromDoor.Direction.Delta())
+		toOutside := addCell(toDoor.At, toDoor.Direction.Delta())
 		if fromOutside != toDoor.At || toOutside != fromDoor.At {
 			state.fail(path+".Cells", "empty only between adjacent opposite Doors", corridor.Cells)
 		}
 		return
 	}
-	if corridor.Cells[0] != fromOutside {
-		state.fail(path+".Cells[0]", fromOutside, corridor.Cells[0])
+	if !centerlineMeetsDoor(corridor.Centerline[0], fromDoor) {
+		state.fail(path+".Centerline[0]", "exterior neighbour of the From Door span", corridor.Centerline[0])
 	}
-	lastIndex := len(corridor.Cells) - 1
-	if corridor.Cells[lastIndex] != toOutside {
-		state.fail(fmt.Sprintf("%s.Cells[%d]", path, lastIndex), toOutside, corridor.Cells[lastIndex])
+	lastIndex := len(corridor.Centerline) - 1
+	if !centerlineMeetsDoor(corridor.Centerline[lastIndex], toDoor) {
+		state.fail(fmt.Sprintf("%s.Centerline[%d]", path, lastIndex), "exterior neighbour of the To Door span", corridor.Centerline[lastIndex])
 	}
+}
+
+// centerlineMeetsDoor reports whether the route endpoint is the exterior
+// neighbour of one Cell in the Door's span. Span 1 has a single such Cell,
+// door.At stepped along Direction. A wider span keeps At at the minimum
+// (Y, X), so the centerline may meet a later Cell of the same run.
+func centerlineMeetsDoor(endpoint Cell, door Door) bool {
+	span := door.Span
+	if span == 0 {
+		span = 1
+	}
+	alongX := door.Direction == DirectionNorth || door.Direction == DirectionSouth
+	for offset := uint32(0); offset < span; offset++ {
+		cell := door.At
+		if alongX {
+			cell.X += int32(offset)
+		} else {
+			cell.Y += int32(offset)
+		}
+		if addCell(cell, door.Direction.Delta()) == endpoint {
+			return true
+		}
+	}
+	return false
 }
 
 func (state *layoutInvariantCheck) checkCorridorCountAndConnectivity() {
@@ -486,6 +649,81 @@ func (state *layoutInvariantCheck) checkRoomRoles() {
 			state.fail(fmt.Sprintf("Layout.Rooms[%d].Role", roomIndex), nil, *room.Role)
 		}
 	}
+}
+
+// TestCorridorSeparationAllowsContactOnlyBesideRoomWalls checks the refined
+// separation rule on a hand-built Layout. A diagonal touch whose Cells both
+// share an edge with the Room is legal. The same Chebyshev distance in open
+// ground is not. A shared Cell is never legal.
+func TestCorridorSeparationAllowsContactOnlyBesideRoomWalls(t *testing.T) {
+	room := Room{ID: 0, Cells: []Cell{{X: 2, Y: 2}}}
+	wallContact := &layoutInvariantCheck{layout: Layout{
+		Rooms: []Room{room},
+		Corridors: []Corridor{
+			{ID: 0, Cells: []Cell{{X: 2, Y: 3}}},
+			{ID: 1, Cells: []Cell{{X: 3, Y: 2}}},
+		},
+	}}
+	wallContact.checkCorridorSeparationAndWidth()
+	assert.Empty(t, wallContact.failures)
+
+	openGround := &layoutInvariantCheck{layout: Layout{
+		Rooms: []Room{room},
+		Corridors: []Corridor{
+			{ID: 0, Cells: []Cell{{X: 4, Y: 4}}},
+			{ID: 1, Cells: []Cell{{X: 5, Y: 5}}},
+		},
+	}}
+	openGround.checkCorridorSeparationAndWidth()
+	require.NotEmpty(t, openGround.failures)
+	assert.Contains(t, openGround.failures[0], "away from Room walls")
+
+	shared := &layoutInvariantCheck{layout: Layout{
+		Rooms: []Room{room},
+		Corridors: []Corridor{
+			{ID: 0, Cells: []Cell{{X: 2, Y: 3}}},
+			{ID: 1, Cells: []Cell{{X: 2, Y: 3}}},
+		},
+	}}
+	shared.checkCorridorSeparationAndWidth()
+	require.NotEmpty(t, shared.failures)
+	assert.Contains(t, shared.failures[0], "also owned by CorridorID 0")
+}
+
+// TestGeneratedLayoutsKeepCorridorWidthAndSeparation checks the corridor
+// rules on generated Layouts, across Seeds, Grid sizes, and width lists,
+// rather than on a single fixture.
+func TestGeneratedLayoutsKeepCorridorWidthAndSeparation(t *testing.T) {
+	grids := [][2]uint32{{12, 12}, {24, 16}, {32, 32}, {20, 40}}
+	seeds := []Seed{1, 17, 99, 20260928}
+	geometries := []*CorridorGeometry{
+		nil,
+		{Widths: []CorridorWidthWeight{{Width: 1, Weight: 2}}},
+		{Widths: []CorridorWidthWeight{{Width: 1, Weight: 4}, {Width: 3, Weight: 1}}},
+	}
+	generator := Generator{}
+	checked := 0
+	for _, grid := range grids {
+		for _, seed := range seeds {
+			for _, geometry := range geometries {
+				config := Config{
+					Width: grid[0], Height: grid[1], Seed: seed,
+					MinDistance: 5, MaxAttempts: 20, MaxRooms: 10,
+					CorridorGeometry: geometry,
+				}
+				effective, err := normalizeConfig(config)
+				require.NoError(t, err)
+				layout, err := generator.Generate(config)
+				if err != nil {
+					require.ErrorIs(t, err, ErrUnroutableEdge)
+					continue
+				}
+				assertLayoutInvariants(t, effective, layout)
+				checked++
+			}
+		}
+	}
+	require.Positive(t, checked)
 }
 
 func assertLayoutInvariants(t *testing.T, effective effectiveConfig, layout Layout) {

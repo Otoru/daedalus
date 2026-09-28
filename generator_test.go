@@ -140,8 +140,13 @@ func TestRoomDoorIDsAreSortedByCellAndDirection(t *testing.T) {
 	require.Len(t, layout.Rooms[0].DoorIDs, 2)
 	first := layout.Doors[layout.Rooms[0].DoorIDs[0]]
 	second := layout.Doors[layout.Rooms[0].DoorIDs[1]]
+	// The south edge is routed first and occupies its own opening. The east
+	// opening stays free: both Cells are orthogonally adjacent to the Room, so
+	// the Corridors may touch there. The second edge therefore leaves east.
+	// Same Cell, so Direction order is East then South.
 	assert.Equal(t, DirectionEast, first.Direction)
 	assert.Equal(t, DirectionSouth, second.Direction)
+	assert.Equal(t, first.At, second.At)
 }
 
 func TestGeneratorRejectsInvalidPluginPlacements(t *testing.T) {
@@ -329,9 +334,9 @@ func TestGeneratorRejectsConnectorThatReturnsNoBackboneTree(t *testing.T) {
 func TestGeneratorAcceptsConnectorCycleWithinShortcutBudget(t *testing.T) {
 	generator := Generator{
 		Placer: fixedPlacer{placements: []RoomPlacement{
-			rectanglePlacementForTest(Cell{X: 1, Y: 1}, 1, 1),
-			rectanglePlacementForTest(Cell{X: 4, Y: 1}, 1, 1),
-			rectanglePlacementForTest(Cell{X: 7, Y: 1}, 1, 1),
+			rectanglePlacementForTest(Cell{X: 1, Y: 3}, 1, 1),
+			rectanglePlacementForTest(Cell{X: 4, Y: 3}, 1, 1),
+			rectanglePlacementForTest(Cell{X: 7, Y: 3}, 1, 1),
 		}},
 		Connector: fixedConnector{connections: []Connection{
 			{FromRoomID: 0, ToRoomID: 1},
@@ -339,7 +344,9 @@ func TestGeneratorAcceptsConnectorCycleWithinShortcutBudget(t *testing.T) {
 			{FromRoomID: 0, ToRoomID: 2},
 		}},
 	}
-	config := fixedGeometryConfigForTest(9, 3, 3)
+	// Height 3 leaves no row outside a Corridor's halo, so the shortcut has
+	// nowhere to travel. The taller Grid keeps a free detour.
+	config := fixedGeometryConfigForTest(9, 7, 3)
 	config.ExtraEdgeCount = 1
 
 	layout, err := generator.Generate(config)

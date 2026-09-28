@@ -1,8 +1,8 @@
 {
   "Seed": 61461,
   "Grid": {
-    "Width": 7,
-    "Height": 6,
+    "Width": 8,
+    "Height": 8,
     "CellSize": 1,
     "Cells": [
       {
@@ -78,6 +78,15 @@
       },
       {
         "At": {
+          "X": 7,
+          "Y": 0
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
           "X": 0,
           "Y": 1
         },
@@ -149,6 +158,15 @@
       },
       {
         "At": {
+          "X": 7,
+          "Y": 1
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
           "X": 0,
           "Y": 2
         },
@@ -196,6 +214,150 @@
         "At": {
           "X": 5,
           "Y": 2
+        },
+        "Kind": 1,
+        "RoomID": 1,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 2
+        },
+        "Kind": 1,
+        "RoomID": 1,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 7,
+          "Y": 2
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 3
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 3
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 3
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 3
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 3
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 3
+        },
+        "Kind": 1,
+        "RoomID": 1,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 3
+        },
+        "Kind": 1,
+        "RoomID": 1,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 7,
+          "Y": 3
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 4
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 4
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 4
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 4
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 4
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 4
         },
         "Kind": 2,
         "RoomID": null,
@@ -206,7 +368,7 @@
       {
         "At": {
           "X": 6,
-          "Y": 2
+          "Y": 4
         },
         "Kind": 2,
         "RoomID": null,
@@ -216,8 +378,17 @@
       },
       {
         "At": {
+          "X": 7,
+          "Y": 4
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
           "X": 0,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 0,
         "RoomID": null,
@@ -226,7 +397,7 @@
       {
         "At": {
           "X": 1,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 0,
         "RoomID": null,
@@ -235,7 +406,7 @@
       {
         "At": {
           "X": 2,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 0,
         "RoomID": null,
@@ -244,7 +415,7 @@
       {
         "At": {
           "X": 3,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 0,
         "RoomID": null,
@@ -253,7 +424,7 @@
       {
         "At": {
           "X": 4,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 0,
         "RoomID": null,
@@ -262,7 +433,7 @@
       {
         "At": {
           "X": 5,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 2,
         "RoomID": null,
@@ -273,7 +444,7 @@
       {
         "At": {
           "X": 6,
-          "Y": 3
+          "Y": 5
         },
         "Kind": 2,
         "RoomID": null,
@@ -283,8 +454,17 @@
       },
       {
         "At": {
+          "X": 7,
+          "Y": 5
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
           "X": 0,
-          "Y": 4
+          "Y": 6
         },
         "Kind": 0,
         "RoomID": null,
@@ -293,7 +473,7 @@
       {
         "At": {
           "X": 1,
-          "Y": 4
+          "Y": 6
         },
         "Kind": 0,
         "RoomID": null,
@@ -302,7 +482,7 @@
       {
         "At": {
           "X": 2,
-          "Y": 4
+          "Y": 6
         },
         "Kind": 0,
         "RoomID": null,
@@ -311,7 +491,7 @@
       {
         "At": {
           "X": 3,
-          "Y": 4
+          "Y": 6
         },
         "Kind": 0,
         "RoomID": null,
@@ -320,7 +500,7 @@
       {
         "At": {
           "X": 4,
-          "Y": 4
+          "Y": 6
         },
         "Kind": 0,
         "RoomID": null,
@@ -329,74 +509,7 @@
       {
         "At": {
           "X": 5,
-          "Y": 4
-        },
-        "Kind": 2,
-        "RoomID": null,
-        "CorridorIDs": [
-          1
-        ]
-      },
-      {
-        "At": {
-          "X": 6,
-          "Y": 4
-        },
-        "Kind": 2,
-        "RoomID": null,
-        "CorridorIDs": [
-          1
-        ]
-      },
-      {
-        "At": {
-          "X": 0,
-          "Y": 5
-        },
-        "Kind": 0,
-        "RoomID": null,
-        "CorridorIDs": null
-      },
-      {
-        "At": {
-          "X": 1,
-          "Y": 5
-        },
-        "Kind": 0,
-        "RoomID": null,
-        "CorridorIDs": null
-      },
-      {
-        "At": {
-          "X": 2,
-          "Y": 5
-        },
-        "Kind": 0,
-        "RoomID": null,
-        "CorridorIDs": null
-      },
-      {
-        "At": {
-          "X": 3,
-          "Y": 5
-        },
-        "Kind": 0,
-        "RoomID": null,
-        "CorridorIDs": null
-      },
-      {
-        "At": {
-          "X": 4,
-          "Y": 5
-        },
-        "Kind": 0,
-        "RoomID": null,
-        "CorridorIDs": null
-      },
-      {
-        "At": {
-          "X": 5,
-          "Y": 5
+          "Y": 6
         },
         "Kind": 1,
         "RoomID": 2,
@@ -405,10 +518,91 @@
       {
         "At": {
           "X": 6,
-          "Y": 5
+          "Y": 6
         },
         "Kind": 1,
         "RoomID": 2,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 7,
+          "Y": 6
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 7,
+          "Y": 7
+        },
+        "Kind": 0,
+        "RoomID": null,
         "CorridorIDs": null
       }
     ]
@@ -456,7 +650,7 @@
         "Y": 0
       },
       "Width": 2,
-      "Height": 2,
+      "Height": 4,
       "Cells": [
         {
           "X": 5,
@@ -473,6 +667,22 @@
         {
           "X": 6,
           "Y": 1
+        },
+        {
+          "X": 5,
+          "Y": 2
+        },
+        {
+          "X": 6,
+          "Y": 2
+        },
+        {
+          "X": 5,
+          "Y": 3
+        },
+        {
+          "X": 6,
+          "Y": 3
         }
       ],
       "Role": null,
@@ -487,23 +697,23 @@
       "ID": 2,
       "At": {
         "X": 5,
-        "Y": 5
+        "Y": 6
       },
       "Shape": 0,
       "Origin": {
         "X": 5,
-        "Y": 5
+        "Y": 6
       },
       "Width": 2,
       "Height": 1,
       "Cells": [
         {
           "X": 5,
-          "Y": 5
+          "Y": 6
         },
         {
           "X": 6,
-          "Y": 5
+          "Y": 6
         }
       ],
       "Role": null,
@@ -585,41 +795,29 @@
       "Centerline": [
         {
           "X": 5,
-          "Y": 2
-        },
-        {
-          "X": 5,
-          "Y": 3
-        },
-        {
-          "X": 5,
           "Y": 4
+        },
+        {
+          "X": 5,
+          "Y": 5
         }
       ],
       "Cells": [
         {
           "X": 5,
-          "Y": 2
-        },
-        {
-          "X": 6,
-          "Y": 2
-        },
-        {
-          "X": 5,
-          "Y": 3
-        },
-        {
-          "X": 6,
-          "Y": 3
-        },
-        {
-          "X": 5,
           "Y": 4
         },
         {
           "X": 6,
           "Y": 4
+        },
+        {
+          "X": 5,
+          "Y": 5
+        },
+        {
+          "X": 6,
+          "Y": 5
         }
       ],
       "PlantID": "",
@@ -658,7 +856,7 @@
       "RoomID": 1,
       "At": {
         "X": 5,
-        "Y": 1
+        "Y": 3
       },
       "Direction": 2,
       "Span": 2,
@@ -671,7 +869,7 @@
       "RoomID": 2,
       "At": {
         "X": 5,
-        "Y": 5
+        "Y": 6
       },
       "Direction": 0,
       "Span": 2,

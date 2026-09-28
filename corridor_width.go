@@ -195,21 +195,19 @@ func drawCorridorWidth(widths []CorridorWidthWeight, stream *splitMix64) uint32 
 	return ordered[len(ordered)-1].Width
 }
 
-// routeDegraded tries the drawn width, then one less, down to 1. The first
-// width that routes wins. The caller has already drawn once; this loop
-// consumes no further randomness.
+// routeDegraded tries the drawn width, then each narrower width the caller
+// declared, in descending order. It never tries a width that is absent from
+// that list. The caller has already drawn once; this loop consumes no further
+// randomness. Nothing declared at or below the draw yields an unroutable edge.
 func routeDegraded(
 	fromOpenings []doorOpening,
 	toOpenings []doorOpening,
 	order CorridorOrder,
 	drawn uint32,
+	declared []CorridorWidthWeight,
 	search *routingSearch,
 ) (routedConnection, uint32, bool, error) {
-	width := drawn
-	if width == 0 {
-		width = 1
-	}
-	for {
+	for _, width := range degradationWidths(declared, drawn) {
 		if err := search.ctx.Err(); err != nil {
 			return routedConnection{}, 0, false, err
 		}
@@ -220,11 +218,38 @@ func routeDegraded(
 		if found {
 			return best, width, true, nil
 		}
-		if width == 1 {
-			return routedConnection{}, 0, false, nil
-		}
-		width--
 	}
+	return routedConnection{}, 0, false, nil
+}
+
+// degradationWidths lists declared widths that are at most the drawn width,
+// descending and duplicate-free. The result is a slice, never a map, so the
+// walk order does not depend on hash iteration.
+func degradationWidths(declared []CorridorWidthWeight, drawn uint32) []uint32 {
+	if drawn == 0 {
+		return nil
+	}
+	widths := make([]uint32, 0, len(declared))
+	for _, candidate := range declared {
+		if candidate.Width >= 1 && candidate.Width <= drawn {
+			widths = append(widths, candidate.Width)
+		}
+	}
+	sort.Slice(widths, func(first, second int) bool {
+		return widths[first] > widths[second]
+	})
+	if len(widths) == 0 {
+		return nil
+	}
+	unique := make([]uint32, 0, len(widths))
+	unique = append(unique, widths[0])
+	for _, width := range widths[1:] {
+		if width == unique[len(unique)-1] {
+			continue
+		}
+		unique = append(unique, width)
+	}
+	return unique
 }
 
 func (search *routingSearch) routeOpeningPairWide(

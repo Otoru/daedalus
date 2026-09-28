@@ -28,8 +28,13 @@
 // a rectangle of Width by Height Cells, with 0 ≤ X < Width and 0 ≤ Y < Height.
 // Grid.Cells is that rectangle in row-major order, Y then X, and each CellState
 // is Empty, Room, or Corridor. A Room Cell names exactly one Room. A Corridor
-// Cell lists every Corridor that uses it, in ascending ID order, and may be
-// shared. An Empty Cell names neither.
+// Cell names exactly one Corridor. Two Corridors never share a Cell. They also
+// never sit within Chebyshev distance 1 of each other, diagonal contact
+// included, unless both of those Cells are orthogonally adjacent to some
+// Room's footprint. Beside a Room wall Corridors may run next to each other,
+// because that is where several Corridors have to leave the same Room. Away
+// from Rooms the one-Cell separation stands, using the same Chebyshev measure
+// as MinRoomGap. An Empty Cell names neither.
 //
 // A Room is a topological vertex whose footprint is a finite, non-empty,
 // 4-connected set of Cells. The footprint does not include Doors or Corridors.
@@ -41,12 +46,17 @@
 // A Corridor is both a topological edge and the orthogonal Cells walked
 // outside every footprint, from the exterior neighbour of the source Door to
 // the exterior neighbour of the destination Door. Those Cells are omitted when
-// two Doors face each other directly and no Room Cell is crossed. When
-// CorridorGeometry is nil, Cells is that route. When it is set, Centerline is
-// the route and Cells is the occupied band. A Door is a logical opening on a
-// boundary Cell of a Room, identified by RoomID, At, and a cardinal Direction
-// that points out of the Room. A routed width records Door.Span as the number
-// of boundary Cells, and At is the Cell of that span with the smallest (Y, X).
+// two Doors face each other directly and no Room Cell is crossed. Centerline
+// is that route. When CorridorGeometry is nil, Cells is the same route and
+// every Door spans one Cell. When it is set, Cells is the occupied band. A
+// Door is a logical opening on a boundary Cell of a Room, identified by
+// RoomID, At, and a cardinal Direction that points out of the Room. Door.Span
+// is the routed width and is never zero; At is the Cell of that span with the
+// smallest (Y, X). Door.CorridorIDs lists the edges that use the opening, in
+// ascending ID order. A later Corridor cannot enter an opening whose exterior
+// Cells already belong to an earlier band, so the list has one ID except when
+// two edges both have an empty band because their Doors face each other: there
+// is then no Cell for the halo to claim, and the same Door serves both.
 // Diagonals are invalid. The canonical Direction order is North, East, South, West.
 //
 // A Layout is the complete successful result: the Seed that produced it, the
@@ -113,8 +123,8 @@
 //
 // CorridorGeometry sets the width distribution for Corridors. A nil
 // CorridorGeometry means every Corridor is one Cell wide, which is the
-// historical behaviour: the width stream is never consumed, Centerline stays
-// nil, Door.Span stays 0, and Cells remains the ordered route. An explicit
+// historical behaviour: the width stream is never consumed, Centerline and
+// Cells are the same ordered route, and every Door spans one Cell. An explicit
 // value requires Widths to be non-empty and duplicate-free. Each Width is
 // 1..64 and each Weight is 1..2^32-1. A width above 64 is ErrInvalidConfig,
 // not ErrLimitExceeded: it is a nonsense value, not a product limit.
@@ -124,10 +134,12 @@
 // draw, so the order of Widths in the request cannot change the result. The
 // draw uses the same weighted selection as the Plant catalog: a ticket from 1
 // to the total weight, then the first candidate whose cumulative weight
-// reaches that ticket. If the drawn width W cannot be routed, the router tries
-// W-1, then W-2, down to 1, and the first width that routes wins. Only if
-// width 1 fails is the error ErrUnroutableEdge. Degradation consumes no
-// further randomness.
+// reaches that ticket. If the drawn width W cannot be routed, degradation
+// walks the declared widths that are strictly narrower than W, descending, and
+// nothing else. With only [3] the options are 3 or ErrUnroutableEdge. With
+// [1, 3], a 3 that does not fit falls straight to 1. The first declared width
+// that routes wins. Only when every remaining declared width fails is the
+// error ErrUnroutableEdge. Degradation consumes no further randomness.
 //
 // The centerline is the route as computed for a one-Cell Corridor. The band is
 // the centerline dilated perpendicular to the direction of travel. Odd W:
@@ -136,15 +148,24 @@
 // bend, the band includes the full W×W block centred by the same rule, so the
 // corner does not leave a diagonal pinch and 4-connectivity holds at the
 // vertex. A W-wide route is legal only when the entire band is inside the Grid
-// and crosses no Room footprint. Corridors may still share Cells with each
-// other.
+// and crosses no Room footprint. Corridors are routed in connection order.
+// Once a band is placed, that band is closed to every later Corridor, and so
+// is every free Cell within Chebyshev distance 1 of it — the same measure
+// MinRoomGap uses between Rooms — unless both the placed Cell and that
+// neighbour are orthogonally adjacent to some Room's footprint. A neighbour
+// that also sits within Chebyshev distance 1 of a band Cell out in open
+// ground stays closed. Two Corridors therefore never share a Cell. They may
+// touch only beside a Room wall; in open ground the one-Cell separation
+// stands, diagonally included. The clearance map and the breadth-first
+// fallback both treat that set as obstacles.
 //
 // Cells is that band in row-major order. Centerline is the ordered
 // 4-connected route from the From side to the To side. A W-wide Corridor
 // meeting a Room opens a W-wide doorway. Door.Span is the number of boundary
 // Cells, and Door.At is the Cell with the smallest (Y, X) of the span. If the
-// Room's usable boundary run is shorter than W, the Corridor degrades to that
-// run. A Door with Span 1 is the one-Cell doorway.
+// Room's usable boundary run is shorter than W, the Corridor degrades along
+// the declared list, not along the integers. A Door with Span 1 is the
+// one-Cell doorway.
 //
 // # Pipeline
 //
@@ -264,9 +285,13 @@
 // the width is greater than one, both L-routes and the breadth-first fallback
 // keep a Cell only when its clearance admits that width, so the whole band
 // stays inside the Grid and off every Room footprint. Width 1 uses the same
-// one-Cell search. The same opening is
-// reused when another Corridor needs the same triple, and CorridorIDs on a
-// shared Cell stay sorted. Door.At need not equal Room.At. Only when no pair
+// one-Cell search. A placed band is an obstacle for both searches, and so is
+// its one-Cell Chebyshev halo, except a Cell that is orthogonally adjacent to
+// a Room footprint when every band Cell within Chebyshev distance 1 of it is
+// too. Those Cells stay free so Corridors can converge on a Room wall. The
+// same opening is reused only when an earlier Corridor left no Cells to
+// reserve, which is the adjacent facing case; otherwise each Door names one
+// Corridor. Door.At need not equal Room.At. Only when no pair
 // has a route does the call fail. The router is not a public Strategy: edge
 // selection is the extension point, and tracing a route is a fixed reading of
 // those edges.
@@ -421,10 +446,15 @@
 // CorridorOrder defaults to X-then-Y. The other value swaps the preferred
 // elbow wherever both L-routes are legal; it does not change the Rooms.
 // CorridorGeometry defaults to nil, which keeps every Corridor one Cell wide.
-// Naming a width distribution draws one width per Corridor. The dynamic
-// profile keeps MinRoomGap 1, and a Corridor wider than the gap between two
-// Rooms cannot pass between them and degrades, so a caller asking for wide
-// Corridors should raise MinRoomGap to match.
+// Naming a width distribution draws one width per Corridor and, when that
+// width does not fit, degrades only through the other declared widths. The
+// dynamic profile keeps MinRoomGap 1. A Corridor wider than the gap between
+// two Rooms cannot pass between them. Once placed, a band keeps a one-Cell
+// Chebyshev halo clear of every later Corridor except beside a Room wall,
+// where Corridors may touch. A caller asking for wide Corridors that must
+// stay apart in open ground should raise MinRoomGap to match.
+// On a crowded Grid the request may be ErrUnroutableEdge; that is a miss, not
+// a cue to invent a narrower width.
 // ExtraEdgeCount defaults to 0, which keeps the backbone a tree. Raising it
 // adds the shortest discarded edges and the cycles those edges create.
 // RoomRoleRequests defaults to empty. A Treasure count of zero asks for no

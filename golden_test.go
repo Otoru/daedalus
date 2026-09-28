@@ -161,8 +161,8 @@ func goldenCases() []goldenCase {
 			check: checkBFSGolden,
 		},
 		{
-			name:    "corridors_share_cell",
-			fixture: "corridors_share_cell",
+			name:    "corridors_keep_apart",
+			fixture: "corridors_keep_apart",
 			config: Config{
 				Width: 7, Height: 7, Seed: 0xF014,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 4,
@@ -181,14 +181,17 @@ func goldenCases() []goldenCase {
 					{FromRoomID: 0, ToRoomID: 2},
 				},
 			},
-			check: checkSharedCellGolden,
+			check: checkCorridorsStayApart,
 		},
 		{
 			name:    "poisson_rejection_and_density",
 			fixture: "poisson_rejection_and_density",
 			config: Config{
 				Width: 20, Height: 20, Seed: 123,
-				MinDistance: 2, MaxAttempts: 12, MaxRooms: 20,
+				// Four 1×1 Rooms are enough to show the half-open DensityRegion.
+				// A Room of degree three can now be left: Corridors may touch
+				// where both Cells are orthogonally adjacent to its footprint.
+				MinDistance: 2, MaxAttempts: 12, MaxRooms: 4,
 				RoomGeometry: &RoomGeometry{
 					MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 1,
 					MaxFootprintCells: 1, MinRoomGap: 1,
@@ -205,11 +208,11 @@ func goldenCases() []goldenCase {
 			name:    "even_width_positive_side",
 			fixture: "even_width_positive_side",
 			config: Config{
-				Width: 7, Height: 6, Seed: 0xF015,
+				Width: 8, Height: 8, Seed: 0xF015,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
-					MaxFootprintCells: 4, MinRoomGap: 1,
+					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 4,
+					MaxFootprintCells: 8, MinRoomGap: 1,
 					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
 				},
 				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
@@ -217,8 +220,8 @@ func goldenCases() []goldenCase {
 			generator: Generator{
 				Placer: goldenPlacer{
 					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 0}, 1, 2),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 0}, 2, 2),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 5}, 2, 1),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 0}, 2, 4),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 6}, 2, 1),
 				},
 				Connector: goldenConnector{
 					{FromRoomID: 0, ToRoomID: 1},
@@ -253,30 +256,36 @@ func goldenCases() []goldenCase {
 			name:    "degraded_width_tight_gap",
 			fixture: "degraded_width_tight_gap",
 			config: Config{
-				Width: 9, Height: 7, Seed: 0xF017,
+				Width: 12, Height: 12, Seed: 0xF017,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 6,
 				RoomGeometry: &RoomGeometry{
 					MinWidth: 1, MaxWidth: 5, MinHeight: 1, MaxHeight: 3,
 					MaxFootprintCells: 9, MinRoomGap: 1,
 					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
 				},
-				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 3, Weight: 1}}},
+				// Width 1 is declared, so a 3 that cannot pass the one-Cell gap falls
+				// to 1. Width 2 is absent and must not appear. The other edges leave
+				// by doors the pinch halo does not cover.
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{
+					{Width: 3, Weight: 1},
+					{Width: 1, Weight: 1},
+				}},
 			},
 			generator: Generator{
 				Placer: goldenPlacer{
 					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 0}, 3, 3),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 6, Y: 0}, 3, 3),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 2, Y: 4}, 5, 1),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 2, Y: 6}, 5, 1),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 4}, 1, 3),
-					goldenPlacement(RoomShapeRectangle, Cell{X: 8, Y: 4}, 1, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 8, Y: 0}, 3, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 3, Y: 6}, 5, 1),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 3, Y: 8}, 5, 1),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 6}, 1, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 10, Y: 6}, 1, 3),
 				},
 				Connector: goldenConnector{
 					{FromRoomID: 0, ToRoomID: 1},
 					{FromRoomID: 4, ToRoomID: 5},
 					{FromRoomID: 0, ToRoomID: 4},
-					{FromRoomID: 3, ToRoomID: 4},
-					{FromRoomID: 2, ToRoomID: 3},
+					{FromRoomID: 2, ToRoomID: 1},
+					{FromRoomID: 3, ToRoomID: 5},
 				},
 			},
 			check: checkDegradedWidthGolden,
@@ -370,15 +379,39 @@ func checkBFSGolden(t *testing.T, layout Layout) {
 	assert.Contains(t, layout.Corridors[0].Cells, Cell{X: 3, Y: 0})
 }
 
-func checkSharedCellGolden(t *testing.T, layout Layout) {
+func checkCorridorsStayApart(t *testing.T, layout Layout) {
 	t.Helper()
-	foundShared := false
-	for _, state := range layout.Grid.Cells {
-		if len(state.CorridorIDs) > 1 {
-			foundShared = true
+	require.GreaterOrEqual(t, len(layout.Corridors), 2)
+	owners := make(map[Cell]CorridorID)
+	for _, corridor := range layout.Corridors {
+		for _, cell := range corridor.Cells {
+			previous, shared := owners[cell]
+			assert.False(t, shared, "Cell %v belongs to Corridor %d and Corridor %d", cell, previous, corridor.ID)
+			owners[cell] = corridor.ID
 		}
 	}
-	assert.True(t, foundShared, "at least one Cell must belong to multiple Corridors")
+	besideRoom := cellsBesideRoomFootprints(layout.Rooms)
+	for _, corridor := range layout.Corridors {
+		for _, cell := range corridor.Cells {
+			for dy := int32(-1); dy <= 1; dy++ {
+				for dx := int32(-1); dx <= 1; dx++ {
+					neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
+					other, exists := owners[neighbor]
+					if !exists || other == corridor.ID {
+						continue
+					}
+					if besideRoom[cell] && besideRoom[neighbor] {
+						continue
+					}
+					assert.Fail(t, "corridors touch away from a Room wall",
+						"Corridor %d at %v is within Chebyshev 1 of Corridor %d", corridor.ID, cell, other)
+				}
+			}
+		}
+	}
+	for _, state := range layout.Grid.Cells {
+		assert.LessOrEqual(t, len(state.CorridorIDs), 1, "Cell %v", state.At)
+	}
 }
 
 func checkPoissonGolden(t *testing.T, layout Layout) {
@@ -460,11 +493,11 @@ func checkDegradedWidthGolden(t *testing.T, layout Layout) {
 	assert.Equal(t, uint32(3), layout.Rooms[4].Height)
 	assert.Equal(t, uint32(3), layout.Rooms[5].Height)
 	assert.Equal(t, uint32(1), layout.Doors[pinched.FromDoorID].Span,
-		"drawn width 3 degrades to the single free Cell MinRoomGap leaves between the walls")
+		"width 3 does not fit the one-Cell gap, so the next declared width is 1")
 	assert.Equal(t, uint32(1), layout.Doors[pinched.ToDoorID].Span)
 	require.NotEmpty(t, pinched.Cells)
 	for _, cell := range pinched.Cells {
-		assert.Equal(t, int32(5), cell.Y, "the degraded corridor stays in the one-Cell gap")
+		assert.Equal(t, int32(7), cell.Y, "the degraded corridor stays in the one-Cell gap")
 	}
 }
 

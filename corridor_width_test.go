@@ -73,36 +73,54 @@ func TestBendFillsSquareAndStaysFourConnected(t *testing.T) {
 	assertBandFourConnected(t, corridor.Cells)
 }
 
-func TestDegradationPicksTheWidestWidthThatFits(t *testing.T) {
+func TestDegradationWalksDeclaredWidthsOnly(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 2}, 1, 2),
 		placedRectangle(t, 1, Cell{X: 6, Y: 2}, 1, 2),
 	}
-	// Weight 2 forces the shared selector to consume a ticket. A lone weight of 1
-	// is a one-value range and, like the Plant helper, draws nothing.
-	widths := []CorridorWidthWeight{{Width: 4, Weight: 2}}
-	streams := newRNGStreams(Seed(11))
-	before := streams.corridorWidth.state
+	openings := routedOpenings(t, 8, 6, rooms)
 
-	corridors, doors, err := routeCorridorsWithWidths(
-		context.Background(), 8, 6, CorridorOrderXThenY, rooms,
-		[]Connection{{FromRoomID: 0, ToRoomID: 1}},
-		widths, &streams.corridorWidth,
-	)
+	t.Run("an undeclared narrower width is not invented", func(t *testing.T) {
+		_, width, found, err := routeDegraded(
+			openings[0], openings[1], CorridorOrderXThenY, 4,
+			[]CorridorWidthWeight{{Width: 4, Weight: 2}},
+			newClearedSearch(t, 8, 6, rooms),
+		)
+		require.NoError(t, err)
+		assert.False(t, found, "width 4 does not fit and 3, 2, 1 were not declared")
+		assert.Equal(t, uint32(0), width)
+	})
 
-	require.NoError(t, err)
-	require.Len(t, corridors, 1)
-	assert.Equal(t, uint32(2), doors[corridors[0].FromDoorID].Span)
-	assert.Equal(t, uint32(2), doors[corridors[0].ToDoorID].Span)
-	require.NotEmpty(t, corridors[0].Centerline)
-	sample := corridors[0].Centerline[0]
-	assert.Contains(t, corridors[0].Cells, Cell{X: sample.X, Y: sample.Y + 1})
-	assert.NotEqual(t, before, streams.corridorWidth.state)
+	t.Run("a drawn 4 falls straight to the next declared width", func(t *testing.T) {
+		_, width, found, err := routeDegraded(
+			openings[0], openings[1], CorridorOrderXThenY, 4,
+			[]CorridorWidthWeight{{Width: 1, Weight: 1}, {Width: 4, Weight: 2}},
+			newClearedSearch(t, 8, 6, rooms),
+		)
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, uint32(1), width, "declared [1, 4] skips 3 and 2")
+	})
 
-	once := newRNGStreams(Seed(11))
-	_ = drawCorridorWidth(widths, &once.corridorWidth)
-	assert.Equal(t, once.corridorWidth.state, streams.corridorWidth.state,
-		"degrading from 4 to 2 must not draw again")
+	t.Run("the widest declared width that fits wins and draws once", func(t *testing.T) {
+		widths := []CorridorWidthWeight{{Width: 2, Weight: 1}, {Width: 4, Weight: 2}}
+		streams := newRNGStreams(Seed(11))
+		before := streams.corridorWidth.state
+		corridors, doors, err := routeCorridorsWithWidths(
+			context.Background(), 8, 6, CorridorOrderXThenY, rooms,
+			[]Connection{{FromRoomID: 0, ToRoomID: 1}},
+			widths, &streams.corridorWidth,
+		)
+		require.NoError(t, err)
+		require.Len(t, corridors, 1)
+		assert.Equal(t, uint32(2), doors[corridors[0].FromDoorID].Span)
+		assert.Equal(t, uint32(2), doors[corridors[0].ToDoorID].Span)
+		assert.NotEqual(t, before, streams.corridorWidth.state)
+		once := newRNGStreams(Seed(11))
+		_ = drawCorridorWidth(widths, &once.corridorWidth)
+		assert.Equal(t, once.corridorWidth.state, streams.corridorWidth.state,
+			"walking the declared list must not draw again")
+	})
 }
 
 func TestNilCorridorGeometryConsumesNoWidthDraw(t *testing.T) {
@@ -233,6 +251,30 @@ func TestCorridorWidthValidation(t *testing.T) {
 			{Width: 3, Weight: 2},
 		}, effective.corridorWidths)
 	})
+}
+
+func routedOpenings(t *testing.T, width, height uint32, rooms []PlacedRoom) [][]doorOpening {
+	t.Helper()
+	occupancy := newPlacementOccupancy(width, height)
+	openings := make([][]doorOpening, len(rooms))
+	for roomIndex, room := range rooms {
+		occupancy.mark(uint32(roomIndex), room.Cells)
+	}
+	for roomIndex, room := range rooms {
+		openings[roomIndex] = enumerateDoorOpenings(room, uint32(roomIndex), occupancy)
+	}
+	return openings
+}
+
+func newClearedSearch(t *testing.T, width, height uint32, rooms []PlacedRoom) *routingSearch {
+	t.Helper()
+	occupancy := newPlacementOccupancy(width, height)
+	for roomIndex, room := range rooms {
+		occupancy.mark(uint32(roomIndex), room.Cells)
+	}
+	search := newRoutingSearch(context.Background(), occupancy)
+	search.clearance = newWidthClearance(occupancy)
+	return search
 }
 
 func routeFixedWidth(t *testing.T, width, height uint32, rooms []PlacedRoom, corridorWidth uint32) Corridor {
