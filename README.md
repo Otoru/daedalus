@@ -10,7 +10,7 @@ Deterministic 2D dungeon generation for Go. One `Config` and one `Seed` in, one 
 - **No dependencies in the core.** The root package imports only the standard library, enforced by a test that parses its AST. gRPC, protobuf, fx and zap live outside it.
 - **Rooms have shape and their own size.** Five canonical masks — rectangle, L, T, cross and circle — each carrying its own width and height range, placed by Poisson disk over the real footprint. A circle is square, odd and at least 5 across, because a disc on a square grid needs a centre cell.
 - **Connected by construction.** A Prim spanning tree guarantees every room is reachable; `ExtraEdgeCount` adds cycles back on top of it.
-- **Corridors have a width, and keep to themselves.** A weighted distribution drawn per corridor, and only the widths you declare: ask for 1 and 3 and you never get a 2. Two corridors never share a cell, and never run side by side except where they converge on a room wall.
+- **Corridors have a width, and keep to themselves.** A weighted distribution drawn per corridor, and only the widths you declare: ask for 1 and 3 and you never get a 2. Two corridors never share a cell and never come within one cell of each other, anywhere on the floor.
 - **Thematic roles.** Ask for a start, a boss and treasure rooms, and get them placed by distance rather than by luck.
 - **Density regions.** Different room spacing per area of the same floor.
 - **Three ways to run it.** Import it as a library, run it as a gRPC subprocess that announces itself on stdout, or open the local HTTP debug interface — the map above is a screenshot of it.
