@@ -32,6 +32,7 @@ type roomCenter struct {
 
 type primEdgeCandidate struct {
 	connection    Connection
+	fromIndex     int
 	toIndex       int
 	squaredWeight float64
 	destination   Cell
@@ -66,10 +67,26 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		selected := search.selectNextEdge()
+		selected, feasible, selectErr := search.selectFeasibleEdge()
+		if selectErr != nil {
+			return nil, selectErr
+		}
+		if !feasible {
+			spliced, spliceErr := search.spliceStranded(&edges)
+			if spliceErr != nil {
+				return nil, spliceErr
+			}
+			if !spliced {
+				return nil, ErrUnconnectablePlacement
+			}
+			continue
+		}
 		edges = append(edges, selected.connection)
+		search.used[selected.fromIndex]++
+		search.used[selected.toIndex]++
 		search.visited[selected.toIndex] = true
 		search.hasKey[selected.toIndex] = false
+		search.linkRooms(selected.fromIndex, selected.toIndex)
 		if err := search.updateKeys(selected.toIndex); err != nil {
 			return nil, err
 		}
@@ -89,6 +106,9 @@ type primSearch struct {
 	bestKeys   []primEdgeCandidate
 	hasKey     []bool
 	keyUpdates uint64
+	capacity   []int
+	used       []int
+	neighbors  [][]int
 }
 
 func newPrimSearch(req ConnectionRequest, ctx context.Context) *primSearch {
@@ -99,17 +119,31 @@ func newPrimSearch(req ConnectionRequest, ctx context.Context) *primSearch {
 	}
 	visited := make([]bool, roomCount)
 	visited[primStartingRoomIndex] = true
+	width := req.MaxCorridorWidth
+	if width == 0 {
+		width = 1
+	}
+	capacity := make([]int, roomCount)
+	for index, room := range req.Rooms {
+		capacity[index] = roomOpeningCapacity(placedRoomFootprint(room), req.Width, req.Height, width)
+	}
 	return &primSearch{
-		req:      req,
-		ctx:      ctx,
-		centers:  centers,
-		visited:  visited,
-		bestKeys: make([]primEdgeCandidate, roomCount),
-		hasKey:   make([]bool, roomCount),
+		req:       req,
+		ctx:       ctx,
+		centers:   centers,
+		visited:   visited,
+		bestKeys:  make([]primEdgeCandidate, roomCount),
+		hasKey:    make([]bool, roomCount),
+		capacity:  capacity,
+		used:      make([]int, roomCount),
+		neighbors: make([][]int, roomCount),
 	}
 }
 
 func (search *primSearch) updateKeys(fromIndex int) error {
+	if search.used[fromIndex] >= search.capacity[fromIndex] {
+		return nil
+	}
 	from := search.req.Rooms[fromIndex]
 	for toIndex, to := range search.req.Rooms {
 		if search.visited[toIndex] {
@@ -122,11 +156,15 @@ func (search *primSearch) updateKeys(fromIndex int) error {
 		}
 		search.keyUpdates++
 
+		if search.used[toIndex] >= search.capacity[toIndex] {
+			continue
+		}
 		candidate := primEdgeCandidate{
 			connection: Connection{
 				FromRoomID: from.ID,
 				ToRoomID:   to.ID,
 			},
+			fromIndex:     fromIndex,
 			toIndex:       toIndex,
 			squaredWeight: squaredCenterDistance(search.centers[fromIndex], search.centers[toIndex]),
 			// Equal weights break ties by FromRoomID, then ToRoomID, then this
@@ -141,20 +179,219 @@ func (search *primSearch) updateKeys(fromIndex int) error {
 	return nil
 }
 
-func (search *primSearch) selectNextEdge() primEdgeCandidate {
+// selectFeasibleEdge returns the cheapest edge into an unvisited Room whose
+// both ends still have an opening left. A stored key whose source has since
+// filled is recomputed from the Rooms that still have room.
+func (search *primSearch) selectFeasibleEdge() (primEdgeCandidate, bool, error) {
 	var selected primEdgeCandidate
-	hasSelected := false
+	found := false
 	for roomIndex := range search.req.Rooms {
-		if search.visited[roomIndex] || !search.hasKey[roomIndex] {
+		if search.visited[roomIndex] {
+			continue
+		}
+		feasible, err := search.ensureFeasibleKey(roomIndex)
+		if err != nil {
+			return primEdgeCandidate{}, false, err
+		}
+		if !feasible {
 			continue
 		}
 		candidate := search.bestKeys[roomIndex]
-		if !hasSelected || primEdgeLess(candidate, selected) {
+		if !found || primEdgeLess(candidate, selected) {
 			selected = candidate
-			hasSelected = true
+			found = true
 		}
 	}
-	return selected
+	return selected, found, nil
+}
+
+func (search *primSearch) ensureFeasibleKey(toIndex int) (bool, error) {
+	if search.capacity[toIndex] <= 0 {
+		search.hasKey[toIndex] = false
+		return false, nil
+	}
+	if search.hasKey[toIndex] {
+		fromIndex := search.bestKeys[toIndex].fromIndex
+		if search.visited[fromIndex] && search.used[fromIndex] < search.capacity[fromIndex] {
+			return true, nil
+		}
+	}
+	search.hasKey[toIndex] = false
+	for fromIndex, from := range search.req.Rooms {
+		if !search.visited[fromIndex] || search.used[fromIndex] >= search.capacity[fromIndex] {
+			continue
+		}
+		if search.keyUpdates%primCancellationUpdateInterval == 0 {
+			if err := search.ctx.Err(); err != nil {
+				return false, err
+			}
+		}
+		search.keyUpdates++
+		candidate := primEdgeCandidate{
+			connection:    Connection{FromRoomID: from.ID, ToRoomID: search.req.Rooms[toIndex].ID},
+			fromIndex:     fromIndex,
+			toIndex:       toIndex,
+			squaredWeight: squaredCenterDistance(search.centers[fromIndex], search.centers[toIndex]),
+			destination:   search.req.Rooms[toIndex].At,
+		}
+		if !search.hasKey[toIndex] || primEdgeLess(candidate, search.bestKeys[toIndex]) {
+			search.bestKeys[toIndex] = candidate
+			search.hasKey[toIndex] = true
+		}
+	}
+	return search.hasKey[toIndex], nil
+}
+
+// spliceStranded inserts one unvisited Room into an existing tree edge when
+// every Room already in the tree is at its opening budget. The inserted Room
+// must be able to host two openings. It is attached to the nearest in-tree
+// Room, and that Room's tree neighbor which makes the cheaper Prim edge is
+// the one moved onto the new Room. Degrees of the two Rooms that were already
+// connected stay the same. If no such insertion exists, the placement cannot
+// be connected under the separation rule.
+func (search *primSearch) spliceStranded(edges *[]Connection) (bool, error) {
+	bestStranded := -1
+	bestRoom := -1
+	bestNeighbor := -1
+	var bestEdge primEdgeCandidate
+	found := false
+	for stranded := range search.req.Rooms {
+		if search.visited[stranded] || search.capacity[stranded] < 2 {
+			continue
+		}
+		if err := search.ctx.Err(); err != nil {
+			return false, err
+		}
+		nearest, nearestEdge, ok := search.nearestTreeRoom(stranded)
+		if !ok {
+			continue
+		}
+		neighbor, neighborOK := search.neighborToMove(stranded, nearest)
+		if !neighborOK {
+			continue
+		}
+		if !found || primEdgeLess(nearestEdge, bestEdge) {
+			found = true
+			bestStranded = stranded
+			bestRoom = nearest
+			bestNeighbor = neighbor
+			bestEdge = nearestEdge
+		}
+	}
+	if !found || !search.rewireTreeEdge(edges, bestRoom, bestNeighbor, bestStranded) {
+		return false, nil
+	}
+	search.used[bestStranded] += 2
+	search.visited[bestStranded] = true
+	search.hasKey[bestStranded] = false
+	if err := search.updateKeys(bestStranded); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (search *primSearch) nearestTreeRoom(stranded int) (int, primEdgeCandidate, bool) {
+	var best primEdgeCandidate
+	found := false
+	bestIndex := -1
+	target := search.req.Rooms[stranded]
+	for roomIndex, room := range search.req.Rooms {
+		if !search.visited[roomIndex] {
+			continue
+		}
+		candidate := primEdgeCandidate{
+			connection:    Connection{FromRoomID: room.ID, ToRoomID: target.ID},
+			fromIndex:     roomIndex,
+			toIndex:       stranded,
+			squaredWeight: squaredCenterDistance(search.centers[roomIndex], search.centers[stranded]),
+			destination:   target.At,
+		}
+		if !found || primEdgeLess(candidate, best) {
+			found = true
+			best = candidate
+			bestIndex = roomIndex
+		}
+	}
+	return bestIndex, best, found
+}
+
+func (search *primSearch) neighborToMove(stranded, roomIndex int) (int, bool) {
+	var best primEdgeCandidate
+	found := false
+	bestNeighbor := -1
+	target := search.req.Rooms[stranded]
+	for _, neighbor := range search.neighbors[roomIndex] {
+		candidate := primEdgeCandidate{
+			connection: Connection{
+				FromRoomID: search.req.Rooms[neighbor].ID,
+				ToRoomID:   target.ID,
+			},
+			fromIndex:     neighbor,
+			toIndex:       stranded,
+			squaredWeight: squaredCenterDistance(search.centers[neighbor], search.centers[stranded]),
+			destination:   target.At,
+		}
+		if !found || primEdgeLess(candidate, best) {
+			found = true
+			best = candidate
+			bestNeighbor = neighbor
+		}
+	}
+	return bestNeighbor, found
+}
+
+func (search *primSearch) rewireTreeEdge(edges *[]Connection, roomIndex, neighbor, stranded int) bool {
+	list := *edges
+	roomID := search.req.Rooms[roomIndex].ID
+	neighborID := search.req.Rooms[neighbor].ID
+	strandedID := search.req.Rooms[stranded].ID
+	edgeIndex := -1
+	for index, edge := range list {
+		if connectionJoins(edge, roomID, neighborID) {
+			edgeIndex = index
+			break
+		}
+	}
+	if edgeIndex < 0 {
+		return false
+	}
+	updated := make([]Connection, 0, len(list)+1)
+	updated = append(updated, list[:edgeIndex]...)
+	updated = append(updated,
+		Connection{FromRoomID: roomID, ToRoomID: strandedID},
+		Connection{FromRoomID: neighborID, ToRoomID: strandedID},
+	)
+	updated = append(updated, list[edgeIndex+1:]...)
+	*edges = updated
+	search.unlinkRooms(roomIndex, neighbor)
+	search.linkRooms(roomIndex, stranded)
+	search.linkRooms(neighbor, stranded)
+	return true
+}
+
+func (search *primSearch) linkRooms(left, right int) {
+	search.neighbors[left] = append(search.neighbors[left], right)
+	search.neighbors[right] = append(search.neighbors[right], left)
+}
+
+func (search *primSearch) unlinkRooms(left, right int) {
+	search.neighbors[left] = removeNeighbor(search.neighbors[left], right)
+	search.neighbors[right] = removeNeighbor(search.neighbors[right], left)
+}
+
+func removeNeighbor(neighbors []int, target int) []int {
+	for index, neighbor := range neighbors {
+		if neighbor != target {
+			continue
+		}
+		return append(neighbors[:index], neighbors[index+1:]...)
+	}
+	return neighbors
+}
+
+func connectionJoins(edge Connection, left, right RoomID) bool {
+	return (edge.FromRoomID == left && edge.ToRoomID == right) ||
+		(edge.FromRoomID == right && edge.ToRoomID == left)
 }
 
 // boundingBoxCenter returns the bounding-box center as the centroid of its

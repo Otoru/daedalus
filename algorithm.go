@@ -154,6 +154,12 @@ type ConnectionRequest struct {
 	// Seed is the source of the request's connection random stream. The built-in
 	// prim_rooms_v1 Connector receives it but consumes no draw.
 	Seed Seed
+	// MaxCorridorWidth is the widest Corridor width declared for this request.
+	// Zero means one Cell, the same budget as a nil CorridorGeometry. The
+	// built-in Connector will not put more openings on a Room than that width
+	// can keep Chebyshev-separated, and a game-supplied Connector needs the
+	// same number to apply the same limit.
+	MaxCorridorWidth uint32
 }
 
 // Connection is a topological edge chosen by Connector between two distinct Rooms.

@@ -132,6 +132,10 @@ func StatusError(err error) error {
 		// HTTP maps an unroutable edge to 422, the same category as a
 		// missing plant. gRPC reports FailedPrecondition for the same reason.
 		return status.Error(codes.FailedPrecondition, "edge has no orthogonal route")
+	case errors.Is(err, daedalus.ErrUnconnectablePlacement):
+		// The Rooms cannot host a separated spanning tree. That is a property
+		// of the placement, known before routing, and the same 422 category.
+		return status.Error(codes.FailedPrecondition, "placement cannot be connected under the separation rule")
 	case errors.Is(err, daedalus.ErrInvalidPlugin):
 		// Unreachable over gRPC, which only ever runs the built-in algorithms.
 		// Dishonest output from an injected Placer or Connector — a mask that

@@ -28,6 +28,7 @@ func TestStatusErrorMapsSDKCategories(t *testing.T) {
 		{name: "limit exceeded", err: daedalus.ErrLimitExceeded, code: codes.ResourceExhausted},
 		{name: "incompatible plant", err: daedalus.ErrNoCompatiblePlant, code: codes.FailedPrecondition},
 		{name: "edge without route", err: daedalus.ErrUnroutableEdge, code: codes.FailedPrecondition},
+		{name: "placement cannot be separated", err: daedalus.ErrUnconnectablePlacement, code: codes.FailedPrecondition},
 		{name: "deadline", err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
 		{name: "cancellation", err: context.Canceled, code: codes.Canceled},
 		{name: "internal failure", err: errors.New("internal secret"), code: codes.Internal},

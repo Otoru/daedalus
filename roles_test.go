@@ -189,7 +189,7 @@ func TestZeroShortcutsPreservesTreeAndSkipsPhaseWithoutDraw(t *testing.T) {
 	streams := newRNGStreams(Seed(92))
 	wantStreams := streams
 
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 0)
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 0, 0, 0, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, backbone, connections)
@@ -210,7 +210,7 @@ func TestShortcutsAreFirstOrderedDiscardedEdges(t *testing.T) {
 		{FromRoomID: 1, ToRoomID: 3},
 	}
 
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2)
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, []Connection{
@@ -218,7 +218,6 @@ func TestShortcutsAreFirstOrderedDiscardedEdges(t *testing.T) {
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 		{FromRoomID: 2, ToRoomID: 3},
-		{FromRoomID: 0, ToRoomID: 3},
 	}, connections)
 	assertGraphConnected(t, rooms, connections)
 }
@@ -227,7 +226,7 @@ func TestShortcutsAboveAvailableAddAllWithoutError(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0), placedRoomAt(2, 2, 0)}
 	backbone := []Connection{{FromRoomID: 0, ToRoomID: 1}, {FromRoomID: 1, ToRoomID: 2}}
 
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 99)
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 99, 0, 0, 1)
 
 	require.NoError(t, err)
 	assert.Equal(t, append(append([]Connection(nil), backbone...), Connection{FromRoomID: 0, ToRoomID: 2}), connections)
@@ -247,7 +246,7 @@ func TestRolesAreComputedBeforeShortcuts(t *testing.T) {
 	}
 	requests := []RoomRoleRequest{{Role: RoomRoleStart, Count: 1}, {Role: RoomRoleBoss, Count: 1}}
 
-	roles, connections, err := applyTopologyOptions(context.Background(), rooms, backbone, requests, 1)
+	roles, connections, err := applyTopologyOptions(context.Background(), rooms, backbone, requests, 1, 0, 0, 1)
 
 	require.NoError(t, err)
 	assertRoleAt(t, roles, 3, RoomRoleBoss)
@@ -268,7 +267,7 @@ func TestEnabledRolesAndShortcutsConsumeNoDraw(t *testing.T) {
 	streams := newRNGStreams(Seed(93))
 	wantStreams := streams
 
-	roles, connections, err := applyTopologyOptions(context.Background(), rooms, backbone, requests, 1)
+	roles, connections, err := applyTopologyOptions(context.Background(), rooms, backbone, requests, 1, 0, 0, 1)
 
 	require.NoError(t, err)
 	assertRoleAt(t, roles, 2, RoomRoleBoss)
@@ -283,7 +282,7 @@ func TestRoleAndShortcutPhasesRespectCanceledContext(t *testing.T) {
 	backbone := []Connection{{FromRoomID: 0, ToRoomID: 1}}
 
 	roles, roleErr := assignRoomRoles(ctx, rooms, backbone, []RoomRoleRequest{{Role: RoomRoleStart, Count: 1}})
-	connections, edgeErr := addExtraConnections(ctx, rooms, backbone, 1)
+	connections, edgeErr := addExtraConnections(ctx, rooms, backbone, 1, 0, 0, 1)
 
 	assert.ErrorIs(t, roleErr, context.Canceled)
 	assert.Nil(t, roles)

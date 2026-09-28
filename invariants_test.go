@@ -1,6 +1,7 @@
 package daedalus
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -32,6 +33,7 @@ func layoutInvariantFailures(effective effectiveConfig, layout Layout) []string 
 	state.checkRoomPairGapAndDistance()
 	state.checkCorridors()
 	state.checkCorridorSeparationAndWidth()
+	state.checkRoomOpeningBudget()
 	state.checkCorridorCountAndConnectivity()
 	state.checkDoors()
 	state.checkAssignedDoorOrder()
@@ -293,12 +295,10 @@ func (state *layoutInvariantCheck) checkCorridorCells(path string, corridor Corr
 
 // checkCorridorSeparationAndWidth records two routing rules on a finished
 // Layout: no two Corridors share a Cell, and no two Corridors lie within
-// Chebyshev distance 1 unless both Cells are orthogonally adjacent to some
-// Room's footprint. Contact beside a Room wall is legal. Contact in open
-// ground is not. Every routed width must be one the request declared. A nil
-// CorridorGeometry declares width 1. Failures follow Corridor order, then
-// Cell order, then North-to-West neighbour offsets, so the first diagnostic
-// is stable.
+// Chebyshev distance 1 anywhere, including the Cells beside a Room. Every
+// routed width must be one the request declared. A nil CorridorGeometry
+// declares width 1. Failures follow Corridor order, then Cell order, then
+// North-to-West neighbour offsets, so the first diagnostic is stable.
 func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 	owners := make(map[Cell]CorridorID)
 	for corridorIndex, corridor := range state.layout.Corridors {
@@ -313,7 +313,6 @@ func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 			owners[cell] = corridor.ID
 		}
 	}
-	besideRoom := cellsBesideRoomFootprints(state.layout.Rooms)
 	reported := make(map[corridorSeparationPair]struct{})
 	for corridorIndex, corridor := range state.layout.Corridors {
 		for _, cell := range corridor.Cells {
@@ -327,9 +326,6 @@ func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 					if !exists || other == corridor.ID {
 						continue
 					}
-					if besideRoom[cell] && besideRoom[neighbor] {
-						continue
-					}
 					pair := corridorSeparationPair{low: corridor.ID, high: other}
 					if pair.low > pair.high {
 						pair.low, pair.high = pair.high, pair.low
@@ -340,7 +336,7 @@ func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 					reported[pair] = struct{}{}
 					state.fail(
 						fmt.Sprintf("Layout.Corridors[%d]", corridorIndex),
-						fmt.Sprintf("Chebyshev distance >= 2 from CorridorID %d away from Room walls", other),
+						fmt.Sprintf("Chebyshev distance >= 2 from CorridorID %d", other),
 						fmt.Sprintf("Cell %v touches CorridorID %d", cell, other),
 					)
 				}
@@ -349,28 +345,39 @@ func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 	}
 }
 
-// cellsBesideRoomFootprints is the set of Cells that share an edge with some
-// Room footprint. Diagonal contact with a Room does not qualify. Corridor
-// adjacency is legal only between Cells in this set.
-func cellsBesideRoomFootprints(rooms []Room) map[Cell]bool {
-	footprints := make(map[Cell]struct{})
-	for _, room := range rooms {
-		for _, cell := range room.Cells {
-			footprints[cell] = struct{}{}
+// checkRoomOpeningBudget records that no Room grew more Corridors than its
+// footprint can separate at the widest declared width. The count is the same
+// budget the Connector spends, so a successful Layout cannot have asked a
+// Room for an opening the separation rule cannot host.
+func (state *layoutInvariantCheck) checkRoomOpeningBudget() {
+	if len(state.layout.Rooms) == 0 {
+		return
+	}
+	width := widestDeclaredCorridorWidth(state.effective.corridorWidths)
+	degree := make([]int, len(state.layout.Rooms))
+	indexByID := make(map[RoomID]int, len(state.layout.Rooms))
+	for roomIndex, room := range state.layout.Rooms {
+		indexByID[room.ID] = roomIndex
+	}
+	for _, corridor := range state.layout.Corridors {
+		fromIndex, fromOK := indexByID[corridor.FromRoomID]
+		toIndex, toOK := indexByID[corridor.ToRoomID]
+		if !fromOK || !toOK {
+			continue
+		}
+		degree[fromIndex]++
+		degree[toIndex]++
+	}
+	for roomIndex, room := range state.layout.Rooms {
+		capacity := roomOpeningCapacity(room.Cells, state.effective.width, state.effective.height, width)
+		if degree[roomIndex] > capacity {
+			state.fail(
+				fmt.Sprintf("Layout.Rooms[%d]", roomIndex),
+				fmt.Sprintf("at most %d Corridors", capacity),
+				degree[roomIndex],
+			)
 		}
 	}
-	beside := make(map[Cell]bool)
-	for cell := range footprints {
-		for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
-			delta := direction.Delta()
-			neighbor := Cell{X: cell.X + delta.X, Y: cell.Y + delta.Y}
-			if _, isFootprint := footprints[neighbor]; isFootprint {
-				continue
-			}
-			beside[neighbor] = true
-		}
-	}
-	return beside
 }
 
 type corridorSeparationPair struct {
@@ -651,11 +658,10 @@ func (state *layoutInvariantCheck) checkRoomRoles() {
 	}
 }
 
-// TestCorridorSeparationAllowsContactOnlyBesideRoomWalls checks the refined
-// separation rule on a hand-built Layout. A diagonal touch whose Cells both
-// share an edge with the Room is legal. The same Chebyshev distance in open
-// ground is not. A shared Cell is never legal.
-func TestCorridorSeparationAllowsContactOnlyBesideRoomWalls(t *testing.T) {
+// TestCorridorSeparationForbidsContactIncludingBesideRoomWalls checks that a
+// diagonal touch is illegal beside a Room and in open ground. A shared Cell
+// is never legal.
+func TestCorridorSeparationForbidsContactIncludingBesideRoomWalls(t *testing.T) {
 	room := Room{ID: 0, Cells: []Cell{{X: 2, Y: 2}}}
 	wallContact := &layoutInvariantCheck{layout: Layout{
 		Rooms: []Room{room},
@@ -665,7 +671,8 @@ func TestCorridorSeparationAllowsContactOnlyBesideRoomWalls(t *testing.T) {
 		},
 	}}
 	wallContact.checkCorridorSeparationAndWidth()
-	assert.Empty(t, wallContact.failures)
+	require.NotEmpty(t, wallContact.failures)
+	assert.Contains(t, wallContact.failures[0], "Chebyshev distance >= 2")
 
 	openGround := &layoutInvariantCheck{layout: Layout{
 		Rooms: []Room{room},
@@ -676,7 +683,7 @@ func TestCorridorSeparationAllowsContactOnlyBesideRoomWalls(t *testing.T) {
 	}}
 	openGround.checkCorridorSeparationAndWidth()
 	require.NotEmpty(t, openGround.failures)
-	assert.Contains(t, openGround.failures[0], "away from Room walls")
+	assert.Contains(t, openGround.failures[0], "Chebyshev distance >= 2")
 
 	shared := &layoutInvariantCheck{layout: Layout{
 		Rooms: []Room{room},
@@ -715,8 +722,10 @@ func TestGeneratedLayoutsKeepCorridorWidthAndSeparation(t *testing.T) {
 				require.NoError(t, err)
 				layout, err := generator.Generate(config)
 				if err != nil {
-					require.ErrorIs(t, err, ErrUnroutableEdge)
-					continue
+					if errors.Is(err, ErrUnroutableEdge) || errors.Is(err, ErrUnconnectablePlacement) {
+						continue
+					}
+					require.NoError(t, err)
 				}
 				assertLayoutInvariants(t, effective, layout)
 				checked++

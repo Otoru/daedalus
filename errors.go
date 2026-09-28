@@ -9,7 +9,8 @@ import "errors"
 //
 // In the gRPC service, the mapping is: ErrInvalidConfig → InvalidArgument,
 // ErrLimitExceeded → ResourceExhausted, ErrNoCompatiblePlant,
-// ErrUnroutableEdge and ErrInvalidPlugin → FailedPrecondition, deadline
+// ErrUnroutableEdge, ErrUnconnectablePlacement, and ErrInvalidPlugin →
+// FailedPrecondition, deadline
 // expiration → DeadlineExceeded, and caller cancellation → Canceled.
 // Cancellation and deadlines use context.Canceled and
 // context.DeadlineExceeded directly, without dedicated sentinels.
@@ -33,6 +34,12 @@ var (
 	// for which the deterministic breadth-first search finds no orthogonal path
 	// between the endpoints.
 	ErrUnroutableEdge = errors.New("daedalus: edge has no orthogonal route")
+
+	// ErrUnconnectablePlacement marks a Room set whose footprints cannot host
+	// a spanning tree once every Corridor keeps a one-Cell Chebyshev gap,
+	// including beside a Room. It is raised by the Connector, before routing,
+	// so the failure is not reported later as a missing path.
+	ErrUnconnectablePlacement = errors.New("daedalus: placement cannot be connected under the separation rule")
 
 	// ErrInvalidPlugin marks a caller-supplied Placer or Connector whose return
 	// value the Generator cannot accept: a mask that does not match its Shape,

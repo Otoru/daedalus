@@ -235,11 +235,9 @@
           "X": 2,
           "Y": 3
         },
-        "Kind": 2,
+        "Kind": 0,
         "RoomID": null,
-        "CorridorIDs": [
-          1
-        ]
+        "CorridorIDs": null
       },
       {
         "At": {
@@ -291,18 +289,22 @@
           "X": 1,
           "Y": 4
         },
-        "Kind": 0,
+        "Kind": 2,
         "RoomID": null,
-        "CorridorIDs": null
+        "CorridorIDs": [
+          1
+        ]
       },
       {
         "At": {
           "X": 2,
           "Y": 4
         },
-        "Kind": 0,
+        "Kind": 2,
         "RoomID": null,
-        "CorridorIDs": null
+        "CorridorIDs": [
+          1
+        ]
       },
       {
         "At": {
@@ -659,14 +661,22 @@
       "ToDoorID": 3,
       "Centerline": [
         {
+          "X": 1,
+          "Y": 4
+        },
+        {
           "X": 2,
-          "Y": 3
+          "Y": 4
         }
       ],
       "Cells": [
         {
+          "X": 1,
+          "Y": 4
+        },
+        {
           "X": 2,
-          "Y": 3
+          "Y": 4
         }
       ],
       "PlantID": "",
@@ -707,7 +717,7 @@
         "X": 1,
         "Y": 3
       },
-      "Direction": 1,
+      "Direction": 2,
       "Span": 1,
       "CorridorIDs": [
         1
@@ -718,7 +728,7 @@
       "RoomID": 2,
       "At": {
         "X": 3,
-        "Y": 3
+        "Y": 4
       },
       "Direction": 3,
       "Span": 1,

@@ -123,9 +123,9 @@ func TestUnroutableEdgeDiscardsPartialResult(t *testing.T) {
 
 // TestTwoEdgesDoNotReuseADoorWhoseBandIsOccupied checks that a second edge
 // between the same Rooms cannot re-enter the first Corridor's opening: that
-// exterior Cell belongs to the first band. The second edge may leave by a
-// neighbouring opening and touch the first Corridor there, because both Cells
-// are orthogonally adjacent to the Room.
+// exterior Cell belongs to the first band. The second edge has to leave by
+// another opening and stay at Chebyshev distance at least 2, including the
+// Cells that sit on the Room wall.
 func TestTwoEdgesDoNotReuseADoorWhoseBandIsOccupied(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 1, Y: 2}, 1, 1),
@@ -147,7 +147,7 @@ func TestTwoEdgesDoNotReuseADoorWhoseBandIsOccupied(t *testing.T) {
 	for _, door := range doors {
 		assert.Len(t, door.CorridorIDs, 1)
 	}
-	assertContactOnlyBesideRooms(t, rooms, corridors)
+	assertCorridorChebyshevSeparation(t, corridors)
 }
 
 // TestEmptyFacingCorridorsMayShareADoor checks the one geometry in which two
@@ -170,12 +170,10 @@ func TestEmptyFacingCorridorsMayShareADoor(t *testing.T) {
 	assert.Equal(t, []CorridorID{0, 1}, doors[corridors[0].FromDoorID].CorridorIDs)
 }
 
-// TestDegreeThreeRoomCorridorsTouchOnlyBesideTheWall checks that three
-// Corridors can leave a 1×1 Room. Their first Cells sit on adjacent sides of
-// the footprint and therefore touch diagonally. That contact is legal only
-// because both Cells are orthogonally adjacent to the Room. Cells farther
-// out still stay at least Chebyshev distance 2 apart, and no Cell is shared.
-func TestDegreeThreeRoomCorridorsTouchOnlyBesideTheWall(t *testing.T) {
+// TestThreeExitsFromAOneCellRoomCannotStayApart checks that three Corridors
+// leaving a 1×1 Room have to touch. Adjacent exits are Chebyshev distance 1,
+// and that contact is no longer allowed beside the wall.
+func TestThreeExitsFromAOneCellRoomCannotStayApart(t *testing.T) {
 	rooms := []PlacedRoom{
 		placedRectangle(t, 0, Cell{X: 3, Y: 3}, 1, 1),
 		placedRectangle(t, 1, Cell{X: 3, Y: 6}, 1, 1),
@@ -183,7 +181,7 @@ func TestDegreeThreeRoomCorridorsTouchOnlyBesideTheWall(t *testing.T) {
 		placedRectangle(t, 3, Cell{X: 6, Y: 3}, 1, 1),
 	}
 
-	corridors, _, err := routeCorridors(
+	corridors, doors, err := routeCorridors(
 		context.Background(), 7, 7, CorridorOrderXThenY, rooms,
 		[]Connection{
 			{FromRoomID: 0, ToRoomID: 1},
@@ -192,10 +190,29 @@ func TestDegreeThreeRoomCorridorsTouchOnlyBesideTheWall(t *testing.T) {
 		},
 	)
 
+	require.ErrorIs(t, err, ErrUnroutableEdge)
+	assert.Nil(t, corridors)
+	assert.Nil(t, doors)
+}
+
+func TestOppositeExitsFromAOneCellRoomStayApart(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRectangle(t, 0, Cell{X: 3, Y: 3}, 1, 1),
+		placedRectangle(t, 1, Cell{X: 3, Y: 6}, 1, 1),
+		placedRectangle(t, 2, Cell{X: 3, Y: 0}, 1, 1),
+	}
+
+	corridors, _, err := routeCorridors(
+		context.Background(), 7, 7, CorridorOrderXThenY, rooms,
+		[]Connection{
+			{FromRoomID: 0, ToRoomID: 1},
+			{FromRoomID: 0, ToRoomID: 2},
+		},
+	)
+
 	require.NoError(t, err)
-	require.Len(t, corridors, 3)
-	assert.True(t, assertContactOnlyBesideRooms(t, rooms, corridors),
-		"three exits from a 1×1 Room have to meet beside the wall")
+	require.Len(t, corridors, 2)
+	assertCorridorChebyshevSeparation(t, corridors)
 }
 
 func TestCorridorsKeepChebyshevSeparation(t *testing.T) {
@@ -439,72 +456,6 @@ func placedShape(t testing.TB, id RoomID, shape RoomShape, origin Cell, width, h
 		ID: id, At: footprint[0], Shape: placement.Shape, Origin: origin,
 		Width: width, Height: height, Cells: footprint,
 	}
-}
-
-// assertContactOnlyBesideRooms fails if two Corridors share a Cell or touch
-// away from a Room wall. It returns whether any legal wall contact occurred.
-func assertContactOnlyBesideRooms(t *testing.T, rooms []PlacedRoom, corridors []Corridor) bool {
-	t.Helper()
-	besideRoom := cellsBesidePlacedRooms(rooms)
-	owners := corridorCellOwners(t, corridors)
-	touched := false
-	for _, corridor := range corridors {
-		for _, cell := range corridor.Cells {
-			for dy := int32(-1); dy <= 1; dy++ {
-				for dx := int32(-1); dx <= 1; dx++ {
-					if dx == 0 && dy == 0 {
-						continue
-					}
-					neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
-					other, exists := owners[neighbor]
-					if !exists || other == corridor.ID {
-						continue
-					}
-					touched = true
-					if !besideRoom[cell] || !besideRoom[neighbor] {
-						t.Fatalf("Corridor %d at %v touches Corridor %d at %v away from a Room wall",
-							corridor.ID, cell, other, neighbor)
-					}
-				}
-			}
-		}
-	}
-	return touched
-}
-
-func corridorCellOwners(t *testing.T, corridors []Corridor) map[Cell]CorridorID {
-	t.Helper()
-	owners := make(map[Cell]CorridorID)
-	for _, corridor := range corridors {
-		for _, cell := range corridor.Cells {
-			if previous, exists := owners[cell]; exists {
-				t.Fatalf("Cell %v belongs to Corridor %d and Corridor %d", cell, previous, corridor.ID)
-			}
-			owners[cell] = corridor.ID
-		}
-	}
-	return owners
-}
-
-func cellsBesidePlacedRooms(rooms []PlacedRoom) map[Cell]bool {
-	footprints := make(map[Cell]struct{})
-	for _, room := range rooms {
-		for _, cell := range room.Cells {
-			footprints[cell] = struct{}{}
-		}
-	}
-	beside := make(map[Cell]bool)
-	for cell := range footprints {
-		for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
-			delta := direction.Delta()
-			neighbor := Cell{X: cell.X + delta.X, Y: cell.Y + delta.Y}
-			if _, isFootprint := footprints[neighbor]; isFootprint {
-				continue
-			}
-			beside[neighbor] = true
-		}
-	}
-	return beside
 }
 
 func assertCorridorChebyshevSeparation(t *testing.T, corridors []Corridor) {

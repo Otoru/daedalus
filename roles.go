@@ -48,12 +48,17 @@ func applyTopologyOptions(
 	backbone []Connection,
 	requests []RoomRoleRequest,
 	extraEdgeCount uint32,
+	gridWidth uint32,
+	gridHeight uint32,
+	corridorWidth uint32,
 ) ([]*RoomRole, []Connection, error) {
 	roles, err := assignRoomRoles(ctx, rooms, backbone, requests)
 	if err != nil {
 		return nil, nil, err
 	}
-	connections, err := addExtraConnections(ctx, rooms, backbone, extraEdgeCount)
+	connections, err := addExtraConnections(
+		ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -274,6 +279,9 @@ func addExtraConnections(
 	rooms []PlacedRoom,
 	backbone []Connection,
 	extraEdgeCount uint32,
+	gridWidth uint32,
+	gridHeight uint32,
+	corridorWidth uint32,
 ) ([]Connection, error) {
 	ctx = topologyContext(ctx)
 	if err := ctx.Err(); err != nil {
@@ -300,14 +308,48 @@ func addExtraConnections(
 		return primEdgeLess(candidates[first], candidates[second])
 	})
 
-	selectedCount := len(candidates)
-	if uint64(selectedCount) > uint64(extraEdgeCount) {
-		selectedCount = int(extraEdgeCount)
+	width := corridorWidth
+	if width == 0 {
+		width = 1
 	}
-	connections := make([]Connection, 0, len(backbone)+selectedCount)
+	capacity := make([]int, len(rooms))
+	used := make([]int, len(rooms))
+	for roomIndex, room := range rooms {
+		capacity[roomIndex] = roomOpeningCapacity(placedRoomFootprint(room), gridWidth, gridHeight, width)
+	}
+	for _, connection := range backbone {
+		fromIndex := roomIndexByID(rooms, connection.FromRoomID)
+		toIndex := roomIndexByID(rooms, connection.ToRoomID)
+		if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
+			return nil, errTopologyUnknownRoom
+		}
+		used[fromIndex]++
+		used[toIndex]++
+	}
+
+	connections := make([]Connection, 0, len(backbone)+int(extraEdgeCount))
 	connections = append(connections, backbone...)
-	for candidateIndex := topologyFirstRoomIndex; candidateIndex < selectedCount; candidateIndex++ {
-		connections = append(connections, candidates[candidateIndex].connection)
+	added := 0
+	for candidateIndex := range candidates {
+		if uint64(added) >= uint64(extraEdgeCount) {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		candidate := candidates[candidateIndex]
+		fromIndex := roomIndexByID(rooms, candidate.connection.FromRoomID)
+		toIndex := roomIndexByID(rooms, candidate.connection.ToRoomID)
+		if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
+			return nil, errTopologyUnknownRoom
+		}
+		if used[fromIndex] >= capacity[fromIndex] || used[toIndex] >= capacity[toIndex] {
+			continue
+		}
+		connections = append(connections, candidate.connection)
+		used[fromIndex]++
+		used[toIndex]++
+		added++
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

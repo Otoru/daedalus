@@ -74,8 +74,8 @@ func newRoutingSearch(ctx context.Context, occupancy *placementOccupancy) *routi
 
 // routeCorridors routes Connections in received order. Each placed band becomes
 // an obstacle for every Corridor routed after it, together with every free
-// Cell within Chebyshev distance 1 of that band, unless both Cells are
-// orthogonally adjacent to some Room's footprint. The clearance map and the
+// Cell within Chebyshev distance 1 of that band. The gap holds beside a Room
+// wall the same as it does in open ground. The clearance map and the
 // breadth-first fallback share that obstacle set. A nil CorridorGeometry is
 // this entry point: it never draws a width.
 func routeCorridors(
@@ -178,8 +178,8 @@ func routeCorridorsWithWidths(
 			ID: corridorID, FromRoomID: connection.FromRoomID, ToRoomID: connection.ToRoomID,
 			FromDoorID: fromDoorID, ToDoorID: toDoorID, Centerline: centerline, Cells: cells,
 		})
-		// The band is closed, and so is its Chebyshev halo except beside a Room
-		// wall. Room Cells stay owned by their Room.
+		// The band is closed, and so is its Chebyshev halo, including the Cells
+		// that sit on a Room wall. Room Cells stay owned by their Room.
 		blockCorridorHalo(occupancy, cells)
 		if search.clearance != nil {
 			search.clearance = newWidthClearance(occupancy)
@@ -190,15 +190,11 @@ func routeCorridorsWithWidths(
 
 // blockCorridorHalo reserves the placed band and its one-Cell Chebyshev halo.
 // The band itself is always reserved, so two Corridors never share a Cell.
-// A halo Cell stays free only when it and every band Cell within Chebyshev
-// distance 1 of it are orthogonally adjacent to some Room's footprint: beside
-// a Room wall Corridors may run next to each other. Anywhere else the halo
-// stays closed, diagonal contact included. Cells already owned, including
-// Room footprints, are left unchanged.
+// Every free neighbour within Chebyshev distance 1 is reserved too, diagonal
+// contact included, whether or not it sits on a Room wall. Cells already
+// owned, including Room footprints, are left unchanged.
 func blockCorridorHalo(occupancy *placementOccupancy, band []Cell) {
-	besideRoom := make([]bool, len(band))
-	for index, cell := range band {
-		besideRoom[index] = orthogonallyAdjacentToRoom(occupancy, cell)
+	for _, cell := range band {
 		if _, occupied := occupancy.ownerAt(cell); occupied {
 			continue
 		}
@@ -214,44 +210,10 @@ func blockCorridorHalo(occupancy *placementOccupancy, band []Cell) {
 				if _, occupied := occupancy.ownerAt(neighbor); occupied {
 					continue
 				}
-				if orthogonallyAdjacentToRoom(occupancy, neighbor) && haloCellStaysOpen(band, besideRoom, neighbor) {
-					continue
-				}
 				occupancy.mark(corridorObstacleOwner, []Cell{neighbor})
 			}
 		}
 	}
-}
-
-// orthogonallyAdjacentToRoom reports whether cell shares an edge with a Room
-// footprint. A Corridor obstacle is not a Room, and a diagonal touch is not
-// enough: the exception is only for Cells on a Room wall.
-func orthogonallyAdjacentToRoom(occupancy *placementOccupancy, cell Cell) bool {
-	for direction := DirectionNorth; direction < Direction(routingDirectionCount); direction++ {
-		delta := direction.Delta()
-		neighbor := Cell{X: cell.X + delta.X, Y: cell.Y + delta.Y}
-		owner, occupied := occupancy.ownerAt(neighbor)
-		if occupied && owner != corridorObstacleOwner {
-			return true
-		}
-	}
-	return false
-}
-
-// haloCellStaysOpen reports whether neighbor may be used by a later Corridor.
-// It is open only when every band Cell within Chebyshev distance 1 is itself
-// orthogonally adjacent to a Room. One band Cell out in open ground is enough
-// to keep the neighbour closed.
-func haloCellStaysOpen(band []Cell, besideRoom []bool, neighbor Cell) bool {
-	for index, cell := range band {
-		if chebyshevDistance(cell, neighbor) > 1 {
-			continue
-		}
-		if !besideRoom[index] {
-			return false
-		}
-	}
-	return true
 }
 
 func chebyshevDistance(first, second Cell) int32 {

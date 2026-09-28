@@ -30,11 +30,8 @@
 // is Empty, Room, or Corridor. A Room Cell names exactly one Room. A Corridor
 // Cell names exactly one Corridor. Two Corridors never share a Cell. They also
 // never sit within Chebyshev distance 1 of each other, diagonal contact
-// included, unless both of those Cells are orthogonally adjacent to some
-// Room's footprint. Beside a Room wall Corridors may run next to each other,
-// because that is where several Corridors have to leave the same Room. Away
-// from Rooms the one-Cell separation stands, using the same Chebyshev measure
-// as MinRoomGap. An Empty Cell names neither.
+// included, beside a Room wall the same as in open ground. The measure is the
+// one MinRoomGap uses between Rooms. An Empty Cell names neither.
 //
 // A Room is a topological vertex whose footprint is a finite, non-empty,
 // 4-connected set of Cells. The footprint does not include Doors or Corridors.
@@ -189,13 +186,10 @@
 // and crosses no Room footprint. Corridors are routed in connection order.
 // Once a band is placed, that band is closed to every later Corridor, and so
 // is every free Cell within Chebyshev distance 1 of it — the same measure
-// MinRoomGap uses between Rooms — unless both the placed Cell and that
-// neighbour are orthogonally adjacent to some Room's footprint. A neighbour
-// that also sits within Chebyshev distance 1 of a band Cell out in open
-// ground stays closed. Two Corridors therefore never share a Cell. They may
-// touch only beside a Room wall; in open ground the one-Cell separation
-// stands, diagonally included. The clearance map and the breadth-first
-// fallback both treat that set as obstacles.
+// MinRoomGap uses between Rooms — including Cells that sit on a Room wall.
+// Two Corridors therefore never share a Cell and never touch, diagonally
+// included. The clearance map and the breadth-first fallback both treat that
+// set as obstacles.
 //
 // Cells is that band in row-major order. Centerline is the ordered
 // 4-connected route from the From side to the To side. A W-wide Corridor
@@ -281,9 +275,27 @@
 // Cell order. Comparing squared distances preserves that order, because the
 // square root is strictly increasing on non-negative values, and it avoids
 // another rounding step on the frozen path. Prim receives its stream and
-// consumes no draw. The tree is the minimum total weight among spanning
-// trees; it does not minimize routed Cells. It is always the backbone. The
-// Layout is a tree only when ExtraEdgeCount is 0.
+// consumes no draw.
+//
+// Before the first edge, each Room's opening budget is computed once from its
+// footprint and from ConnectionRequest.MaxCorridorWidth (the widest declared
+// Corridor width, or 1 when CorridorGeometry is nil). An opening claims that
+// many contiguous boundary Cells on one straight side. Two openings on the
+// same side need at least two unused boundary Cells between them, and openings
+// on adjacent sides are incompatible when their outside Cells would lie within
+// Chebyshev distance 1, so corners count. Prim still takes the cheapest edge
+// under the tie-break above, but only among edges that would not exceed either
+// endpoint's remaining budget. A greedy choice can fill every Room already in
+// the tree and leave another Room unvisited. That Room is spliced into the
+// tree: the nearest in-tree Room is chosen with the same ordering, one of its
+// existing edges is removed, and the stranded Room — which must be able to
+// host two openings — is inserted between those two endpoints. The two Rooms
+// that were already joined keep the same degree. If no such splice exists,
+// Connect returns ErrUnconnectablePlacement instead of a tree that routing
+// would later fail to draw. The tree is the minimum total weight among the
+// feasible spanning trees Prim actually considers; it does not minimize routed
+// Cells. It is always the backbone. The Layout is a tree only when
+// ExtraEdgeCount is 0.
 //
 // Thematic roles are a projection onto that tree, not a third plugin. If Start
 // is requested it is RoomID 0, the first Room accepted, which is also the one
@@ -299,10 +311,14 @@
 //
 // When ExtraEdgeCount is greater than zero, the Generator takes every edge of
 // the complete graph that is not already in the tree, orders those edges by
-// increasing Euclidean distance and the same Prim tie-break, and appends the
-// first ExtraEdgeCount of them. The choice is ordered, not random, and it
-// consumes no draw. Zero skips the phase entirely. The graph stays connected
-// either way; extra edges are the only way it gains a cycle.
+// increasing Euclidean distance and the same Prim tie-break, and appends
+// candidates in that order until ExtraEdgeCount of them have been kept or the
+// list runs out. A candidate that would put either Room past its opening
+// budget is skipped, and the next candidate is considered. The choice is
+// ordered, not random, and it consumes no draw. Zero skips the phase entirely.
+// The graph stays connected either way; extra edges are the only way it gains
+// a cycle. Fewer shortcuts than requested is a successful Layout when the
+// budget runs out.
 //
 // Routing then enumerates, for each edge, every opening (RoomID, At,
 // Direction) whose Cell belongs to the footprint, whose Direction is cardinal,
@@ -324,9 +340,7 @@
 // keep a Cell only when its clearance admits that width, so the whole band
 // stays inside the Grid and off every Room footprint. Width 1 uses the same
 // one-Cell search. A placed band is an obstacle for both searches, and so is
-// its one-Cell Chebyshev halo, except a Cell that is orthogonally adjacent to
-// a Room footprint when every band Cell within Chebyshev distance 1 of it is
-// too. Those Cells stay free so Corridors can converge on a Room wall. The
+// its one-Cell Chebyshev halo, with no exception for a Room wall. The
 // same opening is reused only when an earlier Corridor left no Cells to
 // reserve, which is the adjacent facing case; otherwise each Door names one
 // Corridor. Door.At need not equal Room.At. Only when no pair
@@ -412,7 +426,7 @@
 //
 // # Errors
 //
-// Four sentinels name the SDK failure categories. They are wrapped with
+// Five sentinels name the SDK failure categories. They are wrapped with
 // context, and callers distinguish them with errors.Is. None of them is
 // accompanied by a partial Layout.
 //
@@ -426,8 +440,11 @@
 // before allocation, generation, or any stream consumption, and the request is
 // never silently truncated. ErrNoCompatiblePlant reports a valid Config whose
 // catalog has no Room plant that supports a Room's Directions and the assigned
-// role's required tags. ErrUnroutableEdge reports an edge for which both
-// L-routes are blocked and the breadth-first search finds no orthogonal path.
+// role's required tags. ErrUnconnectablePlacement reports a footprint set that
+// cannot host a spanning tree under the one-Cell separation rule; the
+// Connector returns it before routing begins. ErrUnroutableEdge reports an
+// edge for which both L-routes are blocked and the breadth-first search finds
+// no orthogonal path.
 //
 // Cancellation and deadlines are not sentinels. GenerateContext returns
 // context.Canceled or context.DeadlineExceeded, still with the zero Layout.
@@ -488,9 +505,10 @@
 // width does not fit, degrades only through the other declared widths. The
 // dynamic profile keeps MinRoomGap 1. A Corridor wider than the gap between
 // two Rooms cannot pass between them. Once placed, a band keeps a one-Cell
-// Chebyshev halo clear of every later Corridor except beside a Room wall,
-// where Corridors may touch. A caller asking for wide Corridors that must
-// stay apart in open ground should raise MinRoomGap to match.
+// Chebyshev halo clear of every later Corridor, beside a Room wall as well as
+// in open ground. A caller asking for wide Corridors should raise MinRoomGap
+// to match, and should expect small Rooms to accept fewer connections: the
+// Connector will not ask a Room for more openings than that width can separate.
 // On a crowded Grid the request may be ErrUnroutableEdge; that is a miss, not
 // a cue to invent a narrower width.
 // ExtraEdgeCount defaults to 0, which keeps the backbone a tree. Raising it

@@ -383,7 +383,6 @@ func checkCorridorsStayApart(t *testing.T, layout Layout) {
 			owners[cell] = corridor.ID
 		}
 	}
-	besideRoom := cellsBesideRoomFootprints(layout.Rooms)
 	for _, corridor := range layout.Corridors {
 		for _, cell := range corridor.Cells {
 			for dy := int32(-1); dy <= 1; dy++ {
@@ -393,10 +392,7 @@ func checkCorridorsStayApart(t *testing.T, layout Layout) {
 					if !exists || other == corridor.ID {
 						continue
 					}
-					if besideRoom[cell] && besideRoom[neighbor] {
-						continue
-					}
-					assert.Fail(t, "corridors touch away from a Room wall",
+					assert.Fail(t, "corridors touch",
 						"Corridor %d at %v is within Chebyshev 1 of Corridor %d", corridor.ID, cell, other)
 				}
 			}

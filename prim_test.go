@@ -74,6 +74,12 @@ func TestPrimHasMinimumWeightAgainstKruskal(t *testing.T) {
 		edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{Context: context.Background(), Rooms: rooms})
 		require.NoError(t, err)
 
+		assertConnectionsFormTree(t, rooms, edges)
+		assert.True(t, openingsFit(rooms, edges), "random case %d exceeds the opening budget", caseIndex)
+		unconstrained := referencePrim(rooms)
+		if !openingsFit(rooms, unconstrained) {
+			continue
+		}
 		wantWeight := kruskalWeight(rooms)
 		gotWeight := connectionsWeight(rooms, edges)
 		assert.InDelta(t, wantWeight, gotWeight, 1e-12, "random case %d", caseIndex)
@@ -128,8 +134,12 @@ func TestOptimizedPrimMatchesNaivePseudocode(t *testing.T) {
 		got, err := (primRoomsConnector{}).Connect(ConnectionRequest{Context: context.Background(), Rooms: rooms})
 		require.NoError(t, err)
 		want := referencePrim(rooms)
-
-		assert.Equal(t, want, got, "random case %d", caseIndex)
+		if openingsFit(rooms, want) {
+			assert.Equal(t, want, got, "random case %d", caseIndex)
+			continue
+		}
+		assertConnectionsFormTree(t, rooms, got)
+		assert.True(t, openingsFit(rooms, got), "random case %d", caseIndex)
 	}
 }
 
@@ -201,6 +211,117 @@ func TestConcurrentPrimCallsAreIdentical(t *testing.T) {
 		require.NoError(t, errors[worker])
 		assert.Equal(t, baseline, results[worker])
 	}
+}
+
+func TestPrimRefusesAnEdgePastEitherRoomsOpeningBudget(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 1, 0),
+		placedRoomAt(1, 0, 0),
+		placedRoomAt(2, 2, 0),
+		placedRoomAt(3, 1, 1),
+		placedRoomAt(4, 1, 2),
+	}
+	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
+		Context: context.Background(), Width: 3, Height: 3, MaxCorridorWidth: 1, Rooms: rooms,
+	})
+
+	require.NoError(t, err)
+	assertConnectionsFormTree(t, rooms, edges)
+	assert.True(t, openingsFitOnGrid(rooms, edges, 3, 3, 1))
+	unconstrained := referencePrim(rooms)
+	assert.False(t, openingsFitOnGrid(rooms, unconstrained, 3, 3, 1),
+		"the unconstrained tree overfills the hub, which is the case capacity has to change")
+}
+
+func TestPrimReportsAPlacementThatCannotBeSeparated(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 2, 0),
+		placedRoomAt(2, 0, 2),
+		placedRoomAt(3, 2, 2),
+	}
+	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
+		Context: context.Background(), Width: 3, Height: 3, MaxCorridorWidth: 1, Rooms: rooms,
+	})
+
+	require.ErrorIs(t, err, ErrUnconnectablePlacement)
+	assert.ErrorContains(t, err, "placement cannot be connected under the separation rule")
+	assert.Nil(t, edges)
+}
+
+func TestPrimKeepsTheUnconstrainedTreeWhenEveryRoomHasSpareOpenings(t *testing.T) {
+	rooms := []PlacedRoom{
+		rectanglePlacedRoom(0, 0, 0, 5, 5),
+		rectanglePlacedRoom(1, 20, 0, 5, 5),
+		rectanglePlacedRoom(2, 0, 20, 5, 5),
+		rectanglePlacedRoom(3, 20, 20, 5, 5),
+	}
+	edges, err := (primRoomsConnector{}).Connect(ConnectionRequest{
+		Context: context.Background(), Width: 40, Height: 40, MaxCorridorWidth: 1, Rooms: rooms,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, referencePrim(rooms), edges)
+}
+
+func TestExtraEdgePhaseSkipsAShortcutThatOverfillsARoom(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 3, 0),
+		placedRoomAt(2, 0, 3),
+		placedRoomAt(3, 6, 0),
+	}
+	backbone := []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 0, ToRoomID: 2},
+		{FromRoomID: 1, ToRoomID: 3},
+	}
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1)
+
+	require.NoError(t, err)
+	assert.NotContains(t, connections, Connection{FromRoomID: 0, ToRoomID: 3})
+	assert.True(t, openingsFit(rooms, connections))
+	assert.GreaterOrEqual(t, len(connections), len(backbone))
+}
+
+func rectanglePlacedRoom(id RoomID, x, y int32, width, height uint32) PlacedRoom {
+	return PlacedRoom{
+		ID: id, At: Cell{X: x, Y: y}, Shape: RoomShapeRectangle,
+		Origin: Cell{X: x, Y: y}, Width: width, Height: height,
+		Cells: rectangleCells(x, y, width, height),
+	}
+}
+
+func openingsFit(rooms []PlacedRoom, edges []Connection) bool {
+	return openingsFitOnGrid(rooms, edges, 0, 0, 1)
+}
+
+func openingsFitOnGrid(rooms []PlacedRoom, edges []Connection, gridWidth, gridHeight, corridorWidth uint32) bool {
+	degree := make([]int, len(rooms))
+	for _, edge := range edges {
+		from := -1
+		to := -1
+		for index, room := range rooms {
+			if room.ID == edge.FromRoomID {
+				from = index
+			}
+			if room.ID == edge.ToRoomID {
+				to = index
+			}
+		}
+		if from < 0 || to < 0 {
+			return false
+		}
+		degree[from]++
+		degree[to]++
+	}
+	for index, room := range rooms {
+		capacity := roomOpeningCapacity(placedRoomFootprint(room), gridWidth, gridHeight, corridorWidth)
+		if degree[index] > capacity {
+			return false
+		}
+	}
+	return true
 }
 
 func placedRoomAt(id RoomID, x, y int32) PlacedRoom {

@@ -19,6 +19,7 @@ func TestSentinelErrorsSupportErrorsIs(t *testing.T) {
 		{"ErrLimitExceeded", ErrLimitExceeded},
 		{"ErrNoCompatiblePlant", ErrNoCompatiblePlant},
 		{"ErrUnroutableEdge", ErrUnroutableEdge},
+		{"ErrUnconnectablePlacement", ErrUnconnectablePlacement},
 	}
 	for _, tc := range sentinels {
 		t.Run(tc.name, func(t *testing.T) {

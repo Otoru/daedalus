@@ -140,11 +140,10 @@ func TestRoomDoorIDsAreSortedByCellAndDirection(t *testing.T) {
 	require.Len(t, layout.Rooms[0].DoorIDs, 2)
 	first := layout.Doors[layout.Rooms[0].DoorIDs[0]]
 	second := layout.Doors[layout.Rooms[0].DoorIDs[1]]
-	// The south edge is routed first and occupies its own opening. The east
-	// opening stays free: both Cells are orthogonally adjacent to the Room, so
-	// the Corridors may touch there. The second edge therefore leaves east.
-	// Same Cell, so Direction order is East then South.
-	assert.Equal(t, DirectionEast, first.Direction)
+	// The south edge is routed first and its halo closes the east opening,
+	// which would sit at Chebyshev distance 1. The second edge leaves north.
+	// Both Doors are the Room's only Cell, so Direction order is North then South.
+	assert.Equal(t, DirectionNorth, first.Direction)
 	assert.Equal(t, DirectionSouth, second.Direction)
 	assert.Equal(t, first.At, second.At)
 }

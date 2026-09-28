@@ -78,9 +78,11 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 	if connector == nil {
 		connector = primRoomsConnector{}
 	}
+	corridorWidth := widestDeclaredCorridorWidth(effective.corridorWidths)
 	backbone, err := connector.Connect(ConnectionRequest{
 		Context: ctx, Rooms: rooms, Width: effective.width, Height: effective.height,
 		ExtraEdgeCount: effective.extraEdgeCount, Seed: effective.seed,
+		MaxCorridorWidth: corridorWidth,
 	})
 	if err != nil {
 		return Layout{}, err
@@ -275,6 +277,7 @@ func applyGeneratorTopologyOptions(
 	if existingExtraEdges == 0 {
 		return applyTopologyOptions(
 			ctx, rooms, connections, effective.roomRoleRequests, effective.extraEdgeCount,
+			effective.width, effective.height, widestDeclaredCorridorWidth(effective.corridorWidths),
 		)
 	}
 
@@ -288,7 +291,10 @@ func applyGeneratorTopologyOptions(
 		return nil, nil, err
 	}
 	remainingExtraEdges := effective.extraEdgeCount - uint32(existingExtraEdges)
-	finalConnections, err := addExtraConnections(ctx, rooms, connections, remainingExtraEdges)
+	finalConnections, err := addExtraConnections(
+		ctx, rooms, connections, remainingExtraEdges,
+		effective.width, effective.height, widestDeclaredCorridorWidth(effective.corridorWidths),
+	)
 	if err != nil {
 		return nil, nil, err
 	}

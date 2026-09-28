@@ -277,15 +277,14 @@ func TestShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 	}
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2)
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1)
 	require.NoError(t, err)
 	assert.Equal(t, []Connection{
 		{FromRoomID: 0, ToRoomID: 1},
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 		{FromRoomID: 2, ToRoomID: 3},
-		{FromRoomID: 0, ToRoomID: 3},
-	}, connections, "shortcuts must be the shortest discarded edges first")
+	}, connections, "a shortcut that would put a third opening on a 1×1 Room is skipped")
 
 	config := Config{Width: 48, Height: 48, Seed: 121, MaxRooms: 24, ExtraEdgeCount: 3}
 	effective, err := normalizeConfig(config)
@@ -512,6 +511,7 @@ func isKnownGenerationError(err error) bool {
 		errors.Is(err, ErrLimitExceeded) ||
 		errors.Is(err, ErrNoCompatiblePlant) ||
 		errors.Is(err, ErrUnroutableEdge) ||
+		errors.Is(err, ErrUnconnectablePlacement) ||
 		errors.Is(err, context.Canceled) ||
 		errors.Is(err, context.DeadlineExceeded)
 }
