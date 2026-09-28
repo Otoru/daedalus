@@ -293,9 +293,15 @@
 // ErrUnroutableEdge.
 //
 // Before the first edge, each Room's opening budget is computed once from its
-// footprint and from ConnectionRequest.MaxCorridorWidth (the widest declared
-// Corridor width, or 1 when CorridorGeometry is nil). An opening claims that
-// many contiguous boundary Cells on one straight side. Two openings on the
+// footprint and from ConnectionRequest.MaxCorridorWidth. Generator sets that
+// field to the narrowest declared Corridor width, or 1 when CorridorGeometry
+// is nil. The budget answers whether the Room can host a Corridor at a width
+// degradation can always reach. Using the widest declared width instead
+// reports a circle, and a cross smaller than 6, as having no opening at all:
+// their stepped perimeters have no straight run of three Cells facing one
+// direction, so Prim would refuse every edge even though width 1 fits and is
+// declared. An opening claims that many contiguous boundary Cells on one
+// straight side. Two openings on the
 // same side need at least two unused boundary Cells between them, and openings
 // on adjacent sides are incompatible when their outside Cells would lie within
 // Chebyshev distance 1, so corners count. Prim still takes the cheapest edge
@@ -537,8 +543,9 @@
 // two Rooms cannot pass between them. Once placed, a band keeps a one-Cell
 // Chebyshev halo clear of every later Corridor, beside a Room wall as well as
 // in open ground. A caller asking for wide Corridors should raise MinRoomGap
-// to match, and should expect small Rooms to accept fewer connections: the
-// Connector will not ask a Room for more openings than that width can separate.
+// to match. The Connector budgets openings at the narrowest declared width,
+// so a Room that can host that width is not refused; the router still places
+// only a declared width and degrades downward when a wider one does not fit.
 // On a crowded Grid the built-in may return ErrUnconnectablePlacement when a
 // Room has no routable edge. An injected Connector that returns an edge it did
 // not reserve may still receive ErrUnroutableEdge. Neither miss is a cue to

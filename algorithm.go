@@ -159,11 +159,14 @@ type ConnectionRequest struct {
 	// Seed is the source of the request's connection random stream. The built-in
 	// prim_rooms_v1 Connector receives it but consumes no draw.
 	Seed Seed
-	// MaxCorridorWidth is the widest Corridor width declared for this request.
-	// Zero means one Cell, the same budget as a nil CorridorGeometry. The
-	// built-in Connector will not put more openings on a Room than that width
-	// can keep Chebyshev-separated, and a game-supplied Connector needs the
-	// same number to apply the same limit.
+	// MaxCorridorWidth is the Corridor width the opening budget is computed at.
+	// Generator sets it to the narrowest declared width, or 1 when
+	// CorridorGeometry is nil. Degradation can always reach that width, so a
+	// Room that can host it must stay reachable; budgeting the widest declared
+	// width refuses a Room whose perimeter has no straight run that long.
+	// Zero means one Cell. The built-in Connector will not put more openings
+	// on a Room than that width can keep Chebyshev-separated, and a
+	// game-supplied Connector needs the same number to apply the same limit.
 	MaxCorridorWidth uint32
 	// TryRoute, when non-nil, routes one pair against corridors already
 	// reserved for this request. Success reserves that band and its one-Cell

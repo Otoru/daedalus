@@ -78,7 +78,7 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 	if connector == nil {
 		connector = primRoomsConnector{}
 	}
-	corridorWidth := widestDeclaredCorridorWidth(effective.corridorWidths)
+	corridorWidth := narrowestDeclaredCorridorWidth(effective.corridorWidths)
 	session, err := openRouteSession(ctx, effective, rooms)
 	if err != nil {
 		return Layout{}, err
@@ -267,7 +267,7 @@ func applyGeneratorTopologyOptions(
 	if existingExtraEdges == 0 {
 		return applyTopologyOptions(
 			ctx, rooms, connections, effective.roomRoleRequests, effective.extraEdgeCount,
-			effective.width, effective.height, widestDeclaredCorridorWidth(effective.corridorWidths),
+			effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths),
 			tryRoute,
 		)
 	}
@@ -284,7 +284,7 @@ func applyGeneratorTopologyOptions(
 	remainingExtraEdges := effective.extraEdgeCount - uint32(existingExtraEdges)
 	finalConnections, err := addExtraConnections(
 		ctx, rooms, connections, remainingExtraEdges,
-		effective.width, effective.height, widestDeclaredCorridorWidth(effective.corridorWidths),
+		effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths),
 		tryRoute,
 	)
 	if err != nil {

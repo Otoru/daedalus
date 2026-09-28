@@ -26,20 +26,28 @@ type doorway struct {
 	outside []Cell
 }
 
-// widestDeclaredCorridorWidth is the width the Connector budgets for. A nil
-// geometry has no declared widths and budgets one Cell, the same width the
-// router uses when it never draws.
-func widestDeclaredCorridorWidth(widths []CorridorWidthWeight) uint32 {
-	var widest uint32
+// narrowestDeclaredCorridorWidth is the width the Connector budgets for.
+// Degradation walks the declared list downward and can always reach this
+// width, so a Room that can host it is reachable. Budgeting the widest
+// declared width refuses a circle, and a cross smaller than 6: those
+// perimeters have no straight run of three Cells facing one direction, so
+// their capacity at width 3 is zero even though a one-Cell corridor fits.
+// A nil geometry has no declared widths and budgets one Cell, the same
+// width the router uses when it never draws.
+func narrowestDeclaredCorridorWidth(widths []CorridorWidthWeight) uint32 {
+	var narrowest uint32
 	for _, candidate := range widths {
-		if candidate.Width > widest {
-			widest = candidate.Width
+		if candidate.Width == 0 {
+			continue
+		}
+		if narrowest == 0 || candidate.Width < narrowest {
+			narrowest = candidate.Width
 		}
 	}
-	if widest == 0 {
+	if narrowest == 0 {
 		return 1
 	}
-	return widest
+	return narrowest
 }
 
 // placedRoomFootprint is the Room's occupied Cells. A Connector test may

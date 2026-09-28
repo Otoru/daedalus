@@ -346,14 +346,16 @@ func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 }
 
 // checkRoomOpeningBudget records that no Room grew more Corridors than its
-// footprint can separate at the widest declared width. The count is the same
-// budget the Connector spends, so a successful Layout cannot have asked a
-// Room for an opening the separation rule cannot host.
+// footprint can separate at the narrowest declared width. That is the budget
+// the Connector spends. A successful Layout can exceed the widest width's
+// capacity — a circle hosts a one-Cell opening and none of width 3 — and
+// still cannot ask a Room for more openings than the width degradation can
+// always reach.
 func (state *layoutInvariantCheck) checkRoomOpeningBudget() {
 	if len(state.layout.Rooms) == 0 {
 		return
 	}
-	width := widestDeclaredCorridorWidth(state.effective.corridorWidths)
+	width := narrowestDeclaredCorridorWidth(state.effective.corridorWidths)
 	degree := make([]int, len(state.layout.Rooms))
 	indexByID := make(map[RoomID]int, len(state.layout.Rooms))
 	for roomIndex, room := range state.layout.Rooms {

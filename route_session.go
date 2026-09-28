@@ -248,6 +248,19 @@ func (session *routeSession) drop(target Connection) bool {
 	}
 	session.unmark(session.reserved[index].blocked)
 	session.reserved = append(session.reserved[:index], session.reserved[index+1:]...)
+	// The released corridor owned the only reservation on cells beside a
+	// corridor that remains. Those cells were not in the survivor's blocked
+	// list, because they were already taken. Releasing them without claiming
+	// the gap again lets the next route sit on a diagonal or an orthogonal
+	// neighbour. Each survivor marks whatever of its halo is free now.
+	for recordIndex := range session.reserved {
+		extra := blockCorridorHalo(session.occupancy, session.reserved[recordIndex].cells)
+		if len(extra) == 0 {
+			continue
+		}
+		blocked := append([]Cell(nil), session.reserved[recordIndex].blocked...)
+		session.reserved[recordIndex].blocked = append(blocked, extra...)
+	}
 	session.rebuildClearance()
 	return true
 }
