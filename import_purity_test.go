@@ -12,36 +12,112 @@ import (
 	"testing"
 )
 
+// purePackages lists every package whose imports are policed, with the
+// non-GOROOT import paths each one is permitted. The root permits none.
+// utils/pathfinding permits the root and nothing else: it is the generation
+// core plus one algorithm, not a place for grpc, protobuf, fx or zap.
+var purePackages = []struct {
+	directory string   // relative to the repository root
+	allowed   []string // import paths permitted outside GOROOT
+}{
+	{directory: ".", allowed: nil},
+	{directory: "utils/pathfinding", allowed: []string{"github.com/Otoru/daedalus"}},
+}
+
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core
-// independently importable: the root package imports only the standard library,
-// and a controlled violation is recorded as a failure. grpc, protobuf, fx, zap,
-// and generated bindings live outside this package. Analysis uses the AST
-// (go/parser), and each import is resolved with go/build; any import outside
-// GOROOT fails the test.
+// independently importable. Each entry in purePackages is checked as a
+// subtest: the root permits only the standard library, and utils/pathfinding
+// may also import the root module. grpc, protobuf, fx, zap, and generated
+// bindings stay outside both. Analysis uses the AST (go/parser). An import
+// is accepted when it is on that package's allowlist or when go/build
+// resolves it inside GOROOT.
 func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
-	directory, files := collectRootProductionFiles(t)
-	if len(files) == 0 {
-		t.Fatal("daedalus production package not found")
-	}
-	for _, fileName := range files {
-		for _, importPath := range readImportPaths(t, directory, fileName) {
-			assertStandardLibraryImport(t, directory, fileName, importPath)
-		}
+	for _, pure := range purePackages {
+		t.Run(pure.directory, func(t *testing.T) {
+			directory, files := collectProductionFiles(t, pure.directory)
+			if len(files) == 0 {
+				t.Fatalf("no production Go files in %s", pure.directory)
+			}
+			for _, fileName := range files {
+				for _, importPath := range readImportPaths(t, directory, fileName) {
+					assertPermittedImport(t, fileName, importPath, pure.allowed)
+				}
+			}
+		})
 	}
 }
 
-// collectRootProductionFiles lists non-test Go files in the repository root
-// that match the default build constraints.
-func collectRootProductionFiles(t *testing.T) (string, []string) {
+// TestAllowedImport locks the allowlist decision itself. A scan of the tree
+// can stay green while the assertion is a tautology, because every import
+// that exists today is legitimate. These cases are the ones the tree does
+// not contain: grpc is refused by both packages, the root module is refused
+// at the root and accepted by utils/pathfinding, and a standard-library path
+// is accepted by both.
+func TestAllowedImport(t *testing.T) {
+	root := allowlist(t, ".")
+	pathfinding := allowlist(t, "utils/pathfinding")
+	cases := []struct {
+		name       string
+		importPath string
+		allowed    []string
+		want       bool
+	}{
+		{name: "grpc rejected by root", importPath: "google.golang.org/grpc", allowed: root, want: false},
+		{name: "grpc rejected by pathfinding", importPath: "google.golang.org/grpc", allowed: pathfinding, want: false},
+		{name: "root module rejected by root", importPath: "github.com/Otoru/daedalus", allowed: root, want: false},
+		{name: "root module accepted by pathfinding", importPath: "github.com/Otoru/daedalus", allowed: pathfinding, want: true},
+		{name: "stdlib accepted by root", importPath: "fmt", allowed: root, want: true},
+		{name: "stdlib accepted by pathfinding", importPath: "fmt", allowed: pathfinding, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := allowedImport(tc.importPath, tc.allowed); got != tc.want {
+				t.Fatalf("allowedImport(%q) = %v, want %v", tc.importPath, got, tc.want)
+			}
+		})
+	}
+}
+
+func allowlist(t *testing.T, directory string) []string {
 	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
+	for _, pure := range purePackages {
+		if pure.directory == directory {
+			return pure.allowed
+		}
+	}
+	t.Fatalf("purePackages has no entry for %s", directory)
+	return nil
+}
+
+// allowedImport reports whether importPath may appear in a package whose
+// non-GOROOT allowlist is allowed. A listed path is accepted before any
+// GOROOT lookup. Every other path must resolve inside GOROOT.
+func allowedImport(importPath string, allowed []string) bool {
+	for _, permitted := range allowed {
+		if importPath == permitted {
+			return true
+		}
+	}
+	root, ok := repositoryRoot()
+	if !ok {
+		return false
+	}
+	imported, err := build.Default.Import(importPath, root, build.FindOnly)
+	return err == nil && imported.Goroot
+}
+
+// collectProductionFiles lists non-test Go files in directory (relative to
+// the repository root) that match the default build constraints.
+func collectProductionFiles(t *testing.T, relative string) (string, []string) {
+	t.Helper()
+	root, ok := repositoryRoot()
 	if !ok {
 		t.Fatal("locate this test file")
 	}
-	directory := filepath.Dir(thisFile)
+	directory := filepath.Join(root, relative)
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		t.Fatalf("list root production files: %v", err)
+		t.Fatalf("list production files in %s: %v", relative, err)
 	}
 
 	var files []string
@@ -60,6 +136,14 @@ func collectRootProductionFiles(t *testing.T) (string, []string) {
 		files = append(files, fileName)
 	}
 	return directory, files
+}
+
+func repositoryRoot() (string, bool) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", false
+	}
+	return filepath.Dir(thisFile), true
 }
 
 // readImportPaths parses one production file and returns its import paths.
@@ -81,11 +165,12 @@ func readImportPaths(t *testing.T, directory, fileName string) []string {
 	return paths
 }
 
-// assertStandardLibraryImport fails when an import does not resolve inside GOROOT.
-func assertStandardLibraryImport(t *testing.T, directory, fileName, importPath string) {
+// assertPermittedImport fails when an import is neither on the package
+// allowlist nor resolved inside GOROOT.
+func assertPermittedImport(t *testing.T, fileName, importPath string, allowed []string) {
 	t.Helper()
-	importedPackage, err := build.Default.Import(importPath, directory, build.FindOnly)
-	if err != nil || !importedPackage.Goroot {
-		t.Errorf("%s imports package outside the standard library: %q", filepath.Base(fileName), importPath)
+	if allowedImport(importPath, allowed) {
+		return
 	}
+	t.Errorf("%s imports package outside the standard library: %q", filepath.Base(fileName), importPath)
 }
