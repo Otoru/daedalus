@@ -1,0 +1,554 @@
+{
+  "Seed": 61462,
+  "Grid": {
+    "Width": 7,
+    "Height": 5,
+    "CellSize": 1,
+    "Cells": [
+      {
+        "At": {
+          "X": 0,
+          "Y": 0
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 0
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 0
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 0
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 0
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 0
+        },
+        "Kind": 1,
+        "RoomID": 1,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 0
+        },
+        "Kind": 1,
+        "RoomID": 1,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 1
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 1
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 1
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 1
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 1
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 1
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 1
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 2
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 2
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 2
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 2
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 2
+        },
+        "Kind": 0,
+        "RoomID": null,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 2
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 2
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 3
+        },
+        "Kind": 1,
+        "RoomID": 0,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 3
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 3
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 3
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 3
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 3
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 3
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 0,
+          "Y": 4
+        },
+        "Kind": 1,
+        "RoomID": 0,
+        "CorridorIDs": null
+      },
+      {
+        "At": {
+          "X": 1,
+          "Y": 4
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 2,
+          "Y": 4
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 3,
+          "Y": 4
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 4,
+          "Y": 4
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 5,
+          "Y": 4
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      },
+      {
+        "At": {
+          "X": 6,
+          "Y": 4
+        },
+        "Kind": 2,
+        "RoomID": null,
+        "CorridorIDs": [
+          0
+        ]
+      }
+    ]
+  },
+  "Rooms": [
+    {
+      "ID": 0,
+      "At": {
+        "X": 0,
+        "Y": 3
+      },
+      "Shape": 0,
+      "Origin": {
+        "X": 0,
+        "Y": 3
+      },
+      "Width": 1,
+      "Height": 2,
+      "Cells": [
+        {
+          "X": 0,
+          "Y": 3
+        },
+        {
+          "X": 0,
+          "Y": 4
+        }
+      ],
+      "Role": null,
+      "PlantID": "",
+      "Tags": null,
+      "DoorIDs": [
+        0
+      ]
+    },
+    {
+      "ID": 1,
+      "At": {
+        "X": 5,
+        "Y": 0
+      },
+      "Shape": 0,
+      "Origin": {
+        "X": 5,
+        "Y": 0
+      },
+      "Width": 2,
+      "Height": 1,
+      "Cells": [
+        {
+          "X": 5,
+          "Y": 0
+        },
+        {
+          "X": 6,
+          "Y": 0
+        }
+      ],
+      "Role": null,
+      "PlantID": "",
+      "Tags": null,
+      "DoorIDs": [
+        1
+      ]
+    }
+  ],
+  "Corridors": [
+    {
+      "ID": 0,
+      "FromRoomID": 0,
+      "ToRoomID": 1,
+      "FromDoorID": 0,
+      "ToDoorID": 1,
+      "Centerline": [
+        {
+          "X": 1,
+          "Y": 3
+        },
+        {
+          "X": 2,
+          "Y": 3
+        },
+        {
+          "X": 3,
+          "Y": 3
+        },
+        {
+          "X": 4,
+          "Y": 3
+        },
+        {
+          "X": 5,
+          "Y": 3
+        },
+        {
+          "X": 5,
+          "Y": 2
+        },
+        {
+          "X": 5,
+          "Y": 1
+        }
+      ],
+      "Cells": [
+        {
+          "X": 5,
+          "Y": 1
+        },
+        {
+          "X": 6,
+          "Y": 1
+        },
+        {
+          "X": 5,
+          "Y": 2
+        },
+        {
+          "X": 6,
+          "Y": 2
+        },
+        {
+          "X": 1,
+          "Y": 3
+        },
+        {
+          "X": 2,
+          "Y": 3
+        },
+        {
+          "X": 3,
+          "Y": 3
+        },
+        {
+          "X": 4,
+          "Y": 3
+        },
+        {
+          "X": 5,
+          "Y": 3
+        },
+        {
+          "X": 6,
+          "Y": 3
+        },
+        {
+          "X": 1,
+          "Y": 4
+        },
+        {
+          "X": 2,
+          "Y": 4
+        },
+        {
+          "X": 3,
+          "Y": 4
+        },
+        {
+          "X": 4,
+          "Y": 4
+        },
+        {
+          "X": 5,
+          "Y": 4
+        },
+        {
+          "X": 6,
+          "Y": 4
+        }
+      ],
+      "PlantID": "",
+      "Tags": null
+    }
+  ],
+  "Doors": [
+    {
+      "ID": 0,
+      "RoomID": 0,
+      "At": {
+        "X": 0,
+        "Y": 3
+      },
+      "Direction": 1,
+      "Span": 2,
+      "CorridorIDs": [
+        0
+      ]
+    },
+    {
+      "ID": 1,
+      "RoomID": 1,
+      "At": {
+        "X": 5,
+        "Y": 0
+      },
+      "Direction": 2,
+      "Span": 2,
+      "CorridorIDs": [
+        0
+      ]
+    }
+  ]
+}

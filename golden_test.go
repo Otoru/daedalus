@@ -201,6 +201,120 @@ func goldenCases() []goldenCase {
 			generator: Generator{},
 			check:     checkPoissonGolden,
 		},
+		{
+			name:    "even_width_positive_side",
+			fixture: "even_width_positive_side",
+			config: Config{
+				Width: 7, Height: 6, Seed: 0xF015,
+				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
+				RoomGeometry: &RoomGeometry{
+					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
+					MaxFootprintCells: 4, MinRoomGap: 1,
+					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+				},
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
+			},
+			generator: Generator{
+				Placer: goldenPlacer{
+					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 0}, 1, 2),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 0}, 2, 2),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 5}, 2, 1),
+				},
+				Connector: goldenConnector{
+					{FromRoomID: 0, ToRoomID: 1},
+					{FromRoomID: 1, ToRoomID: 2},
+				},
+			},
+			check: checkEvenWidthGolden,
+		},
+		{
+			name:    "bend_width_square",
+			fixture: "bend_width_square",
+			config: Config{
+				Width: 7, Height: 5, Seed: 0xF016,
+				MinDistance: 1, MaxAttempts: 30, MaxRooms: 2,
+				RoomGeometry: &RoomGeometry{
+					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
+					MaxFootprintCells: 2, MinRoomGap: 1,
+					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+				},
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
+			},
+			generator: Generator{
+				Placer: goldenPlacer{
+					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 3}, 1, 2),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 5, Y: 0}, 2, 1),
+				},
+				Connector: goldenConnector{{FromRoomID: 0, ToRoomID: 1}},
+			},
+			check: checkBendWidthGolden,
+		},
+		{
+			name:    "degraded_width_tight_gap",
+			fixture: "degraded_width_tight_gap",
+			config: Config{
+				Width: 9, Height: 7, Seed: 0xF017,
+				MinDistance: 1, MaxAttempts: 30, MaxRooms: 6,
+				RoomGeometry: &RoomGeometry{
+					MinWidth: 1, MaxWidth: 5, MinHeight: 1, MaxHeight: 3,
+					MaxFootprintCells: 9, MinRoomGap: 1,
+					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+				},
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 3, Weight: 1}}},
+			},
+			generator: Generator{
+				Placer: goldenPlacer{
+					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 0}, 3, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 6, Y: 0}, 3, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 2, Y: 4}, 5, 1),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 2, Y: 6}, 5, 1),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 4}, 1, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 8, Y: 4}, 1, 3),
+				},
+				Connector: goldenConnector{
+					{FromRoomID: 0, ToRoomID: 1},
+					{FromRoomID: 4, ToRoomID: 5},
+					{FromRoomID: 0, ToRoomID: 4},
+					{FromRoomID: 3, ToRoomID: 4},
+					{FromRoomID: 2, ToRoomID: 3},
+				},
+			},
+			check: checkDegradedWidthGolden,
+		},
+		{
+			name:    "mixed_corridor_widths",
+			fixture: "mixed_corridor_widths",
+			config: Config{
+				Width: 13, Height: 3, Seed: 1,
+				MinDistance: 1, MaxAttempts: 30, MaxRooms: 4,
+				RoomGeometry: &RoomGeometry{
+					MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 3,
+					MaxFootprintCells: 3, MinRoomGap: 1,
+					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+				},
+				// Request order is not width order. Weights 1, 1, and 5 sort to
+				// widths 1, 2, 3 before the ticket is drawn.
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{
+					{Width: 3, Weight: 1},
+					{Width: 1, Weight: 1},
+					{Width: 2, Weight: 5},
+				}},
+			},
+			generator: Generator{
+				Placer: goldenPlacer{
+					goldenPlacement(RoomShapeRectangle, Cell{X: 0, Y: 0}, 1, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 4, Y: 0}, 1, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 8, Y: 0}, 1, 3),
+					goldenPlacement(RoomShapeRectangle, Cell{X: 12, Y: 0}, 1, 3),
+				},
+				Connector: goldenConnector{
+					{FromRoomID: 0, ToRoomID: 1},
+					{FromRoomID: 1, ToRoomID: 2},
+					{FromRoomID: 2, ToRoomID: 3},
+				},
+			},
+			check: checkMixedWidthGolden,
+		},
 	}
 }
 
@@ -277,6 +391,104 @@ func checkPoissonGolden(t *testing.T, layout Layout) {
 		}
 	}
 	assert.True(t, foundDenseRegion, "DensityRegion is half-open [Min, Max): an anchor with X in [0, 10) materializes the region")
+}
+
+func checkEvenWidthGolden(t *testing.T, layout Layout) {
+	t.Helper()
+	require.Len(t, layout.Corridors, 2)
+	horizontal := layout.Corridors[0]
+	vertical := layout.Corridors[1]
+	assert.Equal(t, uint32(2), layout.Doors[horizontal.FromDoorID].Span)
+	assert.Equal(t, uint32(2), layout.Doors[horizontal.ToDoorID].Span)
+	assert.Equal(t, uint32(2), layout.Doors[vertical.FromDoorID].Span)
+	assert.Equal(t, uint32(2), layout.Doors[vertical.ToDoorID].Span)
+	for _, cell := range horizontal.Centerline {
+		assert.Contains(t, horizontal.Cells, Cell{X: cell.X, Y: cell.Y + 1},
+			"even horizontal band keeps the extra Cell on +Y")
+		assert.NotContains(t, horizontal.Cells, Cell{X: cell.X, Y: cell.Y - 1},
+			"even horizontal band does not grow on -Y")
+	}
+	for _, cell := range vertical.Centerline {
+		assert.Contains(t, vertical.Cells, Cell{X: cell.X + 1, Y: cell.Y},
+			"even vertical band keeps the extra Cell on +X")
+		assert.NotContains(t, vertical.Cells, Cell{X: cell.X - 1, Y: cell.Y},
+			"even vertical band does not grow on -X")
+	}
+}
+
+func checkBendWidthGolden(t *testing.T, layout Layout) {
+	t.Helper()
+	require.Len(t, layout.Corridors, 1)
+	corridor := layout.Corridors[0]
+	assert.Equal(t, uint32(2), layout.Doors[corridor.FromDoorID].Span)
+	assert.Equal(t, uint32(2), layout.Doors[corridor.ToDoorID].Span)
+	foundBend := false
+	centerline := corridor.Centerline
+	for index := 1; index < len(centerline)-1; index++ {
+		incoming := Cell{
+			X: centerline[index].X - centerline[index-1].X,
+			Y: centerline[index].Y - centerline[index-1].Y,
+		}
+		outgoing := Cell{
+			X: centerline[index+1].X - centerline[index].X,
+			Y: centerline[index+1].Y - centerline[index].Y,
+		}
+		if incoming == outgoing {
+			continue
+		}
+		foundBend = true
+		corner := Cell{X: centerline[index].X + 1, Y: centerline[index].Y + 1}
+		assert.Contains(t, corridor.Cells, corner,
+			"bend fills the +X/+Y corner so the W×W block has no diagonal pinch")
+		assert.Contains(t, corridor.Cells, Cell{X: corner.X, Y: centerline[index].Y})
+		assert.Contains(t, corridor.Cells, Cell{X: centerline[index].X, Y: corner.Y})
+	}
+	assert.True(t, foundBend, "the fixture must bend or it does not guard the corner")
+}
+
+func checkDegradedWidthGolden(t *testing.T, layout Layout) {
+	t.Helper()
+	require.Len(t, layout.Corridors, 5)
+	open := layout.Corridors[0]
+	pinched := layout.Corridors[1]
+	assert.Equal(t, RoomID(0), open.FromRoomID)
+	assert.Equal(t, RoomID(1), open.ToRoomID)
+	assert.Equal(t, uint32(3), layout.Doors[open.FromDoorID].Span)
+	assert.Equal(t, uint32(3), layout.Doors[open.ToDoorID].Span)
+	assert.Equal(t, RoomID(4), pinched.FromRoomID)
+	assert.Equal(t, RoomID(5), pinched.ToRoomID)
+	assert.Equal(t, uint32(3), layout.Rooms[4].Height)
+	assert.Equal(t, uint32(3), layout.Rooms[5].Height)
+	assert.Equal(t, uint32(1), layout.Doors[pinched.FromDoorID].Span,
+		"drawn width 3 degrades to the single free Cell MinRoomGap leaves between the walls")
+	assert.Equal(t, uint32(1), layout.Doors[pinched.ToDoorID].Span)
+	require.NotEmpty(t, pinched.Cells)
+	for _, cell := range pinched.Cells {
+		assert.Equal(t, int32(5), cell.Y, "the degraded corridor stays in the one-Cell gap")
+	}
+}
+
+func checkMixedWidthGolden(t *testing.T, layout Layout) {
+	t.Helper()
+	require.Len(t, layout.Corridors, 3)
+	// Seed 1 draws widths 1, then 3, then 2. That sequence is neither insertion
+	// order nor "always the heaviest", so it pins both the sort and the tickets.
+	drawn := []uint32{1, 3, 2}
+	for index, corridor := range layout.Corridors {
+		assert.Equal(t, drawn[index], layout.Doors[corridor.FromDoorID].Span, "corridor %d", index)
+		assert.Equal(t, drawn[index], layout.Doors[corridor.ToDoorID].Span, "corridor %d", index)
+	}
+	symmetric := layout.Corridors[1]
+	for _, cell := range symmetric.Centerline {
+		assert.Contains(t, symmetric.Cells, Cell{X: cell.X, Y: cell.Y - 1})
+		assert.Contains(t, symmetric.Cells, Cell{X: cell.X, Y: cell.Y + 1})
+	}
+	even := layout.Corridors[2]
+	for _, cell := range even.Centerline {
+		assert.Contains(t, even.Cells, Cell{X: cell.X, Y: cell.Y + 1},
+			"the width drawn as 2 keeps the extra Cell on +Y")
+		assert.NotContains(t, even.Cells, Cell{X: cell.X, Y: cell.Y - 1})
+	}
 }
 
 func corridorTurnCount(cells []Cell) int {
