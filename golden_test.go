@@ -92,14 +92,13 @@ func goldenCases() []goldenCase {
 		goldenPlacement(RoomShapeCircle, Cell{X: 19, Y: 13}, 5, 5),
 	}
 	shapeGeometry := &RoomGeometry{
-		MinWidth: 1, MaxWidth: 5, MinHeight: 1, MaxHeight: 5,
 		MaxFootprintCells: 25, MinRoomGap: 1,
 		Shapes: []RoomShapeWeight{
-			{Shape: RoomShapeRectangle, Weight: 1},
-			{Shape: RoomShapeL, Weight: 1},
-			{Shape: RoomShapeT, Weight: 1},
-			{Shape: RoomShapeCross, Weight: 1},
-			{Shape: RoomShapeCircle, Weight: 1},
+			shapeSpan(RoomShapeRectangle, 1, 1, 5, 1, 5),
+			shapeSpan(RoomShapeL, 1, 1, 5, 1, 5),
+			shapeSpan(RoomShapeT, 1, 1, 5, 1, 5),
+			shapeSpan(RoomShapeCross, 1, 1, 5, 1, 5),
+			shapeSpan(RoomShapeCircle, 1, 1, 5, 1, 5),
 		},
 	}
 
@@ -142,9 +141,8 @@ func goldenCases() []goldenCase {
 				Width: 7, Height: 7, Seed: 0xF013,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 5,
 					MaxFootprintCells: 5,
-					Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+					Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 1, 1, 5)},
 				},
 			},
 			generator: Generator{
@@ -193,9 +191,8 @@ func goldenCases() []goldenCase {
 				// where both Cells are orthogonally adjacent to its footprint.
 				MinDistance: 2, MaxAttempts: 12, MaxRooms: 4,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 1,
 					MaxFootprintCells: 1, MinRoomGap: 1,
-					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 1, 1, 1)},
 				},
 				DensityRegions: []DensityRegion{{
 					Min: Cell{X: 0, Y: 0}, Max: Cell{X: 10, Y: 20}, MinDistance: 4,
@@ -211,9 +208,8 @@ func goldenCases() []goldenCase {
 				Width: 8, Height: 8, Seed: 0xF015,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 3,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 4,
 					MaxFootprintCells: 8, MinRoomGap: 1,
-					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 2, 1, 4)},
 				},
 				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
 			},
@@ -237,9 +233,8 @@ func goldenCases() []goldenCase {
 				Width: 7, Height: 5, Seed: 0xF016,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 2,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
 					MaxFootprintCells: 2, MinRoomGap: 1,
-					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 2, 1, 2)},
 				},
 				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
 			},
@@ -259,9 +254,8 @@ func goldenCases() []goldenCase {
 				Width: 12, Height: 12, Seed: 0xF017,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 6,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 5, MinHeight: 1, MaxHeight: 3,
 					MaxFootprintCells: 9, MinRoomGap: 1,
-					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 5, 1, 3)},
 				},
 				// Width 1 is declared, so a 3 that cannot pass the one-Cell gap falls
 				// to 1. Width 2 is absent and must not appear. The other edges leave
@@ -297,9 +291,8 @@ func goldenCases() []goldenCase {
 				Width: 13, Height: 3, Seed: 1,
 				MinDistance: 1, MaxAttempts: 30, MaxRooms: 4,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 3,
 					MaxFootprintCells: 3, MinRoomGap: 1,
-					Shapes: []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 1, 1, 3)},
 				},
 				// Request order is not width order. Weights 1, 1, and 5 sort to
 				// widths 1, 2, 3 before the ticket is drawn.

@@ -108,10 +108,11 @@ func TestConfigFromProtoConvertsACompleteRequest(t *testing.T) {
 			Max: &daedalusv1.Cell{X: 3, Y: 4}, MinDistance: 7,
 		}},
 		RoomGeometry: &daedalusv1.RoomGeometry{
-			MinWidth: 2, MaxWidth: 3, MinHeight: 2, MaxHeight: 4,
 			MaxFootprintCells: 12, MinRoomGap: 1,
 			Shapes: []*daedalusv1.RoomShapeWeight{{
 				Shape: daedalusv1.RoomShape_ROOM_SHAPE_L, Weight: 2,
+				Width:  &daedalusv1.DimensionRange{Min: 2, Max: 3},
+				Height: &daedalusv1.DimensionRange{Min: 2, Max: 4},
 			}},
 		},
 		PlantCatalog: &daedalusv1.PlantCatalog{
@@ -136,6 +137,8 @@ func TestConfigFromProtoConvertsACompleteRequest(t *testing.T) {
 	assert.Equal(t, daedalus.Cell{X: 3, Y: 4}, got.DensityRegions[0].Max)
 	require.NotNil(t, got.RoomGeometry)
 	assert.Equal(t, daedalus.RoomShapeL, got.RoomGeometry.Shapes[0].Shape)
+	assert.Equal(t, daedalus.DimensionRange{Min: 2, Max: 3}, got.RoomGeometry.Shapes[0].Width)
+	assert.Equal(t, daedalus.DimensionRange{Min: 2, Max: 4}, got.RoomGeometry.Shapes[0].Height)
 	require.NotNil(t, got.PlantCatalog)
 	assert.Equal(t, daedalus.DirectionNorth, got.PlantCatalog.Rooms[0].DoorDirections[0])
 	assert.Equal(t, daedalus.PlantID("corridor"), got.PlantCatalog.Corridors[0].ID)
@@ -204,10 +207,11 @@ func TestCorridorGeometryRoundTripsThroughProto(t *testing.T) {
 			},
 		},
 		RoomGeometry: &daedalusv1.RoomGeometry{
-			MinWidth: 2, MaxWidth: 3, MinHeight: 2, MaxHeight: 3,
 			MaxFootprintCells: 9, MinRoomGap: 2,
 			Shapes: []*daedalusv1.RoomShapeWeight{{
 				Shape: daedalusv1.RoomShape_ROOM_SHAPE_RECTANGLE, Weight: 1,
+				Width:  &daedalusv1.DimensionRange{Min: 2, Max: 3},
+				Height: &daedalusv1.DimensionRange{Min: 2, Max: 3},
 			}},
 		},
 	}
@@ -215,6 +219,76 @@ func TestCorridorGeometryRoundTripsThroughProto(t *testing.T) {
 	got, err := ConfigFromProto(source)
 	require.NoError(t, err)
 	assert.True(t, proto.Equal(source, ConfigToProto(got)))
+}
+
+func TestOmittedShapeDimensionsUseTheDynamicProfile(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{
+		Width: 16, Height: 16, Seed: 1,
+		RoomGeometry: &daedalusv1.RoomGeometry{
+			MaxFootprintCells: 81, MinRoomGap: 1,
+			Shapes: []*daedalusv1.RoomShapeWeight{
+				{Shape: daedalusv1.RoomShape_ROOM_SHAPE_RECTANGLE, Weight: 1},
+				{
+					Shape:  daedalusv1.RoomShape_ROOM_SHAPE_CIRCLE,
+					Weight: 1,
+					Height: &daedalusv1.DimensionRange{Min: 7, Max: 9},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, got.RoomGeometry.Shapes, 2)
+	assert.Equal(t, daedalus.DimensionRange{Min: 3, Max: 9}, got.RoomGeometry.Shapes[0].Width)
+	assert.Equal(t, daedalus.DimensionRange{Min: 3, Max: 9}, got.RoomGeometry.Shapes[0].Height)
+	assert.Equal(t, daedalus.DimensionRange{Min: 5, Max: 9}, got.RoomGeometry.Shapes[1].Width)
+	assert.Equal(t, daedalus.DimensionRange{Min: 7, Max: 9}, got.RoomGeometry.Shapes[1].Height)
+	assert.NotEqual(t, daedalus.DimensionRange{}, got.RoomGeometry.Shapes[0].Width)
+
+	again, err := ConfigFromProto(ConfigToProto(got))
+	require.NoError(t, err)
+	assert.Equal(t, got.RoomGeometry, again.RoomGeometry)
+}
+
+func TestOmittedCircleOnASmallGridIsTheUnclampedProfile(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{
+		Width: 4, Height: 4,
+		RoomGeometry: &daedalusv1.RoomGeometry{
+			MaxFootprintCells: 16,
+			Shapes: []*daedalusv1.RoomShapeWeight{{
+				Shape: daedalusv1.RoomShape_ROOM_SHAPE_CIRCLE, Weight: 1,
+			}},
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, daedalus.DimensionRange{Min: 5, Max: 9}, got.RoomGeometry.Shapes[0].Width)
+	assert.Equal(t, daedalus.DimensionRange{Min: 5, Max: 9}, got.RoomGeometry.Shapes[0].Height)
+}
+
+func TestExplicitZeroDimensionRangeIsNotTheOmittedProfile(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{
+		Width: 16, Height: 16,
+		RoomGeometry: &daedalusv1.RoomGeometry{
+			MaxFootprintCells: 81,
+			Shapes: []*daedalusv1.RoomShapeWeight{{
+				Shape:  daedalusv1.RoomShape_ROOM_SHAPE_CIRCLE,
+				Weight: 1,
+				Width:  &daedalusv1.DimensionRange{Min: 0, Max: 0},
+				Height: &daedalusv1.DimensionRange{Min: 6, Max: 6},
+			}},
+		},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, daedalus.DimensionRange{}, got.RoomGeometry.Shapes[0].Width)
+	assert.Equal(t, daedalus.DimensionRange{Min: 6, Max: 6}, got.RoomGeometry.Shapes[0].Height)
 }
 
 func TestEmptyCorridorGeometryStaysPresent(t *testing.T) {

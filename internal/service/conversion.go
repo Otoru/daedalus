@@ -54,24 +54,11 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 	}
 
 	if source.RoomGeometry != nil {
-		geometry := source.RoomGeometry
-		target.RoomGeometry = &daedalus.RoomGeometry{
-			MinWidth: geometry.MinWidth, MaxWidth: geometry.MaxWidth,
-			MinHeight: geometry.MinHeight, MaxHeight: geometry.MaxHeight,
-			MaxFootprintCells: geometry.MaxFootprintCells,
-			MinRoomGap:        geometry.MinRoomGap,
-			Shapes:            make([]daedalus.RoomShapeWeight, len(geometry.Shapes)),
+		geometry, err := roomGeometryFromProto(source.RoomGeometry, source.Width, source.Height)
+		if err != nil {
+			return daedalus.Config{}, err
 		}
-		for index, weight := range geometry.Shapes {
-			if weight == nil {
-				return daedalus.Config{}, fmt.Errorf(
-					"%w: room_geometry.shapes[%d] missing", daedalus.ErrInvalidConfig, index,
-				)
-			}
-			target.RoomGeometry.Shapes[index] = daedalus.RoomShapeWeight{
-				Shape: mapRoomShape(weight.Shape), Weight: weight.Weight,
-			}
-		}
+		target.RoomGeometry = geometry
 	}
 
 	if source.CorridorGeometry != nil {
@@ -164,19 +151,50 @@ func ConfigToProto(source daedalus.Config) *daedalusv1.Config {
 	return target
 }
 
+func roomGeometryFromProto(source *daedalusv1.RoomGeometry, gridWidth, gridHeight uint32) (*daedalus.RoomGeometry, error) {
+	target := &daedalus.RoomGeometry{
+		MaxFootprintCells: source.MaxFootprintCells,
+		MinRoomGap:        source.MinRoomGap,
+		Shapes:            make([]daedalus.RoomShapeWeight, len(source.Shapes)),
+	}
+	for index, weight := range source.Shapes {
+		if weight == nil {
+			return nil, fmt.Errorf(
+				"%w: room_geometry.shapes[%d] missing", daedalus.ErrInvalidConfig, index,
+			)
+		}
+		shape := mapRoomShape(weight.Shape)
+		width, height, known := daedalus.DefaultDimensionRanges(shape, gridWidth, gridHeight)
+		if weight.Width != nil {
+			width = daedalus.DimensionRange{Min: weight.Width.Min, Max: weight.Width.Max}
+		} else if !known {
+			width = daedalus.DimensionRange{}
+		}
+		if weight.Height != nil {
+			height = daedalus.DimensionRange{Min: weight.Height.Min, Max: weight.Height.Max}
+		} else if !known {
+			height = daedalus.DimensionRange{}
+		}
+		target.Shapes[index] = daedalus.RoomShapeWeight{
+			Shape: shape, Weight: weight.Weight, Width: width, Height: height,
+		}
+	}
+	return target, nil
+}
+
 func roomGeometryToProto(source *daedalus.RoomGeometry) *daedalusv1.RoomGeometry {
 	if source == nil {
 		return nil
 	}
 	target := &daedalusv1.RoomGeometry{
-		MinWidth: source.MinWidth, MaxWidth: source.MaxWidth,
-		MinHeight: source.MinHeight, MaxHeight: source.MaxHeight,
 		MaxFootprintCells: source.MaxFootprintCells, MinRoomGap: source.MinRoomGap,
 		Shapes: make([]*daedalusv1.RoomShapeWeight, len(source.Shapes)),
 	}
 	for index, weight := range source.Shapes {
 		target.Shapes[index] = &daedalusv1.RoomShapeWeight{
 			Shape: mapRoomShapeToProto(weight.Shape), Weight: weight.Weight,
+			Width:  &daedalusv1.DimensionRange{Min: weight.Width.Min, Max: weight.Width.Max},
+			Height: &daedalusv1.DimensionRange{Min: weight.Height.Min, Max: weight.Height.Max},
 		}
 	}
 	return target

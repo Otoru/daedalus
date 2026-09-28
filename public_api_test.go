@@ -88,10 +88,11 @@ func TestErrorSentinelsAreClassifiable(t *testing.T) {
 		layout, err := daedalus.Generator{}.Generate(daedalus.Config{
 			Width: 8, Height: 8, Seed: 1,
 			RoomGeometry: &daedalus.RoomGeometry{
-				MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 1,
 				MaxFootprintCells: daedalus.MaxFootprintCells + 1,
 				Shapes: []daedalus.RoomShapeWeight{{
 					Shape: daedalus.RoomShapeRectangle, Weight: 1,
+					Width:  daedalus.DimensionRange{Min: 1, Max: 1},
+					Height: daedalus.DimensionRange{Min: 1, Max: 1},
 				}},
 			},
 		})
@@ -146,10 +147,11 @@ func TestExternalPlacerAndConnectorAreAccepted(t *testing.T) {
 	layout, err := generator.Generate(daedalus.Config{
 		Width: 8, Height: 4, Seed: 9, MinDistance: 1, MaxRooms: 2,
 		RoomGeometry: &daedalus.RoomGeometry{
-			MinWidth: 3, MaxWidth: 3, MinHeight: 3, MaxHeight: 3,
 			MaxFootprintCells: 9, MinRoomGap: 1,
 			Shapes: []daedalus.RoomShapeWeight{{
 				Shape: daedalus.RoomShapeRectangle, Weight: 1,
+				Width:  daedalus.DimensionRange{Min: 3, Max: 3},
+				Height: daedalus.DimensionRange{Min: 3, Max: 3},
 			}},
 		},
 	})
@@ -176,10 +178,11 @@ func TestFunctionAdaptersMatchTheirInterfaces(t *testing.T) {
 	config := daedalus.Config{
 		Width: 8, Height: 4, Seed: 9, MinDistance: 1, MaxRooms: 2,
 		RoomGeometry: &daedalus.RoomGeometry{
-			MinWidth: 3, MaxWidth: 3, MinHeight: 3, MaxHeight: 3,
 			MaxFootprintCells: 9, MinRoomGap: 1,
 			Shapes: []daedalus.RoomShapeWeight{{
 				Shape: daedalus.RoomShapeRectangle, Weight: 1,
+				Width:  daedalus.DimensionRange{Min: 3, Max: 3},
+				Height: daedalus.DimensionRange{Min: 3, Max: 3},
 			}},
 		},
 	}
@@ -345,10 +348,11 @@ func blockedCorridorConfig() daedalus.Config {
 	return daedalus.Config{
 		Width: 5, Height: 5, Seed: 1, MinDistance: 1, MaxRooms: 3,
 		RoomGeometry: &daedalus.RoomGeometry{
-			MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 5,
 			MaxFootprintCells: 5, MinRoomGap: 1,
 			Shapes: []daedalus.RoomShapeWeight{{
 				Shape: daedalus.RoomShapeRectangle, Weight: 1,
+				Width:  daedalus.DimensionRange{Min: 1, Max: 1},
+				Height: daedalus.DimensionRange{Min: 1, Max: 5},
 			}},
 		},
 	}

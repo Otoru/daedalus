@@ -373,14 +373,13 @@ func TestEmptyRolesChangeNeitherLayoutNorDraws(t *testing.T) {
 // normalized RoomGeometry.
 func TestDisabledOptionsPreserveRefinedLayout(t *testing.T) {
 	geometry := &RoomGeometry{
-		MinWidth: 3, MaxWidth: 7, MinHeight: 3, MaxHeight: 7,
 		MaxFootprintCells: 49, MinRoomGap: 1,
 		Shapes: []RoomShapeWeight{
-			{Shape: RoomShapeRectangle, Weight: 4},
-			{Shape: RoomShapeL, Weight: 2},
-			{Shape: RoomShapeT, Weight: 2},
-			{Shape: RoomShapeCross, Weight: 1},
-			{Shape: RoomShapeCircle, Weight: 2},
+			shapeSpan(RoomShapeRectangle, 4, 3, 7, 3, 7),
+			shapeSpan(RoomShapeL, 2, 3, 7, 3, 7),
+			shapeSpan(RoomShapeT, 2, 3, 7, 3, 7),
+			shapeSpan(RoomShapeCross, 1, 3, 7, 3, 7),
+			shapeSpan(RoomShapeCircle, 2, 3, 7, 3, 7),
 		},
 	}
 	base := Config{Width: 40, Height: 40, Seed: 125, MaxRooms: 20, RoomGeometry: geometry}
@@ -415,9 +414,8 @@ func TestLimitsFailBeforeGeneratingLayout(t *testing.T) {
 // 1×1 Grid still admits a 1×1 Rectangle.
 func TestNoPositionFitsFailsWithoutTruncatingOrPublishingLayout(t *testing.T) {
 	geometry := &RoomGeometry{
-		MinWidth: 6, MaxWidth: 6, MinHeight: 6, MaxHeight: 6,
 		MaxFootprintCells: 36,
-		Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+		Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 6, 6, 6, 6)},
 	}
 	layout, err := (Generator{}).Generate(Config{Width: 5, Height: 5, Seed: 27, RoomGeometry: geometry})
 	assert.ErrorIs(t, err, ErrInvalidConfig)
@@ -479,11 +477,10 @@ func randomPropertyConfig(random *rand.Rand, caseIndex int) Config {
 		maximumWidth := min(width, uint32(7))
 		maximumHeight := min(height, uint32(7))
 		config.RoomGeometry = &RoomGeometry{
-			MinWidth: 1, MaxWidth: maximumWidth, MinHeight: 1, MaxHeight: maximumHeight,
 			MaxFootprintCells: maximumWidth * maximumHeight,
 			MinRoomGap:        uint32(random.Intn(3)),
 			Shapes: []RoomShapeWeight{
-				{Shape: RoomShapeRectangle, Weight: uint32(1 + random.Intn(4))},
+				shapeSpan(RoomShapeRectangle, uint32(1+random.Intn(4)), 1, maximumWidth, 1, maximumHeight),
 			},
 		}
 	}

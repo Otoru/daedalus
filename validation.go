@@ -14,13 +14,17 @@ const (
 	// MinDistance floor, in Cells. It is an invariant in its own right and must
 	// not be confused with defaultCellSize, which happens to have the same value
 	// but describes a different quantity.
-	minimumMinDistance       = 1.0
-	defaultMaxAttempts       = 30
-	maximumMaxAttempts       = 1024
-	maximumGridDimension     = 256
-	maximumMinRoomGap        = 256
-	defaultGeometryMinSize   = 3
-	defaultGeometryMaxSize   = 9
+	minimumMinDistance     = 1.0
+	defaultMaxAttempts     = 30
+	maximumMaxAttempts     = 1024
+	maximumGridDimension   = 256
+	maximumMinRoomGap      = 256
+	defaultGeometryMinSize = 3
+	defaultGeometryMaxSize = 9
+	// defaultCircleMinSize is 5 because a disc on a square Grid needs an odd
+	// diameter of at least 5, with a centre Cell. A shared 3..9 span would
+	// include diameters that are not circles.
+	defaultCircleMinSize     = 5
 	defaultMaxFootprintCells = 81
 	defaultMinRoomGap        = 1
 	// maximumCorridorWidth is the largest Corridor width a request may name.
@@ -244,62 +248,52 @@ func normalizeRoomGeometry(source *RoomGeometry, gridWidth, gridHeight uint32) (
 }
 
 func applyDefaultRoomGeometry(gridWidth, gridHeight uint32) (RoomGeometry, []roomGeometryCombination) {
-	geometry := defaultRoomGeometry(gridWidth, gridHeight)
-	combinations := enumerateGeometryCombinations(geometry)
-	geometry.Shapes = filterShapesWithCombinations(geometry.Shapes, combinations)
-	return geometry, combinations
+	return materializeShapeRanges(defaultRoomGeometry(gridWidth, gridHeight), gridWidth, gridHeight)
 }
 
 func normalizeSuppliedRoomGeometry(source *RoomGeometry, gridWidth, gridHeight uint32) (RoomGeometry, []roomGeometryCombination, error) {
-	geometry, err := validateRoomGeometryBounds(source, gridWidth, gridHeight)
-	if err != nil {
+	if err := validateRoomGeometryLimits(source); err != nil {
 		return RoomGeometry{}, nil, err
 	}
 	weights, err := canonicalRoomShapeWeights(source.Shapes)
 	if err != nil {
 		return RoomGeometry{}, nil, err
 	}
-	geometry.Shapes = weights
-
-	combinations := enumerateGeometryCombinations(geometry)
+	for _, weight := range weights {
+		if shapeRangeAdmits(weight.Shape, weight.Width, weight.Height) {
+			continue
+		}
+		return RoomGeometry{}, nil, fmt.Errorf(
+			"%w: %s width %d..%d height %d..%d admits no legal size",
+			ErrInvalidConfig, roomShapeName(weight.Shape),
+			weight.Width.Min, weight.Width.Max, weight.Height.Min, weight.Height.Max,
+		)
+	}
+	geometry, combinations := materializeShapeRanges(RoomGeometry{
+		MaxFootprintCells: source.MaxFootprintCells,
+		MinRoomGap:        source.MinRoomGap,
+		Shapes:            weights,
+	}, gridWidth, gridHeight)
 	if len(combinations) == 0 {
 		return RoomGeometry{}, nil, fmt.Errorf("%w: geometry has no valid combination within the area", ErrInvalidConfig)
 	}
-	geometry.Shapes = filterShapesWithCombinations(geometry.Shapes, combinations)
 	return geometry, combinations, nil
 }
 
-func validateRoomGeometryBounds(source *RoomGeometry, gridWidth, gridHeight uint32) (RoomGeometry, error) {
-	geometry := RoomGeometry{
-		MinWidth:          source.MinWidth,
-		MaxWidth:          source.MaxWidth,
-		MinHeight:         source.MinHeight,
-		MaxHeight:         source.MaxHeight,
-		MaxFootprintCells: source.MaxFootprintCells,
-		MinRoomGap:        source.MinRoomGap,
+func validateRoomGeometryLimits(source *RoomGeometry) error {
+	if source.MaxFootprintCells == 0 {
+		return fmt.Errorf("%w: MaxFootprintCells is required", ErrInvalidConfig)
 	}
-	if geometry.MinWidth == 0 || geometry.MinHeight == 0 {
-		return RoomGeometry{}, fmt.Errorf("%w: minimum Room dimensions are required", ErrInvalidConfig)
+	if source.MaxFootprintCells > MaxFootprintCells {
+		return fmt.Errorf("%w: MaxFootprintCells exceeds the v1 maximum", ErrLimitExceeded)
 	}
-	if geometry.MaxWidth < geometry.MinWidth || geometry.MaxHeight < geometry.MinHeight {
-		return RoomGeometry{}, fmt.Errorf("%w: maximum Room dimensions are smaller than the minimum dimensions", ErrInvalidConfig)
-	}
-	if geometry.MaxWidth > gridWidth || geometry.MaxHeight > gridHeight {
-		return RoomGeometry{}, fmt.Errorf("%w: Room dimensions exceed the Grid", ErrInvalidConfig)
-	}
-	if geometry.MaxFootprintCells == 0 {
-		return RoomGeometry{}, fmt.Errorf("%w: MaxFootprintCells is required", ErrInvalidConfig)
-	}
-	if geometry.MaxFootprintCells > MaxFootprintCells {
-		return RoomGeometry{}, fmt.Errorf("%w: MaxFootprintCells exceeds the v1 maximum", ErrLimitExceeded)
-	}
-	if geometry.MinRoomGap > maximumMinRoomGap {
-		return RoomGeometry{}, fmt.Errorf("%w: MinRoomGap exceeds the v1 maximum", ErrInvalidConfig)
+	if source.MinRoomGap > maximumMinRoomGap {
+		return fmt.Errorf("%w: MinRoomGap exceeds the v1 maximum", ErrInvalidConfig)
 	}
 	if len(source.Shapes) == 0 {
-		return RoomGeometry{}, fmt.Errorf("%w: Shapes must not be empty", ErrInvalidConfig)
+		return fmt.Errorf("%w: Shapes must not be empty", ErrInvalidConfig)
 	}
-	return geometry, nil
+	return nil
 }
 
 // canonicalRoomShapeWeights returns weights in canonical Shape order. Each
@@ -355,42 +349,64 @@ func validateShapeWeight(shapeWeight RoomShapeWeight) error {
 	if shapeWeight.Weight == 0 {
 		return fmt.Errorf("%w: RoomShape weight must be positive", ErrInvalidConfig)
 	}
+	if err := validateDimensionRange(shapeWeight.Width, "width"); err != nil {
+		return err
+	}
+	if err := validateDimensionRange(shapeWeight.Height, "height"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateDimensionRange rejects an empty span. Max 0 and Min greater than Max
+// are the same kind of failure: the caller named a range that contains nothing.
+// A span that contains integers but no legal mask is a later, separate check.
+func validateDimensionRange(span DimensionRange, axis string) error {
+	if span.Max == 0 {
+		return fmt.Errorf("%w: %s range maximum is 0", ErrInvalidConfig, axis)
+	}
+	if span.Min > span.Max {
+		return fmt.Errorf("%w: %s range minimum exceeds maximum", ErrInvalidConfig, axis)
+	}
 	return nil
 }
 
 func defaultRoomGeometry(gridWidth, gridHeight uint32) RoomGeometry {
+	shapes := make([]RoomShapeWeight, 0, len(dynamicShapeProfiles))
+	for _, profile := range dynamicShapeProfiles {
+		width, height, ok := DefaultDimensionRanges(profile.shape, gridWidth, gridHeight)
+		if !ok {
+			continue
+		}
+		shapes = append(shapes, RoomShapeWeight{
+			Shape: profile.shape, Weight: profile.weight, Width: width, Height: height,
+		})
+	}
 	return RoomGeometry{
-		MinWidth:          minimum(defaultGeometryMinSize, gridWidth),
-		MaxWidth:          minimum(defaultGeometryMaxSize, gridWidth),
-		MinHeight:         minimum(defaultGeometryMinSize, gridHeight),
-		MaxHeight:         minimum(defaultGeometryMaxSize, gridHeight),
 		MaxFootprintCells: defaultMaxFootprintCells,
 		MinRoomGap:        defaultMinRoomGap,
-		Shapes: []RoomShapeWeight{
-			{Shape: RoomShapeRectangle, Weight: defaultRectangleWeight},
-			{Shape: RoomShapeL, Weight: defaultLWeight},
-			{Shape: RoomShapeT, Weight: defaultTWeight},
-			{Shape: RoomShapeCross, Weight: defaultCrossWeight},
-			{Shape: RoomShapeCircle, Weight: defaultCircleWeight},
-		},
+		Shapes:            shapes,
 	}
 }
 
 // enumerateGeometryCombinations materializes, in canonical Shape, Width, and
 // Height order, every dimension pair that produces a valid mask within the
-// area. The geometry draw indexes this stable slice instead of iterating a
-// map, which would make the generated Layout depend on Go's map ordering.
+// area. Each shape walks its own width and height span, and a size past the
+// Grid is not a candidate. The geometry draw indexes this stable slice instead
+// of iterating a map, which would make the generated Layout depend on Go's map
+// ordering.
 // In the worst permitted case (geometry 1..256 in both dimensions, five
 // shapes), there are about 2.1×10^5 combinations, around 2.5 MB; this is the
 // cost of detecting unsatisfiable geometry before any draw.
-func enumerateGeometryCombinations(geometry RoomGeometry) []roomGeometryCombination {
+func enumerateGeometryCombinations(geometry RoomGeometry, gridWidth, gridHeight uint32) []roomGeometryCombination {
 	combinations := make([]roomGeometryCombination, 0)
 	for _, shape := range canonicalRoomShapes {
-		if !containsShape(geometry.Shapes, shape) {
+		weight, found := shapeWeightFor(geometry.Shapes, shape)
+		if !found {
 			continue
 		}
-		for width := geometry.MinWidth; width <= geometry.MaxWidth; width++ {
-			for height := geometry.MinHeight; height <= geometry.MaxHeight; height++ {
+		for width := weight.Width.Min; width <= weight.Width.Max && width <= gridWidth; width++ {
+			for height := weight.Height.Min; height <= weight.Height.Max && height <= gridHeight; height++ {
 				if !combinationIsAdmissible(shape, width, height, geometry.MaxFootprintCells) {
 					continue
 				}
@@ -439,6 +455,198 @@ func filterShapesWithCombinations(weights []RoomShapeWeight, combinations []room
 		}
 	}
 	return filtered
+}
+
+type dynamicShapeProfile struct {
+	shape     RoomShape
+	weight    uint32
+	minWidth  uint32
+	maxWidth  uint32
+	minHeight uint32
+	maxHeight uint32
+}
+
+// dynamicShapeProfiles is the dynamic profile before the Grid clamp. Rectangle,
+// L, T, and Cross share 3..9 because every integer in that span is a legal
+// mask for them. Circle starts at 5 because smaller diameters are not circles.
+var dynamicShapeProfiles = []dynamicShapeProfile{
+	{RoomShapeRectangle, defaultRectangleWeight, defaultGeometryMinSize, defaultGeometryMaxSize, defaultGeometryMinSize, defaultGeometryMaxSize},
+	{RoomShapeL, defaultLWeight, defaultGeometryMinSize, defaultGeometryMaxSize, defaultGeometryMinSize, defaultGeometryMaxSize},
+	{RoomShapeT, defaultTWeight, defaultGeometryMinSize, defaultGeometryMaxSize, defaultGeometryMinSize, defaultGeometryMaxSize},
+	{RoomShapeCross, defaultCrossWeight, defaultGeometryMinSize, defaultGeometryMaxSize, defaultGeometryMinSize, defaultGeometryMaxSize},
+	{RoomShapeCircle, defaultCircleWeight, defaultCircleMinSize, defaultGeometryMaxSize, defaultCircleMinSize, defaultGeometryMaxSize},
+}
+
+// DefaultDimensionRanges is the width and height an omitted wire range means
+// for shape. ok is false when shape is not a canonical mask. When the dynamic
+// profile has a legal size on the grid, both ranges are that profile clamped
+// with min(profile minimum, side)..min(profile maximum, side). When it does
+// not, both ranges are the unclamped profile: legal for the mask, and left for
+// validation to drop because the Grid cannot hold them. Omission never means
+// the zero DimensionRange.
+func DefaultDimensionRanges(shape RoomShape, gridWidth, gridHeight uint32) (width, height DimensionRange, ok bool) {
+	profile, found := dynamicProfile(shape)
+	if !found {
+		return DimensionRange{}, DimensionRange{}, false
+	}
+	width = clampedProfileRange(profile.minWidth, profile.maxWidth, gridWidth)
+	height = clampedProfileRange(profile.minHeight, profile.maxHeight, gridHeight)
+	if shapeRangeAdmits(shape, width, height) {
+		return width, height, true
+	}
+	return DimensionRange{Min: profile.minWidth, Max: profile.maxWidth},
+		DimensionRange{Min: profile.minHeight, Max: profile.maxHeight}, true
+}
+
+func dynamicProfile(shape RoomShape) (dynamicShapeProfile, bool) {
+	for _, profile := range dynamicShapeProfiles {
+		if profile.shape == shape {
+			return profile, true
+		}
+	}
+	return dynamicShapeProfile{}, false
+}
+
+func clampedProfileRange(profileMin, profileMax, gridSide uint32) DimensionRange {
+	return DimensionRange{
+		Min: minimum(profileMin, gridSide),
+		Max: minimum(profileMax, gridSide),
+	}
+}
+
+func materializeShapeRanges(geometry RoomGeometry, gridWidth, gridHeight uint32) (RoomGeometry, []roomGeometryCombination) {
+	fitted := make([]RoomShapeWeight, 0, len(geometry.Shapes))
+	for _, weight := range geometry.Shapes {
+		clamped, ok := fitShapeToGrid(weight, gridWidth, gridHeight)
+		if !ok {
+			continue
+		}
+		fitted = append(fitted, clamped)
+	}
+	geometry.Shapes = fitted
+	combinations := enumerateGeometryCombinations(geometry, gridWidth, gridHeight)
+	geometry.Shapes = filterShapesWithCombinations(geometry.Shapes, combinations)
+	return geometry, combinations
+}
+
+// fitShapeToGrid keeps a shape whose span still contains a size the Grid can
+// hold, with each maximum pulled down to the Grid. A span that starts past
+// the Grid is dropped. That drop is not the "admits no legal size" error:
+// the mask was legal, and only this Grid refuses it.
+func fitShapeToGrid(weight RoomShapeWeight, gridWidth, gridHeight uint32) (RoomShapeWeight, bool) {
+	width, widthFits := fitAxisToGrid(weight.Width, gridWidth)
+	height, heightFits := fitAxisToGrid(weight.Height, gridHeight)
+	if !widthFits || !heightFits {
+		return RoomShapeWeight{}, false
+	}
+	weight.Width = width
+	weight.Height = height
+	return weight, true
+}
+
+func fitAxisToGrid(span DimensionRange, gridSide uint32) (DimensionRange, bool) {
+	if span.Min > gridSide {
+		return DimensionRange{}, false
+	}
+	if span.Max > gridSide {
+		span.Max = gridSide
+	}
+	if span.Min > span.Max {
+		return DimensionRange{}, false
+	}
+	return span, true
+}
+
+// shapeRangeAdmits reports whether the span contains at least one size
+// ValidRoomShapeDimensions accepts for shape. It does not look at the Grid or
+// the footprint. A well-formed range that fails here is a caller error. A
+// range that passes here and then cannot sit on the Grid is dropped.
+func shapeRangeAdmits(shape RoomShape, width, height DimensionRange) bool {
+	switch shape {
+	case RoomShapeRectangle:
+		return axisAdmits(width, 1) && axisAdmits(height, 1)
+	case RoomShapeL:
+		return axisAdmits(width, roomShapeMinDimension) && axisAdmits(height, roomShapeMinDimension)
+	case RoomShapeT:
+		return axisAdmits(width, roomShapeMinWide) && axisAdmits(height, roomShapeMinDimension)
+	case RoomShapeCross:
+		return axisAdmits(width, roomShapeMinWide) && axisAdmits(height, roomShapeMinWide)
+	case RoomShapeCircle:
+		return circleRangeAdmits(width, height)
+	default:
+		return false
+	}
+}
+
+func axisAdmits(span DimensionRange, minimumLegal uint32) bool {
+	if span.Max == 0 || span.Min > span.Max {
+		return false
+	}
+	low := span.Min
+	if low < minimumLegal {
+		low = minimumLegal
+	}
+	high := span.Max
+	if high > roomShapeMaxCellCoord {
+		high = roomShapeMaxCellCoord
+	}
+	return low <= high
+}
+
+func circleRangeAdmits(width, height DimensionRange) bool {
+	if width.Max == 0 || height.Max == 0 || width.Min > width.Max || height.Min > height.Max {
+		return false
+	}
+	low := width.Min
+	if height.Min > low {
+		low = height.Min
+	}
+	high := width.Max
+	if height.Max < high {
+		high = height.Max
+	}
+	if low < roomShapeMinCircle {
+		low = roomShapeMinCircle
+	}
+	if high > roomShapeMaxCellCoord {
+		high = roomShapeMaxCellCoord
+	}
+	if low > high {
+		return false
+	}
+	if low%roomShapeParity == 0 {
+		if low == math.MaxUint32 {
+			return false
+		}
+		low++
+	}
+	return low <= high
+}
+
+func shapeWeightFor(weights []RoomShapeWeight, shape RoomShape) (RoomShapeWeight, bool) {
+	for _, weight := range weights {
+		if weight.Shape == shape {
+			return weight, true
+		}
+	}
+	return RoomShapeWeight{}, false
+}
+
+func roomShapeName(shape RoomShape) string {
+	switch shape {
+	case RoomShapeRectangle:
+		return "rectangle"
+	case RoomShapeL:
+		return "L"
+	case RoomShapeT:
+		return "T"
+	case RoomShapeCross:
+		return "cross"
+	case RoomShapeCircle:
+		return "circle"
+	default:
+		return "shape"
+	}
 }
 
 func validateRoomRoleRequests(requests []RoomRoleRequest, maxRooms uint32) ([]RoomRoleRequest, error) {
@@ -614,15 +822,6 @@ func validateTags(tags []string) error {
 func densityRegionsOverlap(first, second DensityRegion) bool {
 	return first.Min.X < second.Max.X && second.Min.X < first.Max.X &&
 		first.Min.Y < second.Max.Y && second.Min.Y < first.Max.Y
-}
-
-func containsShape(weights []RoomShapeWeight, shape RoomShape) bool {
-	for _, weight := range weights {
-		if weight.Shape == shape {
-			return true
-		}
-	}
-	return false
 }
 
 func containsCombination(combinations []roomGeometryCombination, shape RoomShape) bool {

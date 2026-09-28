@@ -89,26 +89,64 @@
 // for Cross, and (r, 0) for Circle, which is what lets an anchor be turned
 // back into an Origin without ambiguity.
 //
-// RoomGeometry sets the dimension ranges, the maximum footprint area, the
-// minimum gap between footprints, and a positive weight per shape. A nil
-// RoomGeometry does not mean one-Cell Rooms. After validation it normalizes to
-// a dynamic profile: minimum width min(3, Width), maximum width min(9, Width),
-// and the same pair for height; MaxFootprintCells 81; MinRoomGap 1; and
-// weights Rectangle 4, L 2, T 2, Cross 1, Circle 2. Circle keeps only odd
-// diameters from 5 up to the smaller of the two maxima. A shape with no legal
-// dimensions on this Grid is dropped. Rectangle always remains, including the
-// 1×1 mask, so a 1×1 Grid yields one Rectangle Room and no Corridor or Door.
-// The normalized profile is part of the effective Config.
+// RoomGeometry sets the maximum footprint area, the minimum gap between
+// footprints, and one positive weight per shape. Width and height are not
+// fields of RoomGeometry; each RoomShapeWeight carries its own inclusive
+// DimensionRange for width and for height. A nil RoomGeometry does not mean
+// one-Cell Rooms. After validation it normalizes to the dynamic profile, and
+// that normalized profile is part of the effective Config. Each axis is
+// clamped to the Grid as min(profile minimum, side)..min(profile maximum,
+// side). A shape whose clamped range admits no legal mask is omitted.
+// Rectangle always remains, including the 1×1 mask, so a 1×1 Grid yields one
+// Rectangle Room and no Corridor or Door.
 //
-// An explicit RoomGeometry makes every field required. Dimensions are at least
-// 1, maxima are at least the minima and at most the Grid, MaxFootprintCells is
-// 1..4096, MinRoomGap is 0..256, and Shapes is non-empty, duplicate-free, and
-// weighted at least 1. At least one shape and dimension pair must fit inside
-// MaxFootprintCells; otherwise the Config is invalid. L, T, Cross, and Circle
-// still obey the mask minima above, and an even Circle diameter is simply not
-// a candidate. A Room is accepted only when its anchors satisfy MinDistance
-// and its footprints satisfy MinRoomGap at the same time. Neither check
-// replaces the other.
+// The dynamic profile, before that clamp, is:
+//
+//	Rectangle  width 3..9  height 3..9  weight 4
+//	L          width 3..9  height 3..9  weight 2
+//	T          width 3..9  height 3..9  weight 2
+//	Cross      width 3..9  height 3..9  weight 1
+//	Circle     width 5..9  height 5..9  weight 2
+//
+// MaxFootprintCells is 81 and MinRoomGap is 1. Circle draws only odd equal
+// diameters inside its range, so 5, 7, and 9 are the candidates when the Grid
+// allows them. L accepts a side of 2 and T accepts a height of 2, but the
+// profile starts at 3, the same lower bound Rectangle and Cross use. The
+// profile drops L, T, or Cross only when the Grid itself is below that
+// shape's mask minimum. Circle starts at 5 because a disc on a square Grid
+// needs an odd diameter of at least 5 with a centre Cell. A 6×6 circle is
+// not a size the mask can take.
+//
+// An explicit RoomGeometry requires MaxFootprintCells (1..4096), MinRoomGap
+// (0..256), and a non-empty, duplicate-free Shapes list whose weights are at
+// least 1. On the Go value every shape carries a width range and a height
+// range. Three failures are distinct. A range whose Max is 0, or whose Min
+// exceeds its Max, is ErrInvalidConfig: the span itself is empty, and the
+// message says the maximum is 0 or the minimum exceeds the maximum. A span
+// that is well formed but contains no size ValidRoomShapeDimensions accepts
+// for that shape is also ErrInvalidConfig, and the Grid is not consulted;
+// Circle with width 6..6 is the case, because 6 is even, and the message
+// says the range admits no legal size. A span that is legal for the shape
+// but has no size that fits this Grid drops that shape. It is not that
+// error. Rectangle stays when its own range still fits, which is what keeps
+// the default profile from handing placement an empty catalog. If every
+// shape is dropped, or none of the remaining sizes fit MaxFootprintCells,
+// the Config is ErrInvalidConfig and the message says the geometry has no
+// valid combination within the area.
+//
+// An omitted width or height on the wire is not a zero DimensionRange.
+// Conversion fills DefaultDimensionRanges for that shape and that Grid: the
+// clamped profile when that profile is a legal mask on the Grid, and the
+// unclamped profile otherwise, so validation can drop a shape the Grid
+// cannot hold instead of rejecting {0, 0}. A present range, including an
+// explicit 0..0, is kept and validated as written. Width and height are
+// independent: omitting one fills only that axis.
+//
+// L, T, Cross, and Circle still obey the mask minima above, and an even
+// Circle diameter inside an otherwise legal range is simply not a candidate.
+// A Room is accepted only when its anchors satisfy MinDistance and its
+// footprints satisfy MinRoomGap at the same time. Neither check replaces the
+// other.
 //
 // MinRoomGap counts empty layers by Chebyshev distance between occupied Cells
 // of different Rooms. Gap 0 forbids overlap and still allows edge contact,

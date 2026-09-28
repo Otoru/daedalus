@@ -200,13 +200,14 @@ func TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout(t *te
 			"seed": "18446744073709551615",
 			"max_rooms": 3,
 			"room_geometry": {
-				"min_width": 1,
-				"max_width": 1,
-				"min_height": 1,
-				"max_height": 1,
 				"max_footprint_cells": 1,
 				"min_room_gap": 0,
-				"shapes": [{"shape": "ROOM_SHAPE_RECTANGLE", "weight": 1}]
+				"shapes": [{
+					"shape": "ROOM_SHAPE_RECTANGLE",
+					"weight": 1,
+					"width": {"min": 1, "max": 1},
+					"height": {"min": 1, "max": 1}
+				}]
 			}
 		}
 	}`
@@ -224,10 +225,11 @@ func TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout(t *te
 	expected, err := generator.Generate(daedalus.Config{
 		Width: 9, Height: 9, Seed: daedalus.Seed(^uint64(0)), MaxRooms: 3,
 		RoomGeometry: &daedalus.RoomGeometry{
-			MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 1,
 			MaxFootprintCells: 1,
 			Shapes: []daedalus.RoomShapeWeight{{
 				Shape: daedalus.RoomShapeRectangle, Weight: 1,
+				Width:  daedalus.DimensionRange{Min: 1, Max: 1},
+				Height: daedalus.DimensionRange{Min: 1, Max: 1},
 			}},
 		},
 	})
@@ -255,13 +257,14 @@ func TestGenerateCarriesCenterlineAndDoorSpan(t *testing.T) {
 			"max_rooms": 4,
 			"min_distance": 5,
 			"room_geometry": {
-				"min_width": 2,
-				"max_width": 3,
-				"min_height": 2,
-				"max_height": 3,
 				"max_footprint_cells": 9,
 				"min_room_gap": 2,
-				"shapes": [{"shape": "ROOM_SHAPE_RECTANGLE", "weight": 1}]
+				"shapes": [{
+					"shape": "ROOM_SHAPE_RECTANGLE",
+					"weight": 1,
+					"width": {"min": 2, "max": 3},
+					"height": {"min": 2, "max": 3}
+				}]
 			},
 			"corridor_geometry": {
 				"widths": [{"width": 2, "weight": 1}]

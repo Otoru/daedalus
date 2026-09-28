@@ -69,10 +69,11 @@ func ExampleConfig_roomGeometry() {
 	oneCell, err := generator.Generate(daedalus.Config{
 		Width: 24, Height: 24, Seed: 4, MaxRooms: 4, MinDistance: 4,
 		RoomGeometry: &daedalus.RoomGeometry{
-			MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 1,
 			MaxFootprintCells: 1, MinRoomGap: 1,
 			Shapes: []daedalus.RoomShapeWeight{{
 				Shape: daedalus.RoomShapeRectangle, Weight: 1,
+				Width:  daedalus.DimensionRange{Min: 1, Max: 1},
+				Height: daedalus.DimensionRange{Min: 1, Max: 1},
 			}},
 		},
 	})

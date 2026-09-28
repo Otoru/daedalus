@@ -116,8 +116,10 @@ message Config {
   // plant_catalog is optional; when absent, plant_id and tags stay empty on
   // the Layout.
   PlantCatalog plant_catalog = 12;
-  // room_geometry is the optional Room geometry; when absent, the
-  // specification's default dynamic profile is used.
+  // room_geometry is the optional Room geometry. When absent, each shape
+  // uses its dynamic profile: Rectangle, L, T, and Cross are 3..9 and Circle
+  // is 5..9, each axis clamped to the Grid. An omitted width or height on a
+  // present shape is that same profile for that axis, not a 0..0 range.
   optional RoomGeometry room_geometry = 13;
   // corridor_geometry is the optional Corridor width distribution. When
   // absent, every Corridor is one Cell wide, the same as a nil pointer in Go.
@@ -126,29 +128,43 @@ message Config {
   optional CorridorGeometry corridor_geometry = 14;
 }
 
-// RoomGeometry defines the dimensions, area, spacing and weights of Rooms.
+// RoomGeometry defines the area, spacing and per-shape ranges of Rooms.
+// The old shared bounds min_width, max_width, min_height and max_height are
+// gone; their field numbers stay reserved so a later field cannot reuse them.
 message RoomGeometry {
-  // Bounding-box dimensions, in Cells; maxima ≥ minima and ≤ the Grid
-  // dimension.
-  uint32 min_width = 1;
-  uint32 max_width = 2;
-  uint32 min_height = 3;
-  uint32 max_height = 4;
+  reserved 1, 2, 3, 4;
+  reserved "min_width", "max_width", "min_height", "max_height";
   // max_footprint_cells limits the Cells occupied by a single Room.
   uint32 max_footprint_cells = 5;
   // min_room_gap is the minimum number of empty layers between footprints,
   // measured by the Chebyshev distance between occupied Cells.
   uint32 min_room_gap = 6;
-  // shapes lists positive weights per shape, with no duplicate shapes.
+  // shapes lists positive weights per shape, with no duplicate shapes. Each
+  // entry carries that shape's width and height.
   repeated RoomShapeWeight shapes = 7;
 }
 
-// RoomShapeWeight associates a shape with a positive selection weight.
+// DimensionRange is an inclusive Cell span. max of 0, or min greater than
+// max, is an empty span. A span the shape cannot realize is invalid. A span
+// the Grid cannot hold drops the shape.
+message DimensionRange {
+  uint32 min = 1;
+  uint32 max = 2;
+}
+
+// RoomShapeWeight associates a shape with a positive selection weight and
+// the width and height spans for that shape. An omitted width or height is
+// the dynamic profile for that axis. A present range, including 0..0, is
+// validated as written.
 message RoomShapeWeight {
   // shape is one of the canonical Room shapes.
   RoomShape shape = 1;
   // weight is the positive relative weight used when selecting the shape.
   uint32 weight = 2;
+  // width is the bounding-box width span, in Cells.
+  DimensionRange width = 3;
+  // height is the bounding-box height span, in Cells.
+  DimensionRange height = 4;
 }
 
 // CorridorGeometry defines the width distribution for Corridors.

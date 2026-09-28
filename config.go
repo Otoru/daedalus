@@ -63,10 +63,13 @@ type Config struct {
 	// biomes.
 	DensityRegions []DensityRegion
 	// RoomGeometry defines Room geometry. Nil requests the default dynamic
-	// profile: width and height from min(3, side) to min(9, side),
-	// MaxFootprintCells 81, MinRoomGap 1, and weights Rectangle 4, L 2, T 2,
-	// Cross 1, Circle 2. A shape with no legal size on the Grid is dropped.
-	// Rectangle, including the 1×1 mask, always remains.
+	// profile. Each shape carries its own width and height: Rectangle, L, T,
+	// and Cross are 3..9 on both axes, and Circle is 5..9 on both axes, each
+	// axis clamped with min(profile minimum, grid side)..min(profile maximum,
+	// grid side). MaxFootprintCells is 81, MinRoomGap is 1, and the weights
+	// are Rectangle 4, L 2, T 2, Cross 1, Circle 2. A shape whose clamped
+	// range has no legal mask is omitted. Rectangle, including the 1×1 mask
+	// on a 1×1 Grid, always remains.
 	RoomGeometry *RoomGeometry
 	// CorridorGeometry defines the width distribution for Corridors. Nil means
 	// every Corridor is one Cell wide and the width stream is never consumed,
@@ -77,24 +80,28 @@ type Config struct {
 	PlantCatalog *PlantCatalog
 }
 
-// RoomGeometry defines dimensions, area, spacing, and shape weights for Rooms
-// accepted by a request.
+// RoomGeometry defines area, spacing, and per-shape dimension ranges for Rooms
+// accepted by a request. Width and height belong to each RoomShapeWeight.
 type RoomGeometry struct {
-	// MinWidth is the minimum permitted bounding-box width in Cells.
-	MinWidth uint32
-	// MaxWidth is the maximum permitted bounding-box width in Cells.
-	MaxWidth uint32
-	// MinHeight is the minimum permitted bounding-box height in Cells.
-	MinHeight uint32
-	// MaxHeight is the maximum permitted bounding-box height in Cells.
-	MaxHeight uint32
 	// MaxFootprintCells limits the Cells occupied by a single Room.
 	MaxFootprintCells uint32
 	// MinRoomGap is the minimum number of empty layers between footprints,
 	// measured by Chebyshev distance between occupied Cells.
 	MinRoomGap uint32
-	// Shapes lists positive weights by shape, with no duplicate shapes.
+	// Shapes lists positive weights by shape, with no duplicate shapes. Each
+	// entry carries the width and height ranges that apply to that shape.
 	Shapes []RoomShapeWeight
+}
+
+// DimensionRange is an inclusive span of bounding-box sizes, in Cells.
+// Max 0, or Min greater than Max, is not a span. The zero value is not the
+// meaning of an omitted wire range; that omission is filled with
+// DefaultDimensionRanges before validation sees the shape.
+type DimensionRange struct {
+	// Min is the smallest permitted size in Cells, inclusive.
+	Min uint32
+	// Max is the largest permitted size in Cells, inclusive.
+	Max uint32
 }
 
 // CorridorGeometry defines the width distribution for Corridors.
@@ -114,12 +121,17 @@ type CorridorWidthWeight struct {
 	Weight uint32
 }
 
-// RoomShapeWeight associates a Shape with a positive selection weight.
+// RoomShapeWeight associates a Shape with a positive selection weight and the
+// width and height spans legal for that shape.
 type RoomShapeWeight struct {
 	// Shape is one of the canonical Room shapes.
 	Shape RoomShape
 	// Weight is the positive relative weight used for shape selection.
 	Weight uint32
+	// Width is the inclusive bounding-box width span, in Cells.
+	Width DimensionRange
+	// Height is the inclusive bounding-box height span, in Cells.
+	Height DimensionRange
 }
 
 // RoomRoleRequest is a declarative request to assign a RoomRole and the Plant

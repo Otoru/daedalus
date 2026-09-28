@@ -178,11 +178,10 @@ func TestGeneratorRejectsInvalidPluginPlacements(t *testing.T) {
 			config := Config{
 				Width: 8, Height: 8, MinDistance: 1, MaxRooms: 1,
 				RoomGeometry: &RoomGeometry{
-					MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
 					MaxFootprintCells: 4,
 					Shapes: []RoomShapeWeight{
-						{Shape: RoomShapeRectangle, Weight: 1},
-						{Shape: RoomShapeL, Weight: 1},
+						shapeSpan(RoomShapeRectangle, 1, 1, 2, 1, 2),
+						shapeSpan(RoomShapeL, 1, 1, 2, 1, 2),
 					},
 				},
 			}
@@ -245,11 +244,10 @@ func TestGeneratorClassifiesInvalidPluginOutput(t *testing.T) {
 		config := Config{
 			Width: 8, Height: 8, MinDistance: 1, MaxRooms: 1,
 			RoomGeometry: &RoomGeometry{
-				MinWidth: 1, MaxWidth: 2, MinHeight: 1, MaxHeight: 2,
 				MaxFootprintCells: 4,
 				Shapes: []RoomShapeWeight{
-					{Shape: RoomShapeRectangle, Weight: 1},
-					{Shape: RoomShapeL, Weight: 1},
+					shapeSpan(RoomShapeRectangle, 1, 1, 2, 1, 2),
+					shapeSpan(RoomShapeL, 1, 1, 2, 1, 2),
 				},
 			},
 		}
@@ -605,9 +603,8 @@ func fixedGeometryConfigForTest(width, height, maxRooms uint32) Config {
 	return Config{
 		Width: width, Height: height, MinDistance: 1, MaxRooms: maxRooms,
 		RoomGeometry: &RoomGeometry{
-			MinWidth: 1, MaxWidth: 1, MinHeight: 1, MaxHeight: 1,
 			MaxFootprintCells: 1,
-			Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+			Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 1, 1, 1)},
 		},
 	}
 }

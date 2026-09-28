@@ -67,15 +67,14 @@ func maximumV1BenchmarkConfig() Config {
 		MinDistance: 1, MaxAttempts: 1024, MaxRooms: 256,
 		ExtraEdgeCount: 16,
 		RoomGeometry: &RoomGeometry{
-			MinWidth: 3, MaxWidth: 9, MinHeight: 3, MaxHeight: 9,
 			MaxFootprintCells: 81,
 			MinRoomGap:        1,
 			Shapes: []RoomShapeWeight{
-				{Shape: RoomShapeRectangle, Weight: 4},
-				{Shape: RoomShapeL, Weight: 2},
-				{Shape: RoomShapeT, Weight: 2},
-				{Shape: RoomShapeCross, Weight: 1},
-				{Shape: RoomShapeCircle, Weight: 2},
+				shapeSpan(RoomShapeRectangle, 4, 3, 9, 3, 9),
+				shapeSpan(RoomShapeL, 2, 3, 9, 3, 9),
+				shapeSpan(RoomShapeT, 2, 3, 9, 3, 9),
+				shapeSpan(RoomShapeCross, 1, 3, 9, 3, 9),
+				shapeSpan(RoomShapeCircle, 2, 5, 9, 5, 9),
 			},
 		},
 		RoomRoleRequests: []RoomRoleRequest{

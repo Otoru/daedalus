@@ -277,13 +277,19 @@ func mustPlacementRequest(t testing.TB, config Config) PlacementRequest {
 	}
 }
 
+func shapeSpan(shape RoomShape, weight, minW, maxW, minH, maxH uint32) RoomShapeWeight {
+	return RoomShapeWeight{
+		Shape: shape, Weight: weight,
+		Width:  DimensionRange{Min: minW, Max: maxW},
+		Height: DimensionRange{Min: minH, Max: maxH},
+	}
+}
+
 func unitRectangleGeometry(minRoomGap uint32) RoomGeometry {
 	return RoomGeometry{
-		MinWidth: 1, MaxWidth: 1,
-		MinHeight: 1, MaxHeight: 1,
 		MaxFootprintCells: 1,
 		MinRoomGap:        minRoomGap,
-		Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+		Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 1, 1, 1)},
 	}
 }
 

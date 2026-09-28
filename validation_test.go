@@ -31,13 +31,9 @@ func TestSingleCellGridNormalizationKeepsRectangle(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, RoomGeometry{
-		MinWidth:          1,
-		MaxWidth:          1,
-		MinHeight:         1,
-		MaxHeight:         1,
 		MaxFootprintCells: 81,
 		MinRoomGap:        1,
-		Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 4}},
+		Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 4, 1, 1, 1, 1)},
 	}, effective.roomGeometry)
 	assert.Equal(t, []roomGeometryCombination{{shape: RoomShapeRectangle, width: 1, height: 1}}, effective.geometryCombinations)
 }
@@ -48,18 +44,16 @@ func TestDefaultNormalizationUsesDynamicProfile(t *testing.T) {
 	effective, err := normalizeConfig(Config{Width: 16, Height: 16})
 	require.NoError(t, err)
 
-	assert.Equal(t, uint32(3), effective.roomGeometry.MinWidth)
-	assert.Equal(t, uint32(9), effective.roomGeometry.MaxWidth)
-	assert.Equal(t, uint32(3), effective.roomGeometry.MinHeight)
-	assert.Equal(t, uint32(9), effective.roomGeometry.MaxHeight)
 	assert.Equal(t, []RoomShapeWeight{
-		{Shape: RoomShapeRectangle, Weight: 4},
-		{Shape: RoomShapeL, Weight: 2},
-		{Shape: RoomShapeT, Weight: 2},
-		{Shape: RoomShapeCross, Weight: 1},
-		{Shape: RoomShapeCircle, Weight: 2},
+		shapeSpan(RoomShapeRectangle, 4, 3, 9, 3, 9),
+		shapeSpan(RoomShapeL, 2, 3, 9, 3, 9),
+		shapeSpan(RoomShapeT, 2, 3, 9, 3, 9),
+		shapeSpan(RoomShapeCross, 1, 3, 9, 3, 9),
+		shapeSpan(RoomShapeCircle, 2, 5, 9, 5, 9),
 	}, effective.roomGeometry.Shapes)
 	assert.Contains(t, effective.geometryCombinations, roomGeometryCombination{shape: RoomShapeCircle, width: 5, height: 5})
+	assert.NotContains(t, effective.geometryCombinations, roomGeometryCombination{shape: RoomShapeCircle, width: 6, height: 6})
+	assert.NotContains(t, effective.geometryCombinations, roomGeometryCombination{shape: RoomShapeCircle, width: 3, height: 3})
 }
 
 func TestDefaultNormalizationFiltersShapesWithoutValidDimensions(t *testing.T) {
@@ -67,8 +61,8 @@ func TestDefaultNormalizationFiltersShapesWithoutValidDimensions(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []RoomShapeWeight{
-		{Shape: RoomShapeRectangle, Weight: 4},
-		{Shape: RoomShapeL, Weight: 2},
+		shapeSpan(RoomShapeRectangle, 4, 2, 2, 2, 2),
+		shapeSpan(RoomShapeL, 2, 2, 2, 2, 2),
 	}, effective.roomGeometry.Shapes)
 	for _, combination := range effective.geometryCombinations {
 		assert.NotEqual(t, RoomShapeCross, combination.shape)
@@ -81,15 +75,11 @@ func TestNormalizationEnumeratesCombinationsInCanonicalOrder(t *testing.T) {
 		Width:  7,
 		Height: 7,
 		RoomGeometry: &RoomGeometry{
-			MinWidth:          2,
-			MaxWidth:          5,
-			MinHeight:         2,
-			MaxHeight:         5,
 			MaxFootprintCells: 25,
 			Shapes: []RoomShapeWeight{
-				{Shape: RoomShapeCircle, Weight: 2},
-				{Shape: RoomShapeRectangle, Weight: 4},
-				{Shape: RoomShapeT, Weight: 1},
+				shapeSpan(RoomShapeCircle, 2, 2, 5, 2, 5),
+				shapeSpan(RoomShapeRectangle, 4, 2, 5, 2, 5),
+				shapeSpan(RoomShapeT, 1, 2, 5, 2, 5),
 			},
 		},
 	}
@@ -156,9 +146,8 @@ func TestValidationDistinguishesInvalidConfigFromExceededLimit(t *testing.T) {
 
 func TestValidationRejectsGeometryWithoutValidAreaCombination(t *testing.T) {
 	config := Config{Width: 8, Height: 8, RoomGeometry: &RoomGeometry{
-		MinWidth: 2, MaxWidth: 2, MinHeight: 2, MaxHeight: 2,
 		MaxFootprintCells: 1,
-		Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+		Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 2, 2, 2, 2)},
 	}}
 
 	_, err := normalizeConfig(config)
@@ -167,11 +156,10 @@ func TestValidationRejectsGeometryWithoutValidAreaCombination(t *testing.T) {
 
 func TestValidationRejectsOverflowingWeightSum(t *testing.T) {
 	config := Config{Width: 8, Height: 8, RoomGeometry: &RoomGeometry{
-		MinWidth: 3, MaxWidth: 3, MinHeight: 3, MaxHeight: 3,
 		MaxFootprintCells: 9,
 		Shapes: []RoomShapeWeight{
-			{Shape: RoomShapeRectangle, Weight: math.MaxUint32},
-			{Shape: RoomShapeL, Weight: 1},
+			shapeSpan(RoomShapeRectangle, math.MaxUint32, 3, 3, 3, 3),
+			shapeSpan(RoomShapeL, 1, 3, 3, 3, 3),
 		},
 	}}
 
@@ -203,18 +191,18 @@ func TestValidationRejectsBossWithoutStart(t *testing.T) {
 // or partial Layout.
 func TestValidationRejectsInvalidGeometryFields(t *testing.T) {
 	base := RoomGeometry{
-		MinWidth: 1, MaxWidth: 4, MinHeight: 1, MaxHeight: 4,
 		MaxFootprintCells: 16,
-		Shapes:            []RoomShapeWeight{{Shape: RoomShapeRectangle, Weight: 1}},
+		Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 4, 1, 4)},
 	}
 	cases := []struct {
 		name   string
 		change func(*RoomGeometry)
 		want   error
 	}{
-		{"missing minimum width", func(geometry *RoomGeometry) { geometry.MinWidth = 0 }, ErrInvalidConfig},
-		{"maximum width smaller", func(geometry *RoomGeometry) { geometry.MaxWidth = 0 }, ErrInvalidConfig},
-		{"height above the Grid", func(geometry *RoomGeometry) { geometry.MaxHeight = 9 }, ErrInvalidConfig},
+		{"width maximum is zero", func(geometry *RoomGeometry) { geometry.Shapes[0].Width.Max = 0 }, ErrInvalidConfig},
+		{"height minimum exceeds maximum", func(geometry *RoomGeometry) {
+			geometry.Shapes[0].Height = DimensionRange{Min: 5, Max: 2}
+		}, ErrInvalidConfig},
 		{"missing area", func(geometry *RoomGeometry) { geometry.MaxFootprintCells = 0 }, ErrInvalidConfig},
 		{"area above the ceiling", func(geometry *RoomGeometry) { geometry.MaxFootprintCells = MaxFootprintCells + 1 }, ErrLimitExceeded},
 		{"gap above the ceiling", func(geometry *RoomGeometry) { geometry.MinRoomGap = 257 }, ErrInvalidConfig},
@@ -232,6 +220,128 @@ func TestValidationRejectsInvalidGeometryFields(t *testing.T) {
 			assert.ErrorIs(t, err, tc.want)
 		})
 	}
+}
+
+// TestDimensionRangesKeepEmptySpansImpossibleMasksAndGridDropsApart checks the
+// three ways a per-shape span can fail. An empty span and a span with no legal
+// mask are ErrInvalidConfig, and their messages differ. A span the mask
+// accepts but the Grid cannot hold drops that shape and leaves Rectangle.
+func TestDimensionRangesKeepEmptySpansImpossibleMasksAndGridDropsApart(t *testing.T) {
+	rectangle := shapeSpan(RoomShapeRectangle, 1, 1, 4, 1, 4)
+
+	t.Run("maximum is zero", func(t *testing.T) {
+		geometry := RoomGeometry{
+			MaxFootprintCells: 16,
+			Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 0, 1, 4)},
+		}
+		_, err := normalizeConfig(Config{Width: 8, Height: 8, RoomGeometry: &geometry})
+		assert.ErrorIs(t, err, ErrInvalidConfig)
+		assert.ErrorContains(t, err, "width range maximum is 0")
+		assert.NotContains(t, err.Error(), "admits no legal size")
+	})
+
+	t.Run("minimum exceeds maximum", func(t *testing.T) {
+		geometry := RoomGeometry{
+			MaxFootprintCells: 16,
+			Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 6, 2, 1, 4)},
+		}
+		_, err := normalizeConfig(Config{Width: 8, Height: 8, RoomGeometry: &geometry})
+		assert.ErrorIs(t, err, ErrInvalidConfig)
+		assert.ErrorContains(t, err, "width range minimum exceeds maximum")
+	})
+
+	t.Run("circle 6 by 6 admits no legal size on a large grid", func(t *testing.T) {
+		geometry := RoomGeometry{
+			MaxFootprintCells: 81,
+			Shapes: []RoomShapeWeight{
+				rectangle,
+				shapeSpan(RoomShapeCircle, 1, 6, 6, 6, 6),
+			},
+		}
+		_, err := normalizeConfig(Config{Width: 64, Height: 64, RoomGeometry: &geometry})
+		assert.ErrorIs(t, err, ErrInvalidConfig)
+		assert.ErrorContains(t, err, "admits no legal size")
+		assert.ErrorContains(t, err, "circle")
+		assert.NotContains(t, err.Error(), "no valid combination")
+	})
+
+	t.Run("circle larger than the grid is dropped and rectangle remains", func(t *testing.T) {
+		geometry := RoomGeometry{
+			MaxFootprintCells: 81,
+			Shapes: []RoomShapeWeight{
+				shapeSpan(RoomShapeRectangle, 4, 1, 3, 1, 3),
+				shapeSpan(RoomShapeCircle, 2, 7, 9, 7, 9),
+			},
+		}
+		effective, err := normalizeConfig(Config{Width: 5, Height: 5, RoomGeometry: &geometry})
+		require.NoError(t, err)
+		require.Len(t, effective.roomGeometry.Shapes, 1)
+		assert.Equal(t, RoomShapeRectangle, effective.roomGeometry.Shapes[0].Shape)
+		for _, combination := range effective.geometryCombinations {
+			assert.NotEqual(t, RoomShapeCircle, combination.shape)
+		}
+	})
+
+	t.Run("rectangle past the grid is not an impossible mask", func(t *testing.T) {
+		geometry := RoomGeometry{
+			MaxFootprintCells: 81,
+			Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 9, 9, 9, 9)},
+		}
+		_, err := normalizeConfig(Config{Width: 8, Height: 8, RoomGeometry: &geometry})
+		assert.ErrorIs(t, err, ErrInvalidConfig)
+		assert.ErrorContains(t, err, "no valid combination within the area")
+		assert.NotContains(t, err.Error(), "admits no legal size")
+		assert.NotContains(t, err.Error(), "maximum is 0")
+	})
+
+	t.Run("a range that overlaps the grid keeps the sizes that fit", func(t *testing.T) {
+		geometry := RoomGeometry{
+			MaxFootprintCells: 81,
+			Shapes:            []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 9, 1, 9)},
+		}
+		effective, err := normalizeConfig(Config{Width: 8, Height: 8, RoomGeometry: &geometry})
+		require.NoError(t, err)
+		assert.Equal(t, DimensionRange{Min: 1, Max: 8}, effective.roomGeometry.Shapes[0].Width)
+		assert.Equal(t, DimensionRange{Min: 1, Max: 8}, effective.roomGeometry.Shapes[0].Height)
+		for _, combination := range effective.geometryCombinations {
+			assert.LessOrEqual(t, combination.width, uint32(8))
+			assert.LessOrEqual(t, combination.height, uint32(8))
+		}
+	})
+}
+
+func TestShapeRangeAdmitsMatchesValidRoomShapeDimensions(t *testing.T) {
+	shapes := []RoomShape{RoomShapeRectangle, RoomShapeL, RoomShapeT, RoomShapeCross, RoomShapeCircle}
+	for _, shape := range shapes {
+		for width := uint32(0); width <= 12; width++ {
+			for height := uint32(0); height <= 12; height++ {
+				got := shapeRangeAdmits(shape, DimensionRange{Min: width, Max: width}, DimensionRange{Min: height, Max: height})
+				want := ValidRoomShapeDimensions(shape, width, height)
+				assert.Equal(t, want, got, "shape %d size %dx%d", shape, width, height)
+			}
+		}
+	}
+}
+
+func TestOmittedProfileRangesStayLegalOrUnclamped(t *testing.T) {
+	width, height, ok := DefaultDimensionRanges(RoomShapeCircle, 16, 16)
+	require.True(t, ok)
+	assert.Equal(t, DimensionRange{Min: 5, Max: 9}, width)
+	assert.Equal(t, DimensionRange{Min: 5, Max: 9}, height)
+
+	width, height, ok = DefaultDimensionRanges(RoomShapeCircle, 4, 4)
+	require.True(t, ok)
+	assert.Equal(t, DimensionRange{Min: 5, Max: 9}, width)
+	assert.Equal(t, DimensionRange{Min: 5, Max: 9}, height)
+	assert.NotEqual(t, DimensionRange{}, width)
+
+	width, height, ok = DefaultDimensionRanges(RoomShapeRectangle, 1, 1)
+	require.True(t, ok)
+	assert.Equal(t, DimensionRange{Min: 1, Max: 1}, width)
+	assert.Equal(t, DimensionRange{Min: 1, Max: 1}, height)
+
+	_, _, ok = DefaultDimensionRanges(RoomShape(99), 16, 16)
+	assert.False(t, ok)
 }
 
 func TestValidationRejectsInvalidRoles(t *testing.T) {
