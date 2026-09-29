@@ -67,6 +67,20 @@
         <p id="click-hint" class="click-hint">First click sets the goal. The next click sets the position.</p>
         <output id="click-mode" class="click-mode">Next click sets the goal</output>
       </div>
+      <div class="field-controls" aria-label="Field of vision">
+        <div class="toggle-row">
+          <label class="centerline-toggle" for="visibility-mode">
+            <input id="visibility-mode" type="checkbox" checked>
+            Vision observer
+          </label>
+          <label class="radius-control" for="visibility-radius">Radius
+            <input id="visibility-radius" type="range" min="0" max="32" value="12">
+            <output id="visibility-radius-value" for="visibility-radius">12</output>
+          </label>
+          <button id="clear-visibility" class="button secondary compact" type="button">Clear vision</button>
+        </div>
+        <p id="visibility-hint" class="click-hint">Click a cell to set the observer and show its field of vision.</p>
+      </div>
       <div class="legend" aria-label="Map legend">
         <span><i class="swatch empty"></i>Empty</span>
         <span><i class="swatch room"></i>Room</span>

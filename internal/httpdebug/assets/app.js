@@ -57,6 +57,10 @@ const elements = {
   clickMode: document.querySelector("#click-mode"),
   flee: document.querySelector("#flee"),
   clearField: document.querySelector("#clear-field"),
+  visibilityMode: document.querySelector("#visibility-mode"),
+  visibilityRadius: document.querySelector("#visibility-radius"),
+  visibilityRadiusValue: document.querySelector("#visibility-radius-value"),
+  clearVisibility: document.querySelector("#clear-visibility"),
   viewport: document.querySelector("#map-viewport"),
   canvas: document.querySelector("#map-canvas"),
   placeholder: document.querySelector("#map-placeholder"),
@@ -78,6 +82,9 @@ const state = {
   goal: null,
   position: null,
   field: null,
+  visibility: null,
+  observer: null,
+  visibilityRadius: Number(elements.visibilityRadius.value),
   fieldToken: 0,
   clickPhase: "goal",
   flee: false,
@@ -133,6 +140,14 @@ elements.flee.addEventListener("change", () => {
   }
 });
 elements.clearField.addEventListener("click", clearField);
+elements.visibilityRadius.addEventListener("input", () => {
+  state.visibilityRadius = Number(elements.visibilityRadius.value);
+  elements.visibilityRadiusValue.textContent = String(state.visibilityRadius);
+  if (state.observer) {
+    void loadVisibility();
+  }
+});
+elements.clearVisibility.addEventListener("click", clearVisibility);
 elements.canvas.addEventListener("click", selectCellFromPointer);
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
 elements.requestTrigger.addEventListener("click", () => togglePanel("request"));
@@ -181,6 +196,7 @@ async function generateLayout() {
     state.layout = layout;
     state.selectedCell = null;
     clearFieldState();
+    clearVisibilityState();
     clearInspector();
     fitMap();
     const roomCount = Array.isArray(layout.rooms) ? layout.rooms.length : 0;
@@ -398,6 +414,7 @@ function renderLayout() {
   drawGrid(context, grid.width, grid.height, scale);
   drawCorridorBands(context, scale);
   drawField(context, scale);
+  drawVisibility(context, scale);
   drawCenterlines(context, scale);
   if (state.field) {
     drawRoomBoundaries(context, scale);
@@ -759,6 +776,19 @@ function selectCell(x, y) {
     return;
   }
   state.selectedCell = {x, y};
+  if (elements.visibilityMode.checked) {
+    if (!isTransparentCell(x, y)) {
+      updateInspector(x, y);
+      renderLayout();
+      setStatus("An observer has to be a room or corridor cell", "failure");
+      return;
+    }
+    state.observer = {x, y};
+    updateInspector(x, y);
+    renderLayout();
+    void loadVisibility();
+    return;
+  }
   if (state.clickPhase === "goal") {
     if (!isPassableCell(x, y)) {
       updateInspector(x, y);
@@ -805,11 +835,15 @@ function updateInspector(x, y) {
   corridorIDs.sort((first, second) => Number(first) - Number(second));
   const corridors = (state.layout.corridors || []).filter((corridor) => corridorIDs.includes(corridor.id));
   const step = stepAt(x, y);
+  const visible = visibilityAt(x, y);
   const details = {
     coordinates: {x, y},
     kind: readableEnum(cell.kind, "CELL_KIND_"),
     distance: step ? step.distance : null,
     status: step ? statusLabel(step.status) : null,
+    visible_to_observer: visible,
+    observer: state.observer,
+    vision_radius: state.observer ? state.visibilityRadius : null,
     corridor_ids: corridorIDs,
     rooms: rooms.map((room) => ({
       id: room.id,
@@ -836,9 +870,11 @@ function updateInspector(x, y) {
       corridor_ids: door.corridor_ids || [],
     })),
   };
-  const headline = step
-    ? `${statusLabel(step.status)} · distance ${step.distance}`
-    : "No field on this cell yet.";
+  const headline = state.observer
+    ? `Vision: ${visible ? "Visible" : "Hidden"}${step ? ` · ${statusLabel(step.status)} · distance ${step.distance}` : ""}`
+    : step
+      ? `${statusLabel(step.status)} · distance ${step.distance}`
+      : "No field on this cell yet.";
   elements.cellDetails.textContent = `${headline}\n${JSON.stringify(details, null, 2)}`;
   elements.inspector.hidden = false;
 }
@@ -877,6 +913,7 @@ function syncViewportToContainer() {
 }
 
 updateZoomLabel();
+elements.visibilityRadiusValue.textContent = String(state.visibilityRadius);
 updateClickMode();
 
 // MaxStepsPerCall on the navigation contract. A larger positions list is
@@ -907,9 +944,27 @@ function clearFieldState() {
   updateClickMode();
 }
 
+function clearVisibility() {
+  clearVisibilityState();
+  if (state.selectedCell) {
+    updateInspector(state.selectedCell.x, state.selectedCell.y);
+  }
+  renderLayout();
+  setStatus("Vision cleared", "success");
+}
+
+function clearVisibilityState() {
+  state.observer = null;
+  state.visibility = null;
+}
+
 function isPassableCell(x, y) {
   const kind = kindAt(x, y);
   return kind === "CELL_KIND_ROOM" || kind === "CELL_KIND_CORRIDOR";
+}
+
+function isTransparentCell(x, y) {
+  return isPassableCell(x, y);
 }
 
 function kindAt(x, y) {
@@ -923,6 +978,14 @@ function stepAt(x, y) {
     return null;
   }
   return state.field[y * state.layout.grid.width + x] || null;
+}
+
+function visibilityAt(x, y) {
+  if (!state.visibility || !state.layout?.grid) {
+    return null;
+  }
+  const index = y * state.layout.grid.width + x;
+  return (state.visibility[index >> 3] & (1 << (index & 7))) !== 0;
 }
 
 function statusLabel(status) {
@@ -959,6 +1022,79 @@ function bytesToBase64(bytes) {
     binary += String.fromCharCode.apply(null, slice);
   }
   return btoa(binary);
+}
+
+function base64ToBytes(text) {
+  const binary = atob(text || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function opacityBytes(layout) {
+  const width = layout.grid.width;
+  const height = layout.grid.height;
+  const count = width * height;
+  const transparent = new Uint8Array(Math.ceil(count / 8));
+  const cells = layout.grid.cells || [];
+  for (let index = 0; index < count; index += 1) {
+    const cell = cells[index];
+    if (cell && (cell.kind === "CELL_KIND_ROOM" || cell.kind === "CELL_KIND_CORRIDOR")) {
+      transparent[index >> 3] |= 1 << (index & 7);
+    }
+  }
+  return transparent;
+}
+
+async function loadVisibility() {
+  if (!state.layout?.grid || !state.observer) {
+    return;
+  }
+  const layout = state.layout;
+  setStatus("Computing the field of vision…", "busy");
+  try {
+    const response = await fetch("/api/v1/compute-visibility", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        opacity_grid: {
+          width: layout.grid.width,
+          height: layout.grid.height,
+          transparent: bytesToBase64(opacityBytes(layout)),
+        },
+        queries: [{origin: state.observer, radius: state.visibilityRadius}],
+      }),
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      showServerError(response.status, responseText);
+      setStatus(`Vision request failed · HTTP ${response.status}`, "failure");
+      state.visibility = null;
+      renderLayout();
+      return;
+    }
+    const payload = JSON.parse(responseText);
+    const encoded = payload.fields && payload.fields[0] ? payload.fields[0].visible : "";
+    const visibility = base64ToBytes(encoded);
+    if (visibility.length !== Math.ceil(layout.grid.width * layout.grid.height / 8)) {
+      showLocalError("ComputeVisibility returned a field with an unexpected size.");
+      setStatus("Vision response was incomplete", "failure");
+      state.visibility = null;
+      renderLayout();
+      return;
+    }
+    state.visibility = visibility;
+    renderLayout();
+    if (state.selectedCell) {
+      updateInspector(state.selectedCell.x, state.selectedCell.y);
+    }
+    setStatus(`Vision ready · radius ${state.visibilityRadius}`, "success");
+  } catch (error) {
+    showLocalError(`Could not complete the vision request: ${error.message}`);
+    setStatus("Vision request failed", "failure");
+  }
 }
 
 async function loadField() {
@@ -1129,6 +1265,29 @@ function drawField(context, scale) {
       context.fillRect(x * scale, y * scale, scale, scale);
     }
   }
+}
+
+function drawVisibility(context, scale) {
+  if (!state.visibility || !state.layout?.grid) {
+    return;
+  }
+  const grid = state.layout.grid;
+  const cells = grid.cells || [];
+  context.save();
+  for (let y = 0; y < grid.height; y += 1) {
+    for (let x = 0; x < grid.width; x += 1) {
+      const index = y * grid.width + x;
+      const visible = visibilityAt(x, y);
+      const kind = cells[index] ? cells[index].kind : "CELL_KIND_EMPTY";
+      if (visible) {
+        context.fillStyle = kind === "CELL_KIND_EMPTY" ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.16)";
+      } else {
+        context.fillStyle = "rgba(0,0,0,0.62)";
+      }
+      context.fillRect(x * scale, y * scale, scale, scale);
+    }
+  }
+  context.restore();
 }
 
 function drawUnreachableCell(context, x, y, scale) {

@@ -87,6 +87,7 @@ func New(serviceServer *service.Server, version string, logger *zap.Logger) *Ser
 	mux.HandleFunc("GET /debug/", server.debug)
 	mux.HandleFunc("POST /api/v1/generate", server.generate)
 	mux.HandleFunc("POST /api/v1/compute-steps", server.computeSteps)
+	mux.HandleFunc("POST /api/v1/compute-visibility", server.computeVisibility)
 	server.handler = server.observeAndRestrict(mux)
 	return server
 }
@@ -262,6 +263,41 @@ func (server *Server) computeSteps(writer http.ResponseWriter, request *http.Req
 	_, _ = writer.Write(encoded)
 }
 
+func (server *Server) computeVisibility(writer http.ResponseWriter, request *http.Request) {
+	body, ok := readDebugJSON(writer, request)
+	if !ok {
+		return
+	}
+
+	var protoRequest daedalusv1.ComputeVisibilityRequest
+	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+
+	response, err := server.service.ComputeVisibility(request.Context(), &protoRequest)
+	if err != nil {
+		httpStatus, code, message := mapServiceError(err)
+		writeError(writer, request, httpStatus, code, message)
+		return
+	}
+	encoded, err := (protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}).Marshal(response)
+	if err != nil {
+		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing visibility")
+		return
+	}
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(encoded)
+}
+
 // readDebugJSON applies the shared debug POST limits: application/json, then
 // a 1 MiB ceiling before the body is buffered. A caller that gets false has
 // already received the structured error.
@@ -301,10 +337,12 @@ func readDebugJSON(writer http.ResponseWriter, request *http.Request) ([]byte, b
 
 func validateCanonicalRequest(body []byte, descriptor protoreflect.MessageDescriptor) error {
 	required := map[protoreflect.FullName][]protoreflect.Name{
-		"daedalus.v1.GenerateRequest":     {"config"},
-		"daedalus.v1.Config":              {"width", "height", "seed"},
-		"daedalus.v1.ComputeStepsRequest": {"cost_grid"},
-		"daedalus.v1.CostGrid":            {"width", "height", "costs"},
+		"daedalus.v1.GenerateRequest":          {"config"},
+		"daedalus.v1.Config":                   {"width", "height", "seed"},
+		"daedalus.v1.ComputeStepsRequest":      {"cost_grid"},
+		"daedalus.v1.CostGrid":                 {"width", "height", "costs"},
+		"daedalus.v1.ComputeVisibilityRequest": {"opacity_grid"},
+		"daedalus.v1.OpacityGrid":              {"width", "height", "transparent"},
 	}
 	return validateCanonicalMessage(body, descriptor, required)
 }

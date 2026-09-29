@@ -253,6 +253,25 @@ h3 {
   font-size: 0.72rem;
 }
 
+.radius-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.radius-control input {
+  width: 7rem;
+}
+
+.radius-control output {
+  min-width: 1.5rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .click-mode {
   display: inline-block;
   padding: 3px 8px;

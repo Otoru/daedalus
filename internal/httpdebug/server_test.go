@@ -20,6 +20,7 @@ import (
 	"github.com/Otoru/daedalus"
 	daedalusv1 "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1"
 	"github.com/Otoru/daedalus/internal/service"
+	"github.com/Otoru/daedalus/utils/vision"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -200,6 +201,11 @@ func TestDebugPageExploresTheFieldThroughComputeSteps(t *testing.T) {
 	assert.Contains(t, markup, `id="click-mode"`)
 	assert.Contains(t, markup, "goal")
 	assert.Contains(t, markup, "position")
+	assert.Contains(t, source, "/api/v1/compute-visibility")
+	assert.Contains(t, source, "opacity_grid")
+	assert.Contains(t, source, "visible_to_observer")
+	assert.Contains(t, markup, `id="visibility-radius"`)
+	assert.Contains(t, markup, `id="visibility-mode"`)
 }
 
 // TestDebugMapExampleMarksRoomRoles checks that the shipped example asks for
@@ -875,6 +881,62 @@ func TestComputeStepsHTTPMatchesTheService(t *testing.T) {
 	require.Equal(t, http.StatusOK, without.Code, without.Body.String())
 	require.Equal(t, http.StatusOK, with.Code, with.Body.String())
 	assert.NotEqual(t, without.Body.String(), with.Body.String(), "flee must change the steps")
+}
+
+func TestComputeVisibilityHTTPMatchesTheServiceContract(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		return daedalus.Layout{}, nil
+	}, service.NewAdmission(1), zap.NewNop())
+	body := `{"opacity_grid":{"width":3,"height":1,"transparent":"Bw=="},"queries":[{"origin":{"x":1,"y":0},"radius":1}]}`
+	response := executeRequest(server.Handler(), http.MethodPost, "/api/v1/compute-visibility", strings.NewReader(body))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+
+	var decoded struct {
+		Fields []struct {
+			Visible string `json:"visible"`
+		} `json:"fields"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
+	require.Len(t, decoded.Fields, 1)
+	assert.Equal(t, "Bw==", decoded.Fields[0].Visible)
+}
+
+func TestGeneratedLayoutDefaultOpacityRoundTripsThroughVisibilityHTTP(t *testing.T) {
+	t.Parallel()
+
+	generator := daedalus.Generator{}
+	layout, err := generator.GenerateContext(context.Background(), daedalus.Config{
+		Width: 32, Height: 32, Seed: 4242, MaxAttempts: 30, MaxRooms: 32,
+	})
+	require.NoError(t, err)
+	opacity := vision.NewOpacityGrid(layout)
+	require.NoError(t, opacity.Validate())
+
+	var origin daedalus.Cell
+	found := false
+	for index, cell := range layout.Grid.Cells {
+		if vision.DefaultOpacityRule(cell) {
+			origin = daedalus.Cell{X: int32(index % int(layout.Grid.Width)), Y: int32(index / int(layout.Grid.Width))}
+			found = true
+			break
+		}
+	}
+	require.True(t, found)
+	direct, err := vision.Compute(context.Background(), opacity, origin, 6)
+	require.NoError(t, err)
+
+	server := newTestServer(t, generator.GenerateContext, service.NewAdmission(1), zap.NewNop())
+	body := fmt.Sprintf(`{"opacity_grid":{"width":%d,"height":%d,"transparent":%q},"queries":[{"origin":{"x":%d,"y":%d},"radius":6}]}`,
+		layout.Grid.Width, layout.Grid.Height, base64.StdEncoding.EncodeToString(opacity.Transparent), origin.X, origin.Y)
+	response := executeRequest(server.Handler(), http.MethodPost, "/api/v1/compute-visibility", strings.NewReader(body))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var wire daedalusv1.ComputeVisibilityResponse
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(response.Body.Bytes(), &wire))
+	require.Len(t, wire.Fields, 1)
+	assert.Equal(t, direct.Visible, wire.Fields[0].Visible)
 }
 
 func computeStepsBody(t *testing.T, costs []byte, width, height int, flee bool) string {
