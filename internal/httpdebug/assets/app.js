@@ -10,7 +10,8 @@ const exampleRequest = `{
     "max_attempts": 30,
     "max_rooms": 128,
     "corridor_order": "CORRIDOR_ORDER_X_THEN_Y",
-    "extra_edge_count": 0,
+    "extra_edge_count": 8,
+    "max_room_edges": 3,
     "room_role_requests": [
       {"role": "ROOM_ROLE_START", "count": 1},
       {"role": "ROOM_ROLE_BOSS", "count": 1},
