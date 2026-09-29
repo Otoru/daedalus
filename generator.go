@@ -124,6 +124,9 @@ func (generator Generator) GenerateContext(ctx context.Context, config Config) (
 	if err := resolvePlants(ctx, effective, &layout); err != nil {
 		return Layout{}, err
 	}
+	if err := placeTerrain(ctx, effective, &layout); err != nil {
+		return Layout{}, err
+	}
 	return layout, nil
 }
 

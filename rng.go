@@ -27,8 +27,11 @@ const (
 	// corridorPlantStreamSalt separates the Corridor Plant stream from the other streams.
 	corridorPlantStreamSalt uint64 = 0xD1B54A32D192ED03
 	// corridorWidthStreamSalt separates the Corridor width stream from the other streams.
-	// The five salts above are frozen; adding this sixth salt must not change them.
+	// The six salts above are frozen; adding this seventh salt must not change them.
 	corridorWidthStreamSalt uint64 = 0xC3D4E5F60718293A
+	// terrainStreamSalt is the seventh independent stream. Its value is frozen;
+	// terrain placement must never consume one of the six existing streams.
+	terrainStreamSalt uint64 = 0x7A6B5C4D3E2F1A09
 
 	// uniformMantissaBits is the number of random bits exactly representable in
 	// the mantissa used by uniform01.
@@ -45,7 +48,7 @@ type splitMix64 struct {
 	state uint64
 }
 
-// rngStreams contains a request's six independent streams.
+// rngStreams contains a request's seven independent streams.
 type rngStreams struct {
 	placement     splitMix64
 	connector     splitMix64
@@ -53,6 +56,7 @@ type rngStreams struct {
 	roomGeometry  splitMix64
 	corridorPlant splitMix64
 	corridorWidth splitMix64
+	terrain       splitMix64
 }
 
 // mix64 is SplitMix64 finalization. Add 0x9E3779B97F4A7C15, then
@@ -80,6 +84,7 @@ func newRNGStreams(seed Seed) rngStreams {
 		roomGeometry:  newSplitMix64(mix64(seedValue ^ roomGeometryStreamSalt)),
 		corridorPlant: newSplitMix64(mix64(seedValue ^ corridorPlantStreamSalt)),
 		corridorWidth: newSplitMix64(mix64(seedValue ^ corridorWidthStreamSalt)),
+		terrain:       newSplitMix64(mix64(seedValue ^ terrainStreamSalt)),
 	}
 }
 

@@ -1,0 +1,8 @@
+{
+  "palette": [
+    {"ID": "grass", "EntryCost": 1, "Transparent": false},
+    {"ID": "rock", "EntryCost": 0, "Transparent": false},
+    {"ID": "water", "EntryCost": 2, "Transparent": false}
+  ],
+  "indices": [0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 3, 3, 3, 0, 0, 0, 3, 3, 3, 0, 0]
+}

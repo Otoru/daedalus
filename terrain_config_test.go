@@ -82,6 +82,9 @@ func TestTerrainConfigValidationRejectsMalformedConfigurations(t *testing.T) {
 		{"duplicate terrain weight", &TerrainConfig{Definitions: validDefinitions, Rooms: &TerrainDistribution{NoneWeight: 1, Terrains: []TerrainWeight{{TerrainID: "a", Weight: 1}, {TerrainID: "a", Weight: 2}}}}, ErrInvalidConfig},
 		{"unknown terrain weight", &TerrainConfig{Definitions: validDefinitions, Rooms: &TerrainDistribution{NoneWeight: 1, Terrains: []TerrainWeight{{TerrainID: "missing", Weight: 1}}}}, ErrInvalidConfig},
 		{"zero total", &TerrainConfig{Definitions: validDefinitions, Rooms: &TerrainDistribution{}}, ErrInvalidConfig},
+		{"only impassable terrain", &TerrainConfig{Definitions: []TerrainDefinition{{ID: "wall", EntryCost: 0}}, Rooms: &TerrainDistribution{Terrains: []TerrainWeight{{TerrainID: "wall", Weight: 1}}}}, ErrInvalidConfig},
+		{"only one patch bound", &TerrainConfig{Definitions: validDefinitions, Rooms: &TerrainDistribution{NoneWeight: 1, MinPatchCells: 4}}, ErrInvalidConfig},
+		{"patch bounds reversed", &TerrainConfig{Definitions: validDefinitions, Rooms: &TerrainDistribution{NoneWeight: 1, MinPatchCells: 9, MaxPatchCells: 4}}, ErrInvalidConfig},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,7 +154,8 @@ func equalTerrainDistribution(first, second *TerrainDistribution) bool {
 	if first == nil || second == nil {
 		return first == second
 	}
-	return first.NoneWeight == second.NoneWeight && equalTerrainWeights(first.Terrains, second.Terrains)
+	return first.NoneWeight == second.NoneWeight && equalTerrainWeights(first.Terrains, second.Terrains) &&
+		first.MinPatchCells == second.MinPatchCells && first.MaxPatchCells == second.MaxPatchCells
 }
 
 func equalTerrainDefinitions(first, second []TerrainDefinition) bool {

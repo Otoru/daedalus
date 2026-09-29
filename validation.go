@@ -24,9 +24,11 @@ const (
 	// defaultCircleMinSize is 5 because a disc on a square Grid needs an odd
 	// diameter of at least 5, with a centre Cell. A shared 3..9 span would
 	// include diameters that are not circles.
-	defaultCircleMinSize     = 5
-	defaultMaxFootprintCells = 81
-	defaultMinRoomGap        = 1
+	defaultCircleMinSize        = 5
+	defaultMaxFootprintCells    = 81
+	defaultMinRoomGap           = 1
+	defaultMinTerrainPatchCells = 8
+	defaultMaxTerrainPatchCells = 24
 	// maximumCorridorWidth is the largest Corridor width a request may name.
 	// A larger value is nonsense, not a product limit, so it is ErrInvalidConfig.
 	maximumCorridorWidth = 64
@@ -169,7 +171,7 @@ func normalizeTerrainConfig(source *TerrainConfig) (*TerrainConfig, error) {
 		return nil, fmt.Errorf("%w: TerrainConfig.Definitions has %d entries, above %d", ErrLimitExceeded, len(source.Definitions), MaxTerrainKinds)
 	}
 
-	definitionIDs := make(map[TerrainID]struct{}, len(source.Definitions))
+	definitionIDs := make(map[TerrainID]TerrainDefinition, len(source.Definitions))
 	var definitionBytes uint64
 	for _, definition := range source.Definitions {
 		if definition.ID == "" || !utf8.ValidString(string(definition.ID)) {
@@ -185,7 +187,7 @@ func normalizeTerrainConfig(source *TerrainConfig) (*TerrainConfig, error) {
 		if definitionBytes > uint64(MaxTerrainPaletteBytes) {
 			return nil, fmt.Errorf("%w: Terrain definition IDs use %d bytes, above %d", ErrLimitExceeded, definitionBytes, MaxTerrainPaletteBytes)
 		}
-		definitionIDs[definition.ID] = struct{}{}
+		definitionIDs[definition.ID] = definition
 	}
 	if source.Rooms == nil && source.Corridors == nil {
 		return nil, fmt.Errorf("%w: TerrainConfig must declare Rooms or Corridors", ErrInvalidConfig)
@@ -208,9 +210,18 @@ func normalizeTerrainConfig(source *TerrainConfig) (*TerrainConfig, error) {
 	return canonical, nil
 }
 
-func validateTerrainDistribution(source *TerrainDistribution, definitions map[TerrainID]struct{}) error {
+func validateTerrainDistribution(source *TerrainDistribution, definitions map[TerrainID]TerrainDefinition) error {
 	if source == nil {
 		return nil
+	}
+	if (source.MinPatchCells == 0) != (source.MaxPatchCells == 0) {
+		return fmt.Errorf("%w: TerrainDistribution patch range must set both bounds", ErrInvalidConfig)
+	}
+	if source.MinPatchCells > source.MaxPatchCells {
+		return fmt.Errorf("%w: TerrainDistribution patch minimum exceeds maximum", ErrInvalidConfig)
+	}
+	if source.MaxPatchCells > MaxCells {
+		return fmt.Errorf("%w: TerrainDistribution patch maximum exceeds %d", ErrLimitExceeded, MaxCells)
 	}
 	seen := make(map[TerrainID]struct{}, len(source.Terrains))
 	total := uint64(source.NoneWeight)
@@ -218,7 +229,8 @@ func validateTerrainDistribution(source *TerrainDistribution, definitions map[Te
 		if terrain.TerrainID == "" || !utf8.ValidString(string(terrain.TerrainID)) {
 			return fmt.Errorf("%w: TerrainID in weight must be non-empty UTF-8", ErrInvalidConfig)
 		}
-		if _, exists := definitions[terrain.TerrainID]; !exists {
+		_, exists := definitions[terrain.TerrainID]
+		if !exists {
 			return fmt.Errorf("%w: TerrainID %q is not declared", ErrInvalidConfig, terrain.TerrainID)
 		}
 		if _, exists := seen[terrain.TerrainID]; exists {
@@ -236,6 +248,18 @@ func validateTerrainDistribution(source *TerrainDistribution, definitions map[Te
 	if total == 0 {
 		return fmt.Errorf("%w: TerrainDistribution total weight must be positive", ErrInvalidConfig)
 	}
+	if source.NoneWeight == 0 {
+		passable := false
+		for terrainID := range seen {
+			if definitions[terrainID].EntryCost != 0 {
+				passable = true
+				break
+			}
+		}
+		if !passable {
+			return fmt.Errorf("%w: TerrainDistribution has no passable candidate for the connectivity spine", ErrInvalidConfig)
+		}
+	}
 	return nil
 }
 
@@ -244,8 +268,14 @@ func cloneTerrainDistribution(source *TerrainDistribution) *TerrainDistribution 
 		return nil
 	}
 	clone := &TerrainDistribution{
-		NoneWeight: source.NoneWeight,
-		Terrains:   append([]TerrainWeight(nil), source.Terrains...),
+		NoneWeight:    source.NoneWeight,
+		Terrains:      append([]TerrainWeight(nil), source.Terrains...),
+		MinPatchCells: source.MinPatchCells,
+		MaxPatchCells: source.MaxPatchCells,
+	}
+	if clone.MinPatchCells == 0 {
+		clone.MinPatchCells = defaultMinTerrainPatchCells
+		clone.MaxPatchCells = defaultMaxTerrainPatchCells
 	}
 	sort.Slice(clone.Terrains, func(first, second int) bool {
 		return clone.Terrains[first].TerrainID < clone.Terrains[second].TerrainID

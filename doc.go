@@ -603,3 +603,20 @@
 // catalog. None of these knobs, and none of the role, shortcut, or density
 // options, shifts the draws of another stream.
 package daedalus
+
+// Terrain patch algorithm (normative v1 contract)
+//
+// When TerrainConfig is non-nil, Daedalus visits eligible Room and Corridor
+// Cells in row-major order and makes a seed slot every MaxPatchCells Cells of
+// that base kind. A seed slot draws one weighted terrain label; a zero label
+// makes no patch. A non-zero label draws an integer target in the inclusive
+// MinPatchCells..MaxPatchCells range and grows by FIFO breadth-first search
+// until that target is reached. Expansion enqueues every eligible neighbour
+// in strict North, East, South, West order; ties are therefore deterministic.
+// It stops at the Grid boundary, a claimed Cell, a different base kind, or a
+// protected connectivity-spine Cell. A protected seed may receive passable
+// terrain but cannot expand. The seed schedule, target draw, queue order, and
+// clipping rule fully determine each patch from Config and the terrain stream.
+// All weights, totals, and decisions use integer arithmetic. A protected Cell
+// never draws an impassable candidate. There is one terrain byte per Cell and
+// no stacking; callers wanting combined effects must declare one composite ID.

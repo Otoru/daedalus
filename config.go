@@ -108,6 +108,11 @@ type TerrainConfig struct {
 type TerrainDistribution struct {
 	NoneWeight uint32
 	Terrains   []TerrainWeight
+	// MinPatchCells and MaxPatchCells bound each seeded patch's target size.
+	// Both zero request the canonical 8..24 default; specifying only one bound
+	// is invalid.
+	MinPatchCells uint32
+	MaxPatchCells uint32
 }
 
 // TerrainWeight associates a positive selection weight with a declared terrain.
