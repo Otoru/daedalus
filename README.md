@@ -16,6 +16,8 @@ Deterministic 2D dungeon generation for Go, with terrain, navigation, visibility
 - **Intentional rings:** the optional SDK `NewLoopConnector` builds a ring before attaching branches. `TargetRingRooms` controls its preferred size. This differs from adding shortcuts to the default tree, consumes one extra-edge slot and can cost substantially more than the default connector.
 - **Asset selection:** `PlantCatalog` assigns weighted room and corridor asset metadata. Room assets must support required door directions and role tags. `PlantID` and `Tags` let the client choose its prefabs.
 
+
+
 ## Give rooms a purpose
 
 Request Start, Boss and Treasure rooms. Start occupies Room 0; Boss is selected by weighted backbone distance from Start. Treasures are spread by distance from existing role rooms and previously selected treasures.
@@ -36,11 +38,13 @@ Terrain is an optional palette-indexed layer over the geometry. Supply your own 
 
 The first image uses three definitions:
 
-| Terrain | Entry cost | Transparent | Effect with terrain-aware utilities |
-| --- | ---: | :---: | --- |
-| Grass | 1 | Yes | Ordinary movement and clear sight |
-| Water | 4 | Yes | More expensive movement, clear sight |
-| Smoke | 1 | No | Ordinary movement, blocked sight |
+
+| Terrain | Entry cost | Transparent | Effect with terrain-aware utilities  |
+| ------- | ---------- | ----------- | ------------------------------------ |
+| Grass   | 1          | Yes         | Ordinary movement and clear sight    |
+| Water   | 4          | Yes         | More expensive movement, clear sight |
+| Smoke   | 1          | No          | Ordinary movement, blocked sight     |
+
 
 Cost and transparency are independent: zero entry cost means impassable, while `transparent: false` blocks sight. Water is traversable in this example. Terrain names carry no hard-coded gameplay meaning; swimming, damage and status effects belong to the client.
 
@@ -76,11 +80,13 @@ The demo's **Show gates** action returns this actual plan for the showcase map:
 {"id": 0, "kind": "GATE_KIND_MAIN", "door_id": 32, "key_room_id": 19}
 ```
 
-| Plan field | Client action |
-| --- | --- |
-| `id: 0` | Use Gate 0 to associate this key with this lock. IDs are local to this plan. |
-| `door_id: 32` | Read `layout.Doors[32]`; place a locked door at `At`, oriented by `Direction`, covering the entire `Span`. |
+
+| Plan field        | Client action                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `id: 0`           | Use Gate 0 to associate this key with this lock. IDs are local to this plan.                                         |
+| `door_id: 32`     | Read `layout.Doors[32]`; place a locked door at `At`, oriented by `Direction`, covering the entire `Span`.           |
 | `key_room_id: 19` | Read `layout.Rooms[19]`; spawn the key on a reachable cell in that room. Its `At` anchor is a clear starting choice. |
+
 
 Generate the layout first, then call `BuildGatingPlan` with that layout and the desired start, target and gate counts. Instantiate the returned locks and keys once when loading the level. During play, keep inventory and door state in the client:
 
@@ -105,11 +111,14 @@ The plan leaves the layout unchanged. Solvability is checked on the room/corrido
 ## Try the demo
 
 ```sh
-go build -o bin/daedalus ./cmd/daedalus
-./bin/daedalus --http-debug-enabled
+daedalus --http-debug-enabled
 ```
 
-Open [127.0.0.1:8090/debug/](http://127.0.0.1:8090/debug/). Open **Request**, paste the [showcase request](.github/assets/showcase-request.json) and select **Generate map**. Open **View** for the controls:
+Open [127.0.0.1:8090/debug/](http://127.0.0.1:8090/debug/).
+
+Open **Request**, paste the [showcase request](.github/assets/showcase-request.json) and select **Generate map**.
+
+Open **View** for the controls:
 
 1. **Fit** shows the entire floor; Scale changes cell size.
 2. Uncheck **Vision observer**. Click a goal, then a starting position to display the distance field and route. **Flee** switches navigation behavior.
