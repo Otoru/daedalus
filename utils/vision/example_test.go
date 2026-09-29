@@ -1,11 +1,21 @@
 package vision_test
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Otoru/daedalus"
 	"github.com/Otoru/daedalus/utils/vision"
 )
+
+func ExampleCompute() {
+	grid := vision.OpacityGrid{Width: 3, Height: 1, Transparent: []byte{0x07}}
+	field, _ := vision.Compute(context.Background(), grid, daedalus.Cell{X: 1}, 1)
+	fmt.Println(field.VisibleCells(nil))
+
+	// Output:
+	// [{0 0} {1 0} {2 0}]
+}
 
 // A generated Layout becomes a packed transparency grid. Room and corridor
 // cells are open; empty cells stay solid. The printed byte is LSB-first:
