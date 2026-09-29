@@ -269,6 +269,35 @@ message Config {
   // ceiling. When set it must be at least 2: a spanning tree over n rooms
   // needs n-1 edges, so a ceiling of 1 can connect only two rooms.
   uint32 max_room_edges = 15;
+  // terrain is the optional open terrain vocabulary and placement policy.
+  optional TerrainConfig terrain = 16;
+}
+
+// TerrainDefinition carries the two generic spatial facts Daedalus needs;
+// the identifier remains open and caller-defined.
+message TerrainDefinition {
+  string id = 1;
+  // 0 is impassable; 1..255 is the default pathfinding entry cost.
+  uint32 entry_cost = 2;
+  bool transparent = 3;
+}
+
+message TerrainWeight {
+  string terrain_id = 1;
+  uint32 weight = 2;
+}
+
+message TerrainDistribution {
+  uint32 none_weight = 1;
+  repeated TerrainWeight terrains = 2;
+  uint32 min_patch_cells = 3;
+  uint32 max_patch_cells = 4;
+}
+
+message TerrainConfig {
+  repeated TerrainDefinition definitions = 1;
+  optional TerrainDistribution rooms = 2;
+  optional TerrainDistribution corridors = 3;
 }
 
 // RoomGeometry defines the area, spacing and per-shape ranges of Rooms.
@@ -404,6 +433,15 @@ message Grid {
   // cells contains exactly width × height states, in canonical order
   // (Y then X): the state of (x, y) is at cells[y * width + x].
   repeated CellState cells = 4;
+  // terrain is absent for the historical nil/default Layout.
+  optional TerrainLayer terrain = 5;
+}
+
+message TerrainLayer {
+  // Sorted bytewise by id. Index byte n addresses palette[n-1]; 0 is none.
+  repeated TerrainDefinition palette = 1;
+  // Exactly grid.width * grid.height bytes, row-major.
+  bytes indices = 2;
 }
 
 // Room is a topological vertex of the Layout and holds its absolute footprint.

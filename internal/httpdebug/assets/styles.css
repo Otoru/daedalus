@@ -180,6 +180,10 @@ h3 {
   background: var(--empty-cell);
 }
 
+.swatch.terrain {
+  background: hsl(142 28% 42%);
+}
+
 .swatch.room {
   background: var(--room-cell);
 }

@@ -1246,7 +1246,9 @@ type Config struct {
 	// room. Zero means unlimited, and the room's geometry is then the only
 	// ceiling. When set it must be at least 2: a spanning tree over n rooms
 	// needs n-1 edges, so a ceiling of 1 can connect only two rooms.
-	MaxRoomEdges  uint32 `protobuf:"varint,15,opt,name=max_room_edges,json=maxRoomEdges,proto3" json:"max_room_edges,omitempty"`
+	MaxRoomEdges uint32 `protobuf:"varint,15,opt,name=max_room_edges,json=maxRoomEdges,proto3" json:"max_room_edges,omitempty"`
+	// terrain is the optional open terrain vocabulary and placement policy.
+	Terrain       *TerrainConfig `protobuf:"bytes,16,opt,name=terrain,proto3,oneof" json:"terrain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1386,6 +1388,256 @@ func (x *Config) GetMaxRoomEdges() uint32 {
 	return 0
 }
 
+func (x *Config) GetTerrain() *TerrainConfig {
+	if x != nil {
+		return x.Terrain
+	}
+	return nil
+}
+
+// TerrainDefinition carries the two generic spatial facts Daedalus needs;
+// the identifier remains open and caller-defined.
+type TerrainDefinition struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 0 is impassable; 1..255 is the default pathfinding entry cost.
+	EntryCost     uint32 `protobuf:"varint,2,opt,name=entry_cost,json=entryCost,proto3" json:"entry_cost,omitempty"`
+	Transparent   bool   `protobuf:"varint,3,opt,name=transparent,proto3" json:"transparent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerrainDefinition) Reset() {
+	*x = TerrainDefinition{}
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerrainDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerrainDefinition) ProtoMessage() {}
+
+func (x *TerrainDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerrainDefinition.ProtoReflect.Descriptor instead.
+func (*TerrainDefinition) Descriptor() ([]byte, []int) {
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TerrainDefinition) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *TerrainDefinition) GetEntryCost() uint32 {
+	if x != nil {
+		return x.EntryCost
+	}
+	return 0
+}
+
+func (x *TerrainDefinition) GetTransparent() bool {
+	if x != nil {
+		return x.Transparent
+	}
+	return false
+}
+
+type TerrainWeight struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TerrainId     string                 `protobuf:"bytes,1,opt,name=terrain_id,json=terrainId,proto3" json:"terrain_id,omitempty"`
+	Weight        uint32                 `protobuf:"varint,2,opt,name=weight,proto3" json:"weight,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerrainWeight) Reset() {
+	*x = TerrainWeight{}
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerrainWeight) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerrainWeight) ProtoMessage() {}
+
+func (x *TerrainWeight) ProtoReflect() protoreflect.Message {
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerrainWeight.ProtoReflect.Descriptor instead.
+func (*TerrainWeight) Descriptor() ([]byte, []int) {
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *TerrainWeight) GetTerrainId() string {
+	if x != nil {
+		return x.TerrainId
+	}
+	return ""
+}
+
+func (x *TerrainWeight) GetWeight() uint32 {
+	if x != nil {
+		return x.Weight
+	}
+	return 0
+}
+
+type TerrainDistribution struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NoneWeight    uint32                 `protobuf:"varint,1,opt,name=none_weight,json=noneWeight,proto3" json:"none_weight,omitempty"`
+	Terrains      []*TerrainWeight       `protobuf:"bytes,2,rep,name=terrains,proto3" json:"terrains,omitempty"`
+	MinPatchCells uint32                 `protobuf:"varint,3,opt,name=min_patch_cells,json=minPatchCells,proto3" json:"min_patch_cells,omitempty"`
+	MaxPatchCells uint32                 `protobuf:"varint,4,opt,name=max_patch_cells,json=maxPatchCells,proto3" json:"max_patch_cells,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerrainDistribution) Reset() {
+	*x = TerrainDistribution{}
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerrainDistribution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerrainDistribution) ProtoMessage() {}
+
+func (x *TerrainDistribution) ProtoReflect() protoreflect.Message {
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerrainDistribution.ProtoReflect.Descriptor instead.
+func (*TerrainDistribution) Descriptor() ([]byte, []int) {
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *TerrainDistribution) GetNoneWeight() uint32 {
+	if x != nil {
+		return x.NoneWeight
+	}
+	return 0
+}
+
+func (x *TerrainDistribution) GetTerrains() []*TerrainWeight {
+	if x != nil {
+		return x.Terrains
+	}
+	return nil
+}
+
+func (x *TerrainDistribution) GetMinPatchCells() uint32 {
+	if x != nil {
+		return x.MinPatchCells
+	}
+	return 0
+}
+
+func (x *TerrainDistribution) GetMaxPatchCells() uint32 {
+	if x != nil {
+		return x.MaxPatchCells
+	}
+	return 0
+}
+
+type TerrainConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Definitions   []*TerrainDefinition   `protobuf:"bytes,1,rep,name=definitions,proto3" json:"definitions,omitempty"`
+	Rooms         *TerrainDistribution   `protobuf:"bytes,2,opt,name=rooms,proto3,oneof" json:"rooms,omitempty"`
+	Corridors     *TerrainDistribution   `protobuf:"bytes,3,opt,name=corridors,proto3,oneof" json:"corridors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerrainConfig) Reset() {
+	*x = TerrainConfig{}
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerrainConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerrainConfig) ProtoMessage() {}
+
+func (x *TerrainConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerrainConfig.ProtoReflect.Descriptor instead.
+func (*TerrainConfig) Descriptor() ([]byte, []int) {
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *TerrainConfig) GetDefinitions() []*TerrainDefinition {
+	if x != nil {
+		return x.Definitions
+	}
+	return nil
+}
+
+func (x *TerrainConfig) GetRooms() *TerrainDistribution {
+	if x != nil {
+		return x.Rooms
+	}
+	return nil
+}
+
+func (x *TerrainConfig) GetCorridors() *TerrainDistribution {
+	if x != nil {
+		return x.Corridors
+	}
+	return nil
+}
+
 // RoomGeometry defines the area, spacing and per-shape ranges of Rooms.
 // The old shared bounds min_width, max_width, min_height and max_height are
 // gone; their field numbers stay reserved so a later field cannot reuse them.
@@ -1405,7 +1657,7 @@ type RoomGeometry struct {
 
 func (x *RoomGeometry) Reset() {
 	*x = RoomGeometry{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[16]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1417,7 +1669,7 @@ func (x *RoomGeometry) String() string {
 func (*RoomGeometry) ProtoMessage() {}
 
 func (x *RoomGeometry) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[16]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1430,7 +1682,7 @@ func (x *RoomGeometry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomGeometry.ProtoReflect.Descriptor instead.
 func (*RoomGeometry) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{16}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RoomGeometry) GetMaxFootprintCells() uint32 {
@@ -1467,7 +1719,7 @@ type DimensionRange struct {
 
 func (x *DimensionRange) Reset() {
 	*x = DimensionRange{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[17]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1479,7 +1731,7 @@ func (x *DimensionRange) String() string {
 func (*DimensionRange) ProtoMessage() {}
 
 func (x *DimensionRange) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[17]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1492,7 +1744,7 @@ func (x *DimensionRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DimensionRange.ProtoReflect.Descriptor instead.
 func (*DimensionRange) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{17}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DimensionRange) GetMin() uint32 {
@@ -1529,7 +1781,7 @@ type RoomShapeWeight struct {
 
 func (x *RoomShapeWeight) Reset() {
 	*x = RoomShapeWeight{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[18]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1541,7 +1793,7 @@ func (x *RoomShapeWeight) String() string {
 func (*RoomShapeWeight) ProtoMessage() {}
 
 func (x *RoomShapeWeight) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[18]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1554,7 +1806,7 @@ func (x *RoomShapeWeight) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomShapeWeight.ProtoReflect.Descriptor instead.
 func (*RoomShapeWeight) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{18}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RoomShapeWeight) GetShape() RoomShape {
@@ -1603,7 +1855,7 @@ type CorridorGeometry struct {
 
 func (x *CorridorGeometry) Reset() {
 	*x = CorridorGeometry{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[19]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1615,7 +1867,7 @@ func (x *CorridorGeometry) String() string {
 func (*CorridorGeometry) ProtoMessage() {}
 
 func (x *CorridorGeometry) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[19]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1628,7 +1880,7 @@ func (x *CorridorGeometry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorridorGeometry.ProtoReflect.Descriptor instead.
 func (*CorridorGeometry) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{19}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CorridorGeometry) GetWidths() []*CorridorWidthWeight {
@@ -1652,7 +1904,7 @@ type CorridorWidthWeight struct {
 
 func (x *CorridorWidthWeight) Reset() {
 	*x = CorridorWidthWeight{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[20]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1664,7 +1916,7 @@ func (x *CorridorWidthWeight) String() string {
 func (*CorridorWidthWeight) ProtoMessage() {}
 
 func (x *CorridorWidthWeight) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[20]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1677,7 +1929,7 @@ func (x *CorridorWidthWeight) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorridorWidthWeight.ProtoReflect.Descriptor instead.
 func (*CorridorWidthWeight) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{20}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CorridorWidthWeight) GetWidth() uint32 {
@@ -1710,7 +1962,7 @@ type RoomRoleRequest struct {
 
 func (x *RoomRoleRequest) Reset() {
 	*x = RoomRoleRequest{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[21]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1722,7 +1974,7 @@ func (x *RoomRoleRequest) String() string {
 func (*RoomRoleRequest) ProtoMessage() {}
 
 func (x *RoomRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[21]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1735,7 +1987,7 @@ func (x *RoomRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomRoleRequest.ProtoReflect.Descriptor instead.
 func (*RoomRoleRequest) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{21}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RoomRoleRequest) GetRole() RoomRole {
@@ -1777,7 +2029,7 @@ type DensityRegion struct {
 
 func (x *DensityRegion) Reset() {
 	*x = DensityRegion{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[22]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +2041,7 @@ func (x *DensityRegion) String() string {
 func (*DensityRegion) ProtoMessage() {}
 
 func (x *DensityRegion) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[22]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +2054,7 @@ func (x *DensityRegion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DensityRegion.ProtoReflect.Descriptor instead.
 func (*DensityRegion) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{22}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DensityRegion) GetMin() *Cell {
@@ -1838,7 +2090,7 @@ type PlantCatalog struct {
 
 func (x *PlantCatalog) Reset() {
 	*x = PlantCatalog{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[23]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1850,7 +2102,7 @@ func (x *PlantCatalog) String() string {
 func (*PlantCatalog) ProtoMessage() {}
 
 func (x *PlantCatalog) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[23]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1863,7 +2115,7 @@ func (x *PlantCatalog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlantCatalog.ProtoReflect.Descriptor instead.
 func (*PlantCatalog) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{23}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *PlantCatalog) GetRooms() []*RoomPlant {
@@ -1897,7 +2149,7 @@ type RoomPlant struct {
 
 func (x *RoomPlant) Reset() {
 	*x = RoomPlant{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[24]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1909,7 +2161,7 @@ func (x *RoomPlant) String() string {
 func (*RoomPlant) ProtoMessage() {}
 
 func (x *RoomPlant) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[24]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1922,7 +2174,7 @@ func (x *RoomPlant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoomPlant.ProtoReflect.Descriptor instead.
 func (*RoomPlant) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{24}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RoomPlant) GetId() string {
@@ -1967,7 +2219,7 @@ type CorridorPlant struct {
 
 func (x *CorridorPlant) Reset() {
 	*x = CorridorPlant{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[25]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1979,7 +2231,7 @@ func (x *CorridorPlant) String() string {
 func (*CorridorPlant) ProtoMessage() {}
 
 func (x *CorridorPlant) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[25]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1992,7 +2244,7 @@ func (x *CorridorPlant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CorridorPlant.ProtoReflect.Descriptor instead.
 func (*CorridorPlant) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{25}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CorridorPlant) GetId() string {
@@ -2032,7 +2284,7 @@ type CellState struct {
 
 func (x *CellState) Reset() {
 	*x = CellState{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[26]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2044,7 +2296,7 @@ func (x *CellState) String() string {
 func (*CellState) ProtoMessage() {}
 
 func (x *CellState) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[26]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2057,7 +2309,7 @@ func (x *CellState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CellState.ProtoReflect.Descriptor instead.
 func (*CellState) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{26}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CellState) GetAt() *Cell {
@@ -2097,14 +2349,16 @@ type Grid struct {
 	CellSize float64 `protobuf:"fixed64,3,opt,name=cell_size,json=cellSize,proto3" json:"cell_size,omitempty"`
 	// cells contains exactly width × height states, in canonical order
 	// (Y then X): the state of (x, y) is at cells[y * width + x].
-	Cells         []*CellState `protobuf:"bytes,4,rep,name=cells,proto3" json:"cells,omitempty"`
+	Cells []*CellState `protobuf:"bytes,4,rep,name=cells,proto3" json:"cells,omitempty"`
+	// terrain is absent for the historical nil/default Layout.
+	Terrain       *TerrainLayer `protobuf:"bytes,5,opt,name=terrain,proto3,oneof" json:"terrain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Grid) Reset() {
 	*x = Grid{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[27]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2116,7 +2370,7 @@ func (x *Grid) String() string {
 func (*Grid) ProtoMessage() {}
 
 func (x *Grid) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[27]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2129,7 +2383,7 @@ func (x *Grid) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Grid.ProtoReflect.Descriptor instead.
 func (*Grid) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{27}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Grid) GetWidth() uint32 {
@@ -2156,6 +2410,67 @@ func (x *Grid) GetCellSize() float64 {
 func (x *Grid) GetCells() []*CellState {
 	if x != nil {
 		return x.Cells
+	}
+	return nil
+}
+
+func (x *Grid) GetTerrain() *TerrainLayer {
+	if x != nil {
+		return x.Terrain
+	}
+	return nil
+}
+
+type TerrainLayer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Sorted bytewise by id. Index byte n addresses palette[n-1]; 0 is none.
+	Palette []*TerrainDefinition `protobuf:"bytes,1,rep,name=palette,proto3" json:"palette,omitempty"`
+	// Exactly grid.width * grid.height bytes, row-major.
+	Indices       []byte `protobuf:"bytes,2,opt,name=indices,proto3" json:"indices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerrainLayer) Reset() {
+	*x = TerrainLayer{}
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerrainLayer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerrainLayer) ProtoMessage() {}
+
+func (x *TerrainLayer) ProtoReflect() protoreflect.Message {
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerrainLayer.ProtoReflect.Descriptor instead.
+func (*TerrainLayer) Descriptor() ([]byte, []int) {
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *TerrainLayer) GetPalette() []*TerrainDefinition {
+	if x != nil {
+		return x.Palette
+	}
+	return nil
+}
+
+func (x *TerrainLayer) GetIndices() []byte {
+	if x != nil {
+		return x.Indices
 	}
 	return nil
 }
@@ -2192,7 +2507,7 @@ type Room struct {
 
 func (x *Room) Reset() {
 	*x = Room{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[28]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2204,7 +2519,7 @@ func (x *Room) String() string {
 func (*Room) ProtoMessage() {}
 
 func (x *Room) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[28]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2217,7 +2532,7 @@ func (x *Room) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Room.ProtoReflect.Descriptor instead.
 func (*Room) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{28}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Room) GetId() uint32 {
@@ -2322,7 +2637,7 @@ type Corridor struct {
 
 func (x *Corridor) Reset() {
 	*x = Corridor{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[29]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2334,7 +2649,7 @@ func (x *Corridor) String() string {
 func (*Corridor) ProtoMessage() {}
 
 func (x *Corridor) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[29]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2347,7 +2662,7 @@ func (x *Corridor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Corridor.ProtoReflect.Descriptor instead.
 func (*Corridor) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{29}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Corridor) GetId() uint32 {
@@ -2437,7 +2752,7 @@ type Door struct {
 
 func (x *Door) Reset() {
 	*x = Door{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[30]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2449,7 +2764,7 @@ func (x *Door) String() string {
 func (*Door) ProtoMessage() {}
 
 func (x *Door) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[30]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2462,7 +2777,7 @@ func (x *Door) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Door.ProtoReflect.Descriptor instead.
 func (*Door) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{30}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *Door) GetId() uint32 {
@@ -2524,7 +2839,7 @@ type Layout struct {
 
 func (x *Layout) Reset() {
 	*x = Layout{}
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[31]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2536,7 +2851,7 @@ func (x *Layout) String() string {
 func (*Layout) ProtoMessage() {}
 
 func (x *Layout) ProtoReflect() protoreflect.Message {
-	mi := &file_daedalus_v1_daedalus_proto_msgTypes[31]
+	mi := &file_daedalus_v1_daedalus_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2549,7 +2864,7 @@ func (x *Layout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Layout.ProtoReflect.Descriptor instead.
 func (*Layout) Descriptor() ([]byte, []int) {
-	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{31}
+	return file_daedalus_v1_daedalus_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *Layout) GetSeed() uint64 {
@@ -2638,7 +2953,7 @@ const file_daedalus_v1_daedalus_proto_rawDesc = "" +
 	"\x06fields\x18\x01 \x03(\v2\x1c.daedalus.v1.VisibilityFieldR\x06fields\"\"\n" +
 	"\x04Cell\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x02 \x01(\x05R\x01y\"\xec\x05\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\"\xb3\x06\n" +
 	"\x06Config\x12\x14\n" +
 	"\x05width\x18\x01 \x01(\rR\x05width\x12\x16\n" +
 	"\x06height\x18\x02 \x01(\rR\x06height\x12\x1b\n" +
@@ -2655,9 +2970,34 @@ const file_daedalus_v1_daedalus_proto_rawDesc = "" +
 	"\rplant_catalog\x18\f \x01(\v2\x19.daedalus.v1.PlantCatalogR\fplantCatalog\x12C\n" +
 	"\rroom_geometry\x18\r \x01(\v2\x19.daedalus.v1.RoomGeometryH\x00R\froomGeometry\x88\x01\x01\x12O\n" +
 	"\x11corridor_geometry\x18\x0e \x01(\v2\x1d.daedalus.v1.CorridorGeometryH\x01R\x10corridorGeometry\x88\x01\x01\x12$\n" +
-	"\x0emax_room_edges\x18\x0f \x01(\rR\fmaxRoomEdgesB\x10\n" +
+	"\x0emax_room_edges\x18\x0f \x01(\rR\fmaxRoomEdges\x129\n" +
+	"\aterrain\x18\x10 \x01(\v2\x1a.daedalus.v1.TerrainConfigH\x02R\aterrain\x88\x01\x01B\x10\n" +
 	"\x0e_room_geometryB\x14\n" +
-	"\x12_corridor_geometry\"\xdc\x01\n" +
+	"\x12_corridor_geometryB\n" +
+	"\n" +
+	"\b_terrain\"d\n" +
+	"\x11TerrainDefinition\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"entry_cost\x18\x02 \x01(\rR\tentryCost\x12 \n" +
+	"\vtransparent\x18\x03 \x01(\bR\vtransparent\"F\n" +
+	"\rTerrainWeight\x12\x1d\n" +
+	"\n" +
+	"terrain_id\x18\x01 \x01(\tR\tterrainId\x12\x16\n" +
+	"\x06weight\x18\x02 \x01(\rR\x06weight\"\xbe\x01\n" +
+	"\x13TerrainDistribution\x12\x1f\n" +
+	"\vnone_weight\x18\x01 \x01(\rR\n" +
+	"noneWeight\x126\n" +
+	"\bterrains\x18\x02 \x03(\v2\x1a.daedalus.v1.TerrainWeightR\bterrains\x12&\n" +
+	"\x0fmin_patch_cells\x18\x03 \x01(\rR\rminPatchCells\x12&\n" +
+	"\x0fmax_patch_cells\x18\x04 \x01(\rR\rmaxPatchCells\"\xeb\x01\n" +
+	"\rTerrainConfig\x12@\n" +
+	"\vdefinitions\x18\x01 \x03(\v2\x1e.daedalus.v1.TerrainDefinitionR\vdefinitions\x12;\n" +
+	"\x05rooms\x18\x02 \x01(\v2 .daedalus.v1.TerrainDistributionH\x00R\x05rooms\x88\x01\x01\x12C\n" +
+	"\tcorridors\x18\x03 \x01(\v2 .daedalus.v1.TerrainDistributionH\x01R\tcorridors\x88\x01\x01B\b\n" +
+	"\x06_roomsB\f\n" +
+	"\n" +
+	"_corridors\"\xdc\x01\n" +
 	"\fRoomGeometry\x12.\n" +
 	"\x13max_footprint_cells\x18\x05 \x01(\rR\x11maxFootprintCells\x12 \n" +
 	"\fmin_room_gap\x18\x06 \x01(\rR\n" +
@@ -2704,12 +3044,18 @@ const file_daedalus_v1_daedalus_proto_rawDesc = "" +
 	"\aroom_id\x18\x03 \x01(\rH\x00R\x06roomId\x88\x01\x01\x12!\n" +
 	"\fcorridor_ids\x18\x04 \x03(\rR\vcorridorIdsB\n" +
 	"\n" +
-	"\b_room_id\"\x7f\n" +
+	"\b_room_id\"\xc5\x01\n" +
 	"\x04Grid\x12\x14\n" +
 	"\x05width\x18\x01 \x01(\rR\x05width\x12\x16\n" +
 	"\x06height\x18\x02 \x01(\rR\x06height\x12\x1b\n" +
 	"\tcell_size\x18\x03 \x01(\x01R\bcellSize\x12,\n" +
-	"\x05cells\x18\x04 \x03(\v2\x16.daedalus.v1.CellStateR\x05cells\"\xec\x02\n" +
+	"\x05cells\x18\x04 \x03(\v2\x16.daedalus.v1.CellStateR\x05cells\x128\n" +
+	"\aterrain\x18\x05 \x01(\v2\x19.daedalus.v1.TerrainLayerH\x00R\aterrain\x88\x01\x01B\n" +
+	"\n" +
+	"\b_terrain\"b\n" +
+	"\fTerrainLayer\x128\n" +
+	"\apalette\x18\x01 \x03(\v2\x1e.daedalus.v1.TerrainDefinitionR\apalette\x12\x18\n" +
+	"\aindices\x18\x02 \x01(\fR\aindices\"\xec\x02\n" +
 	"\x04Room\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\rR\x02id\x12!\n" +
 	"\x02at\x18\x02 \x01(\v2\x11.daedalus.v1.CellR\x02at\x12.\n" +
@@ -2806,7 +3152,7 @@ func file_daedalus_v1_daedalus_proto_rawDescGZIP() []byte {
 }
 
 var file_daedalus_v1_daedalus_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_daedalus_v1_daedalus_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_daedalus_v1_daedalus_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_daedalus_v1_daedalus_proto_goTypes = []any{
 	(CorridorOrder)(0),                // 0: daedalus.v1.CorridorOrder
 	(RoomRole)(0),                     // 1: daedalus.v1.RoomRole
@@ -2830,26 +3176,31 @@ var file_daedalus_v1_daedalus_proto_goTypes = []any{
 	(*ComputeVisibilityResponse)(nil), // 19: daedalus.v1.ComputeVisibilityResponse
 	(*Cell)(nil),                      // 20: daedalus.v1.Cell
 	(*Config)(nil),                    // 21: daedalus.v1.Config
-	(*RoomGeometry)(nil),              // 22: daedalus.v1.RoomGeometry
-	(*DimensionRange)(nil),            // 23: daedalus.v1.DimensionRange
-	(*RoomShapeWeight)(nil),           // 24: daedalus.v1.RoomShapeWeight
-	(*CorridorGeometry)(nil),          // 25: daedalus.v1.CorridorGeometry
-	(*CorridorWidthWeight)(nil),       // 26: daedalus.v1.CorridorWidthWeight
-	(*RoomRoleRequest)(nil),           // 27: daedalus.v1.RoomRoleRequest
-	(*DensityRegion)(nil),             // 28: daedalus.v1.DensityRegion
-	(*PlantCatalog)(nil),              // 29: daedalus.v1.PlantCatalog
-	(*RoomPlant)(nil),                 // 30: daedalus.v1.RoomPlant
-	(*CorridorPlant)(nil),             // 31: daedalus.v1.CorridorPlant
-	(*CellState)(nil),                 // 32: daedalus.v1.CellState
-	(*Grid)(nil),                      // 33: daedalus.v1.Grid
-	(*Room)(nil),                      // 34: daedalus.v1.Room
-	(*Corridor)(nil),                  // 35: daedalus.v1.Corridor
-	(*Door)(nil),                      // 36: daedalus.v1.Door
-	(*Layout)(nil),                    // 37: daedalus.v1.Layout
+	(*TerrainDefinition)(nil),         // 22: daedalus.v1.TerrainDefinition
+	(*TerrainWeight)(nil),             // 23: daedalus.v1.TerrainWeight
+	(*TerrainDistribution)(nil),       // 24: daedalus.v1.TerrainDistribution
+	(*TerrainConfig)(nil),             // 25: daedalus.v1.TerrainConfig
+	(*RoomGeometry)(nil),              // 26: daedalus.v1.RoomGeometry
+	(*DimensionRange)(nil),            // 27: daedalus.v1.DimensionRange
+	(*RoomShapeWeight)(nil),           // 28: daedalus.v1.RoomShapeWeight
+	(*CorridorGeometry)(nil),          // 29: daedalus.v1.CorridorGeometry
+	(*CorridorWidthWeight)(nil),       // 30: daedalus.v1.CorridorWidthWeight
+	(*RoomRoleRequest)(nil),           // 31: daedalus.v1.RoomRoleRequest
+	(*DensityRegion)(nil),             // 32: daedalus.v1.DensityRegion
+	(*PlantCatalog)(nil),              // 33: daedalus.v1.PlantCatalog
+	(*RoomPlant)(nil),                 // 34: daedalus.v1.RoomPlant
+	(*CorridorPlant)(nil),             // 35: daedalus.v1.CorridorPlant
+	(*CellState)(nil),                 // 36: daedalus.v1.CellState
+	(*Grid)(nil),                      // 37: daedalus.v1.Grid
+	(*TerrainLayer)(nil),              // 38: daedalus.v1.TerrainLayer
+	(*Room)(nil),                      // 39: daedalus.v1.Room
+	(*Corridor)(nil),                  // 40: daedalus.v1.Corridor
+	(*Door)(nil),                      // 41: daedalus.v1.Door
+	(*Layout)(nil),                    // 42: daedalus.v1.Layout
 }
 var file_daedalus_v1_daedalus_proto_depIdxs = []int32{
 	21, // 0: daedalus.v1.GenerateRequest.config:type_name -> daedalus.v1.Config
-	37, // 1: daedalus.v1.GenerateResponse.layout:type_name -> daedalus.v1.Layout
+	42, // 1: daedalus.v1.GenerateResponse.layout:type_name -> daedalus.v1.Layout
 	20, // 2: daedalus.v1.Source.at:type_name -> daedalus.v1.Cell
 	9,  // 3: daedalus.v1.Query.sources:type_name -> daedalus.v1.Source
 	20, // 4: daedalus.v1.Query.positions:type_name -> daedalus.v1.Cell
@@ -2864,49 +3215,56 @@ var file_daedalus_v1_daedalus_proto_depIdxs = []int32{
 	16, // 13: daedalus.v1.ComputeVisibilityRequest.queries:type_name -> daedalus.v1.VisibilityQuery
 	18, // 14: daedalus.v1.ComputeVisibilityResponse.fields:type_name -> daedalus.v1.VisibilityField
 	0,  // 15: daedalus.v1.Config.corridor_order:type_name -> daedalus.v1.CorridorOrder
-	27, // 16: daedalus.v1.Config.room_role_requests:type_name -> daedalus.v1.RoomRoleRequest
-	28, // 17: daedalus.v1.Config.density_regions:type_name -> daedalus.v1.DensityRegion
-	29, // 18: daedalus.v1.Config.plant_catalog:type_name -> daedalus.v1.PlantCatalog
-	22, // 19: daedalus.v1.Config.room_geometry:type_name -> daedalus.v1.RoomGeometry
-	25, // 20: daedalus.v1.Config.corridor_geometry:type_name -> daedalus.v1.CorridorGeometry
-	24, // 21: daedalus.v1.RoomGeometry.shapes:type_name -> daedalus.v1.RoomShapeWeight
-	4,  // 22: daedalus.v1.RoomShapeWeight.shape:type_name -> daedalus.v1.RoomShape
-	23, // 23: daedalus.v1.RoomShapeWeight.width:type_name -> daedalus.v1.DimensionRange
-	23, // 24: daedalus.v1.RoomShapeWeight.height:type_name -> daedalus.v1.DimensionRange
-	26, // 25: daedalus.v1.CorridorGeometry.widths:type_name -> daedalus.v1.CorridorWidthWeight
-	1,  // 26: daedalus.v1.RoomRoleRequest.role:type_name -> daedalus.v1.RoomRole
-	20, // 27: daedalus.v1.DensityRegion.min:type_name -> daedalus.v1.Cell
-	20, // 28: daedalus.v1.DensityRegion.max:type_name -> daedalus.v1.Cell
-	30, // 29: daedalus.v1.PlantCatalog.rooms:type_name -> daedalus.v1.RoomPlant
-	31, // 30: daedalus.v1.PlantCatalog.corridors:type_name -> daedalus.v1.CorridorPlant
-	2,  // 31: daedalus.v1.RoomPlant.door_directions:type_name -> daedalus.v1.Direction
-	20, // 32: daedalus.v1.CellState.at:type_name -> daedalus.v1.Cell
-	3,  // 33: daedalus.v1.CellState.kind:type_name -> daedalus.v1.CellKind
-	32, // 34: daedalus.v1.Grid.cells:type_name -> daedalus.v1.CellState
-	20, // 35: daedalus.v1.Room.at:type_name -> daedalus.v1.Cell
-	1,  // 36: daedalus.v1.Room.role:type_name -> daedalus.v1.RoomRole
-	4,  // 37: daedalus.v1.Room.shape:type_name -> daedalus.v1.RoomShape
-	20, // 38: daedalus.v1.Room.origin:type_name -> daedalus.v1.Cell
-	20, // 39: daedalus.v1.Room.cells:type_name -> daedalus.v1.Cell
-	20, // 40: daedalus.v1.Corridor.cells:type_name -> daedalus.v1.Cell
-	20, // 41: daedalus.v1.Corridor.centerline:type_name -> daedalus.v1.Cell
-	20, // 42: daedalus.v1.Door.at:type_name -> daedalus.v1.Cell
-	2,  // 43: daedalus.v1.Door.direction:type_name -> daedalus.v1.Direction
-	33, // 44: daedalus.v1.Layout.grid:type_name -> daedalus.v1.Grid
-	34, // 45: daedalus.v1.Layout.rooms:type_name -> daedalus.v1.Room
-	35, // 46: daedalus.v1.Layout.corridors:type_name -> daedalus.v1.Corridor
-	36, // 47: daedalus.v1.Layout.doors:type_name -> daedalus.v1.Door
-	6,  // 48: daedalus.v1.DaedalusService.Generate:input_type -> daedalus.v1.GenerateRequest
-	11, // 49: daedalus.v1.DaedalusService.ComputeSteps:input_type -> daedalus.v1.ComputeStepsRequest
-	17, // 50: daedalus.v1.DaedalusService.ComputeVisibility:input_type -> daedalus.v1.ComputeVisibilityRequest
-	7,  // 51: daedalus.v1.DaedalusService.Generate:output_type -> daedalus.v1.GenerateResponse
-	14, // 52: daedalus.v1.DaedalusService.ComputeSteps:output_type -> daedalus.v1.ComputeStepsResponse
-	19, // 53: daedalus.v1.DaedalusService.ComputeVisibility:output_type -> daedalus.v1.ComputeVisibilityResponse
-	51, // [51:54] is the sub-list for method output_type
-	48, // [48:51] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	31, // 16: daedalus.v1.Config.room_role_requests:type_name -> daedalus.v1.RoomRoleRequest
+	32, // 17: daedalus.v1.Config.density_regions:type_name -> daedalus.v1.DensityRegion
+	33, // 18: daedalus.v1.Config.plant_catalog:type_name -> daedalus.v1.PlantCatalog
+	26, // 19: daedalus.v1.Config.room_geometry:type_name -> daedalus.v1.RoomGeometry
+	29, // 20: daedalus.v1.Config.corridor_geometry:type_name -> daedalus.v1.CorridorGeometry
+	25, // 21: daedalus.v1.Config.terrain:type_name -> daedalus.v1.TerrainConfig
+	23, // 22: daedalus.v1.TerrainDistribution.terrains:type_name -> daedalus.v1.TerrainWeight
+	22, // 23: daedalus.v1.TerrainConfig.definitions:type_name -> daedalus.v1.TerrainDefinition
+	24, // 24: daedalus.v1.TerrainConfig.rooms:type_name -> daedalus.v1.TerrainDistribution
+	24, // 25: daedalus.v1.TerrainConfig.corridors:type_name -> daedalus.v1.TerrainDistribution
+	28, // 26: daedalus.v1.RoomGeometry.shapes:type_name -> daedalus.v1.RoomShapeWeight
+	4,  // 27: daedalus.v1.RoomShapeWeight.shape:type_name -> daedalus.v1.RoomShape
+	27, // 28: daedalus.v1.RoomShapeWeight.width:type_name -> daedalus.v1.DimensionRange
+	27, // 29: daedalus.v1.RoomShapeWeight.height:type_name -> daedalus.v1.DimensionRange
+	30, // 30: daedalus.v1.CorridorGeometry.widths:type_name -> daedalus.v1.CorridorWidthWeight
+	1,  // 31: daedalus.v1.RoomRoleRequest.role:type_name -> daedalus.v1.RoomRole
+	20, // 32: daedalus.v1.DensityRegion.min:type_name -> daedalus.v1.Cell
+	20, // 33: daedalus.v1.DensityRegion.max:type_name -> daedalus.v1.Cell
+	34, // 34: daedalus.v1.PlantCatalog.rooms:type_name -> daedalus.v1.RoomPlant
+	35, // 35: daedalus.v1.PlantCatalog.corridors:type_name -> daedalus.v1.CorridorPlant
+	2,  // 36: daedalus.v1.RoomPlant.door_directions:type_name -> daedalus.v1.Direction
+	20, // 37: daedalus.v1.CellState.at:type_name -> daedalus.v1.Cell
+	3,  // 38: daedalus.v1.CellState.kind:type_name -> daedalus.v1.CellKind
+	36, // 39: daedalus.v1.Grid.cells:type_name -> daedalus.v1.CellState
+	38, // 40: daedalus.v1.Grid.terrain:type_name -> daedalus.v1.TerrainLayer
+	22, // 41: daedalus.v1.TerrainLayer.palette:type_name -> daedalus.v1.TerrainDefinition
+	20, // 42: daedalus.v1.Room.at:type_name -> daedalus.v1.Cell
+	1,  // 43: daedalus.v1.Room.role:type_name -> daedalus.v1.RoomRole
+	4,  // 44: daedalus.v1.Room.shape:type_name -> daedalus.v1.RoomShape
+	20, // 45: daedalus.v1.Room.origin:type_name -> daedalus.v1.Cell
+	20, // 46: daedalus.v1.Room.cells:type_name -> daedalus.v1.Cell
+	20, // 47: daedalus.v1.Corridor.cells:type_name -> daedalus.v1.Cell
+	20, // 48: daedalus.v1.Corridor.centerline:type_name -> daedalus.v1.Cell
+	20, // 49: daedalus.v1.Door.at:type_name -> daedalus.v1.Cell
+	2,  // 50: daedalus.v1.Door.direction:type_name -> daedalus.v1.Direction
+	37, // 51: daedalus.v1.Layout.grid:type_name -> daedalus.v1.Grid
+	39, // 52: daedalus.v1.Layout.rooms:type_name -> daedalus.v1.Room
+	40, // 53: daedalus.v1.Layout.corridors:type_name -> daedalus.v1.Corridor
+	41, // 54: daedalus.v1.Layout.doors:type_name -> daedalus.v1.Door
+	6,  // 55: daedalus.v1.DaedalusService.Generate:input_type -> daedalus.v1.GenerateRequest
+	11, // 56: daedalus.v1.DaedalusService.ComputeSteps:input_type -> daedalus.v1.ComputeStepsRequest
+	17, // 57: daedalus.v1.DaedalusService.ComputeVisibility:input_type -> daedalus.v1.ComputeVisibilityRequest
+	7,  // 58: daedalus.v1.DaedalusService.Generate:output_type -> daedalus.v1.GenerateResponse
+	14, // 59: daedalus.v1.DaedalusService.ComputeSteps:output_type -> daedalus.v1.ComputeStepsResponse
+	19, // 60: daedalus.v1.DaedalusService.ComputeVisibility:output_type -> daedalus.v1.ComputeVisibilityResponse
+	58, // [58:61] is the sub-list for method output_type
+	55, // [55:58] is the sub-list for method input_type
+	55, // [55:55] is the sub-list for extension type_name
+	55, // [55:55] is the sub-list for extension extendee
+	0,  // [0:55] is the sub-list for field type_name
 }
 
 func init() { file_daedalus_v1_daedalus_proto_init() }
@@ -2916,15 +3274,17 @@ func file_daedalus_v1_daedalus_proto_init() {
 	}
 	file_daedalus_v1_daedalus_proto_msgTypes[4].OneofWrappers = []any{}
 	file_daedalus_v1_daedalus_proto_msgTypes[15].OneofWrappers = []any{}
-	file_daedalus_v1_daedalus_proto_msgTypes[26].OneofWrappers = []any{}
-	file_daedalus_v1_daedalus_proto_msgTypes[28].OneofWrappers = []any{}
+	file_daedalus_v1_daedalus_proto_msgTypes[19].OneofWrappers = []any{}
+	file_daedalus_v1_daedalus_proto_msgTypes[30].OneofWrappers = []any{}
+	file_daedalus_v1_daedalus_proto_msgTypes[31].OneofWrappers = []any{}
+	file_daedalus_v1_daedalus_proto_msgTypes[33].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_daedalus_v1_daedalus_proto_rawDesc), len(file_daedalus_v1_daedalus_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   32,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

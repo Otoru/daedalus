@@ -382,6 +382,56 @@ func TestLayoutToProtoCarriesCenterlineAndDoorSpan(t *testing.T) {
 	assert.Equal(t, uint32(2), got.Doors[0].Span)
 }
 
+func TestTerrainConfigRoundTripsThroughProtoWithoutChangingBytes(t *testing.T) {
+	t.Parallel()
+
+	source := &daedalusv1.Config{
+		Width: 16, Height: 16, Seed: 9,
+		CorridorOrder:    daedalusv1.CorridorOrder_CORRIDOR_ORDER_X_THEN_Y,
+		RoomRoleRequests: []*daedalusv1.RoomRoleRequest{},
+		DensityRegions:   []*daedalusv1.DensityRegion{},
+		Terrain: &daedalusv1.TerrainConfig{
+			Definitions: []*daedalusv1.TerrainDefinition{
+				{Id: "grass", EntryCost: 1, Transparent: true},
+				{Id: "water", EntryCost: 7, Transparent: true},
+			},
+			Rooms: &daedalusv1.TerrainDistribution{
+				NoneWeight: 2, MinPatchCells: 8, MaxPatchCells: 12,
+				Terrains: []*daedalusv1.TerrainWeight{{TerrainId: "water", Weight: 3}},
+			},
+		},
+	}
+	got, err := ConfigFromProto(source)
+	require.NoError(t, err)
+	assert.True(t, proto.Equal(source, ConfigToProto(got)))
+}
+
+func TestLayoutToProtoCarriesTerrainByCopy(t *testing.T) {
+	t.Parallel()
+
+	indices := []byte{0, 1, 0, 1}
+	layer := &daedalus.TerrainLayer{
+		Palette: []daedalus.TerrainDefinition{{ID: "water", EntryCost: 4, Transparent: true}},
+		Indices: indices,
+	}
+	got := LayoutToProto(daedalus.Layout{Grid: daedalus.Grid{Width: 2, Height: 2, Terrain: layer}})
+	require.NotNil(t, got.Grid.Terrain)
+	assert.Equal(t, indices, got.Grid.Terrain.Indices)
+	indices[1] = 9
+	assert.Equal(t, byte(1), got.Grid.Terrain.Indices[1])
+}
+
+func TestConfigFromProtoRejectsTerrainEntryCostAboveByte(t *testing.T) {
+	t.Parallel()
+
+	_, err := ConfigFromProto(&daedalusv1.Config{Terrain: &daedalusv1.TerrainConfig{
+		Definitions: []*daedalusv1.TerrainDefinition{{Id: "water", EntryCost: 256}},
+		Rooms:       &daedalusv1.TerrainDistribution{NoneWeight: 1},
+	}})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, daedalus.ErrInvalidConfig)
+}
+
 func TestLayoutToProtoPreservesPresenceAndFootprints(t *testing.T) {
 	t.Parallel()
 

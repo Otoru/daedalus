@@ -13,6 +13,8 @@ Deterministic 2D dungeon generation for Go. One `Config` and one `Seed` in, one 
 - **Corridors have a width, and keep to themselves.** A weighted distribution drawn per corridor, and only the widths you declare: ask for 1 and 3 and you never get a 2. Every catalog declares 1, the width any corridor can fall back to. Two corridors never share a cell and never come within one cell of each other, anywhere on the floor.
 - **Thematic roles.** Ask for a start, a boss and treasure rooms, and get them placed by distance rather than by luck.
 - **Density regions.** Different room spacing per area of the same floor.
+- **Terrain overlays.** Optional caller-defined, patch-grown terrain uses one
+  palette index per cell; entry cost and transparency stay independent.
 - **Three ways to run it.** Import it as a library, run it as a gRPC subprocess that announces itself on stdout, or open the local HTTP debug interface — the map above is a screenshot of it.
 - **Bounded.** Grids up to 256×256, 65,536 cells, 256 rooms. A request over a limit is rejected before any allocation, never truncated.
 
@@ -57,6 +59,30 @@ config := daedalus.Config{
 layout, err := daedalus.Generator{}.Generate(config)
 ```
 
+Terrain is opt-in and has an open vocabulary. The palette is sorted by ID and
+one cell selects at most one definition; use a composite ID when a game needs
+combined effects. A terrain-enabled request can declare room and corridor
+patch distributions, for example:
+
+```go
+config.Terrain = &daedalus.TerrainConfig{
+	Definitions: []daedalus.TerrainDefinition{
+		{ID: "grass", EntryCost: 1, Transparent: true},
+		{ID: "water", EntryCost: 4, Transparent: true},
+	},
+	Rooms: &daedalus.TerrainDistribution{
+		NoneWeight: 3,
+		Terrains: []daedalus.TerrainWeight{{TerrainID: "grass", Weight: 4}, {TerrainID: "water", Weight: 2}},
+		MinPatchCells: 8, MaxPatchCells: 24,
+	},
+}
+```
+
+`nil` terrain is the compatibility default: the generated Layout, ProtoJSON,
+and gRPC response remain byte-identical to the historical output. The terrain
+patch algorithm is frozen in the package documentation, including its seeded
+FIFO growth and North/East/South/West tie-break.
+
 Each shape carries its own size, because the shapes disagree about what a legal size is. A rectangle takes anything down to 1×1; a circle must be square, odd and at least 5 across. Asking for a 6×6 circle is `ErrInvalidConfig`, not a silent drop.
 
 Only the widths you declare are used. If 3 does not fit, the corridor falls to the next declared width — never to an undeclared 2. Because degradation walks declared widths and nothing else, the catalog must include width 1: it is the fallback every corridor can always take, and a catalog without it is `ErrInvalidConfig` before anything is allocated. Declaring 1 removes that failure; it does not promise the request generates. If no declared width fits that pair of rooms, the generator connects them another way instead of failing; only a room left with no routable edge at all stops the call, with `ErrUnconnectablePlacement` naming that room.
@@ -99,6 +125,11 @@ corridor 1: centerline=3 band=9 door span=3
 `Centerline` is the ordered route; `Cells` is the band it occupies, so a three-cell route three wide covers nine. `Span` is how many boundary cells the doorway takes, never zero. `RoomID` is nil on anything but a room cell, and `CorridorIDs` is ascending. Since two corridors never share a cell, a corridor cell names exactly one corridor.
 
 Room 0 is always the start room when one is requested, and it is the room nearest the centre of the grid.
+
+The debug page draws terrain as a subdued Canvas overlay, then applies the
+existing pathfinding distance heatmap and vision mask. Its benchmark suite
+also includes the maximum 256×256 terrain-enabled generation case; run
+`go test -run '^$' -bench '^BenchmarkGenerate$' -benchmem .` to measure it.
 
 ## Reference
 

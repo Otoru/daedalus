@@ -16,7 +16,7 @@ type generationBenchmark struct {
 // 64×64 with MinDistance 6, MaxAttempts 30 and MaxRooms 128. Typical is 128×128
 // with the same distance and attempts and MaxRooms 256. Maximum v1 is 256×256
 // with MinDistance 1, MaxAttempts 1024, MaxRooms 256, dynamic RoomGeometry, a
-// gap, cycles, roles and density regions. Nothing here asserts p95 or p99, and
+// gap, cycles, roles, terrain patches and density regions. Nothing here asserts p95 or p99, and
 // this machine is not the reference hardware of the release SLA.
 func BenchmarkGenerate(b *testing.B) {
 	for _, benchmark := range generationBenchmarks() {
@@ -96,6 +96,21 @@ func maximumV1BenchmarkConfig() Config {
 				{ID: "benchmark_corridor_b", Tags: []string{"benchmark"}, Weight: 1},
 			},
 		},
+		Terrain: &TerrainConfig{
+			Definitions: []TerrainDefinition{
+				{ID: "grass", EntryCost: 1, Transparent: true},
+				{ID: "water", EntryCost: 4, Transparent: true},
+				{ID: "smoke", EntryCost: 1, Transparent: false},
+			},
+			Rooms: &TerrainDistribution{
+				NoneWeight: 4, Terrains: []TerrainWeight{{TerrainID: "grass", Weight: 3}, {TerrainID: "water", Weight: 2}, {TerrainID: "smoke", Weight: 1}},
+				MinPatchCells: 8, MaxPatchCells: 24,
+			},
+			Corridors: &TerrainDistribution{
+				NoneWeight: 6, Terrains: []TerrainWeight{{TerrainID: "water", Weight: 1}},
+				MinPatchCells: 8, MaxPatchCells: 16,
+			},
+		},
 	}
 }
 
@@ -113,4 +128,5 @@ func TestMaximumBenchmarkLoadEnablesV1Features(t *testing.T) {
 	assert.NotEmpty(t, config.RoomRoleRequests)
 	assert.NotEmpty(t, config.DensityRegions)
 	assert.NotNil(t, config.PlantCatalog)
+	assert.NotNil(t, config.Terrain)
 }

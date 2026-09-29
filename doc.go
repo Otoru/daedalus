@@ -620,3 +620,8 @@ package daedalus
 // All weights, totals, and decisions use integer arithmetic. A protected Cell
 // never draws an impassable candidate. There is one terrain byte per Cell and
 // no stacking; callers wanting combined effects must declare one composite ID.
+// The wire representation mirrors this exactly: Config.terrain is field 16,
+// Grid.terrain is field 5, and palette plus dense indices are omitted when
+// the SDK Terrain pointer is nil. This keeps unset-terrain Layout JSON and
+// GenerateResponse bytes unchanged; the service copies the layer instead of
+// inferring it from CellState.

@@ -27,6 +27,13 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 		ExtraEdgeCount: source.ExtraEdgeCount,
 		MaxRoomEdges:   source.MaxRoomEdges,
 	}
+	if source.Terrain != nil {
+		terrain, err := terrainConfigFromProto(source.Terrain)
+		if err != nil {
+			return daedalus.Config{}, err
+		}
+		target.Terrain = terrain
+	}
 
 	target.RoomRoleRequests = make([]daedalus.RoomRoleRequest, len(source.RoomRoleRequests))
 	for index, request := range source.RoomRoleRequests {
@@ -138,6 +145,9 @@ func ConfigToProto(source daedalus.Config) *daedalusv1.Config {
 		CorridorGeometry: corridorGeometryToProto(source.CorridorGeometry),
 		PlantCatalog:     plantCatalogToProto(source.PlantCatalog),
 	}
+	if source.Terrain != nil {
+		target.Terrain = terrainConfigToProto(source.Terrain)
+	}
 	for index, request := range source.RoomRoleRequests {
 		target.RoomRoleRequests[index] = &daedalusv1.RoomRoleRequest{
 			Role: mapRoomRoleToProto(request.Role), Count: request.Count,
@@ -149,6 +159,80 @@ func ConfigToProto(source daedalus.Config) *daedalusv1.Config {
 			Min: cellToProto(region.Min), Max: cellToProto(region.Max),
 			MinDistance: region.MinDistance,
 		}
+	}
+	return target
+}
+
+func terrainConfigFromProto(source *daedalusv1.TerrainConfig) (*daedalus.TerrainConfig, error) {
+	target := &daedalus.TerrainConfig{
+		Definitions: make([]daedalus.TerrainDefinition, len(source.Definitions)),
+	}
+	for index, definition := range source.Definitions {
+		if definition == nil {
+			return nil, fmt.Errorf("%w: terrain.definitions[%d] missing", daedalus.ErrInvalidConfig, index)
+		}
+		if definition.EntryCost > 255 {
+			return nil, fmt.Errorf("%w: terrain.definitions[%d].entry_cost %d is above 255", daedalus.ErrInvalidConfig, index, definition.EntryCost)
+		}
+		target.Definitions[index] = daedalus.TerrainDefinition{
+			ID: daedalus.TerrainID(definition.Id), EntryCost: uint8(definition.EntryCost), Transparent: definition.Transparent,
+		}
+	}
+	var err error
+	if source.Rooms != nil {
+		target.Rooms, err = terrainDistributionFromProto(source.Rooms)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if source.Corridors != nil {
+		target.Corridors, err = terrainDistributionFromProto(source.Corridors)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return target, nil
+}
+
+func terrainDistributionFromProto(source *daedalusv1.TerrainDistribution) (*daedalus.TerrainDistribution, error) {
+	target := &daedalus.TerrainDistribution{
+		NoneWeight: source.NoneWeight, MinPatchCells: source.MinPatchCells, MaxPatchCells: source.MaxPatchCells,
+		Terrains: make([]daedalus.TerrainWeight, len(source.Terrains)),
+	}
+	for index, weight := range source.Terrains {
+		if weight == nil {
+			return nil, fmt.Errorf("%w: terrain distribution terrains[%d] missing", daedalus.ErrInvalidConfig, index)
+		}
+		target.Terrains[index] = daedalus.TerrainWeight{TerrainID: daedalus.TerrainID(weight.TerrainId), Weight: weight.Weight}
+	}
+	return target, nil
+}
+
+func terrainConfigToProto(source *daedalus.TerrainConfig) *daedalusv1.TerrainConfig {
+	if source == nil {
+		return nil
+	}
+	target := &daedalusv1.TerrainConfig{
+		Definitions: make([]*daedalusv1.TerrainDefinition, len(source.Definitions)),
+	}
+	for index, definition := range source.Definitions {
+		target.Definitions[index] = &daedalusv1.TerrainDefinition{Id: string(definition.ID), EntryCost: uint32(definition.EntryCost), Transparent: definition.Transparent}
+	}
+	target.Rooms = terrainDistributionToProto(source.Rooms)
+	target.Corridors = terrainDistributionToProto(source.Corridors)
+	return target
+}
+
+func terrainDistributionToProto(source *daedalus.TerrainDistribution) *daedalusv1.TerrainDistribution {
+	if source == nil {
+		return nil
+	}
+	target := &daedalusv1.TerrainDistribution{
+		NoneWeight: source.NoneWeight, MinPatchCells: source.MinPatchCells, MaxPatchCells: source.MaxPatchCells,
+		Terrains: make([]*daedalusv1.TerrainWeight, len(source.Terrains)),
+	}
+	for index, weight := range source.Terrains {
+		target.Terrains[index] = &daedalusv1.TerrainWeight{TerrainId: string(weight.TerrainID), Weight: weight.Weight}
 	}
 	return target
 }
@@ -257,6 +341,9 @@ func LayoutToProto(source daedalus.Layout) *daedalusv1.Layout {
 		Corridors: make([]*daedalusv1.Corridor, len(source.Corridors)),
 		Doors:     make([]*daedalusv1.Door, len(source.Doors)),
 	}
+	if source.Grid.Terrain != nil {
+		target.Grid.Terrain = terrainLayerToProto(source.Grid.Terrain)
+	}
 	for index, cellState := range source.Grid.Cells {
 		target.Grid.Cells[index] = cellStateToProto(cellState)
 	}
@@ -268,6 +355,20 @@ func LayoutToProto(source daedalus.Layout) *daedalusv1.Layout {
 	}
 	for index, door := range source.Doors {
 		target.Doors[index] = doorToProto(door)
+	}
+	return target
+}
+
+func terrainLayerToProto(source *daedalus.TerrainLayer) *daedalusv1.TerrainLayer {
+	if source == nil {
+		return nil
+	}
+	target := &daedalusv1.TerrainLayer{
+		Palette: make([]*daedalusv1.TerrainDefinition, len(source.Palette)),
+		Indices: append([]byte(nil), source.Indices...),
+	}
+	for index, definition := range source.Palette {
+		target.Palette[index] = &daedalusv1.TerrainDefinition{Id: string(definition.ID), EntryCost: uint32(definition.EntryCost), Transparent: definition.Transparent}
 	}
 	return target
 }

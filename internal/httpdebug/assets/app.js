@@ -40,6 +40,29 @@ const exampleRequest = `{
         {"width": 2, "weight": 2},
         {"width": 3, "weight": 1}
       ]
+    },
+    "terrain": {
+      "definitions": [
+        {"id": "grass", "entry_cost": 1, "transparent": true},
+        {"id": "water", "entry_cost": 4, "transparent": true},
+        {"id": "smoke", "entry_cost": 1, "transparent": false}
+      ],
+      "rooms": {
+        "none_weight": 3,
+        "terrains": [
+          {"terrain_id": "grass", "weight": 4},
+          {"terrain_id": "water", "weight": 2},
+          {"terrain_id": "smoke", "weight": 1}
+        ],
+        "min_patch_cells": 8,
+        "max_patch_cells": 24
+      },
+      "corridors": {
+        "none_weight": 5,
+        "terrains": [{"terrain_id": "water", "weight": 1}],
+        "min_patch_cells": 8,
+        "max_patch_cells": 16
+      }
     }
   }
 }`;
@@ -413,6 +436,7 @@ function renderLayout() {
   drawRoomBoundaries(context, scale);
   drawGrid(context, grid.width, grid.height, scale);
   drawCorridorBands(context, scale);
+  drawTerrain(context, scale);
   drawField(context, scale);
   drawVisibility(context, scale);
   drawCenterlines(context, scale);
@@ -495,6 +519,43 @@ function drawCorridorBands(context, scale) {
   band.forEach((cell) => {
     context.fillRect(cell.x * scale, cell.y * scale, scale, scale);
   });
+  context.restore();
+}
+
+function terrainAt(x, y) {
+  const grid = state.layout?.grid;
+  const terrain = grid?.terrain;
+  if (!terrain) return null;
+  const raw = terrain.indices;
+  const bytes = typeof raw === "string" ? base64ToBytes(raw) : raw;
+  const selected = bytes && bytes[y * grid.width + x];
+  if (!selected || !Array.isArray(terrain.palette)) return null;
+  return terrain.palette[selected - 1] || null;
+}
+
+function terrainColor(definition, index) {
+  const text = `${definition?.id || "terrain"}:${index}`;
+  let hash = 0;
+  for (let offset = 0; offset < text.length; offset += 1) hash = (hash * 31 + text.charCodeAt(offset)) >>> 0;
+  return `hsl(${hash % 360} 28% ${definition?.transparent ? 52 : 38}%)`;
+}
+
+function drawTerrain(context, scale) {
+  const grid = state.layout?.grid;
+  if (!grid?.terrain) return;
+  const raw = grid.terrain.indices;
+  const bytes = typeof raw === "string" ? base64ToBytes(raw) : raw;
+  if (!bytes) return;
+  context.save();
+  for (let index = 0; index < bytes.length; index += 1) {
+    const paletteIndex = bytes[index];
+    if (!paletteIndex) continue;
+    const definition = grid.terrain.palette?.[paletteIndex - 1];
+    if (!definition) continue;
+    context.fillStyle = terrainColor(definition, paletteIndex);
+    context.globalAlpha = definition.transparent ? 0.42 : 0.58;
+    context.fillRect((index % grid.width) * scale, Math.floor(index / grid.width) * scale, scale, scale);
+  }
   context.restore();
 }
 
@@ -869,6 +930,11 @@ function updateInspector(x, y) {
       span: Math.max(1, Number(door.span) || 1),
       corridor_ids: door.corridor_ids || [],
     })),
+    terrain: terrainAt(x, y) ? {
+      id: terrainAt(x, y).id,
+      entry_cost: terrainAt(x, y).entry_cost,
+      transparent: terrainAt(x, y).transparent,
+    } : null,
   };
   const headline = state.observer
     ? `Vision: ${visible ? "Visible" : "Hidden"}${step ? ` · ${statusLabel(step.status)} · distance ${step.distance}` : ""}`
@@ -960,11 +1026,16 @@ function clearVisibilityState() {
 
 function isPassableCell(x, y) {
   const kind = kindAt(x, y);
-  return kind === "CELL_KIND_ROOM" || kind === "CELL_KIND_CORRIDOR";
+  if (kind !== "CELL_KIND_ROOM" && kind !== "CELL_KIND_CORRIDOR") return false;
+  const terrain = terrainAt(x, y);
+  return !terrain || Number(terrain.entry_cost) > 0;
 }
 
 function isTransparentCell(x, y) {
-  return isPassableCell(x, y);
+  const kind = kindAt(x, y);
+  if (kind !== "CELL_KIND_ROOM" && kind !== "CELL_KIND_CORRIDOR") return false;
+  const terrain = terrainAt(x, y);
+  return !terrain || terrain.transparent === true;
 }
 
 function kindAt(x, y) {
@@ -1008,7 +1079,8 @@ function costBytes(layout) {
   for (let index = 0; index < count; index += 1) {
     const kind = cells[index] ? cells[index].kind : "CELL_KIND_EMPTY";
     if (kind === "CELL_KIND_ROOM" || kind === "CELL_KIND_CORRIDOR") {
-      costs[index] = 1;
+      const terrain = terrainAt(index % width, Math.floor(index / width));
+      costs[index] = terrain ? Number(terrain.entry_cost) : 1;
     }
   }
   return costs;
@@ -1041,7 +1113,7 @@ function opacityBytes(layout) {
   const cells = layout.grid.cells || [];
   for (let index = 0; index < count; index += 1) {
     const cell = cells[index];
-    if (cell && (cell.kind === "CELL_KIND_ROOM" || cell.kind === "CELL_KIND_CORRIDOR")) {
+    if (cell && isTransparentCell(index % width, Math.floor(index / width))) {
       transparent[index >> 3] |= 1 << (index & 7);
     }
   }
