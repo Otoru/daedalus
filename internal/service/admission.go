@@ -8,7 +8,7 @@ import (
 
 var errAdmissionStopped = errors.New("generation admission stopped")
 
-// Admission limits concurrent generations to MaxConcurrentGenerations,
+// Admission limits concurrent admitted work to MaxConcurrentGenerations,
 // which defaults to the number of logical CPUs. gRPC and the HTTP debug
 // server share this one limiter; HTTP does not keep its own queue.
 // Callers beyond the limit wait while their Context is alive. A deadline
@@ -81,7 +81,7 @@ func (admission *Admission) Stop() {
 	})
 }
 
-// Wait waits for every admitted generation to finish or for the Context to expire.
+// Wait waits for every admitted work item to finish or for the Context to expire.
 func (admission *Admission) Wait(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {

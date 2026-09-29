@@ -20,7 +20,7 @@ const maximumGridDimension uint32 = 256
 // gRPC and HTTP adapters.
 type GenerateFunc func(context.Context, daedalus.Config) (daedalus.Layout, error)
 
-// Server implements DaedalusService without retaining state between generations.
+// Server implements DaedalusService without retaining state between admitted work items.
 type Server struct {
 	daedalusv1.UnimplementedDaedalusServiceServer
 
@@ -164,6 +164,8 @@ func StatusError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid configuration")
 	case errors.Is(err, daedalus.ErrInvalidNavigation):
 		return status.Error(codes.InvalidArgument, "invalid navigation request")
+	case errors.Is(err, daedalus.ErrInvalidVisibility):
+		return status.Error(codes.InvalidArgument, "invalid visibility request")
 	case errors.Is(err, daedalus.ErrLimitExceeded):
 		return status.Error(codes.ResourceExhausted, "resource limit exceeded")
 	case errors.Is(err, daedalus.ErrNoCompatiblePlant):
