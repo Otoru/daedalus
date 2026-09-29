@@ -173,6 +173,40 @@ func TestAbsentCorridorGeometryStaysNil(t *testing.T) {
 	assert.Nil(t, got.CorridorGeometry)
 }
 
+func TestOmittedMaxRoomEdgesStaysUnlimited(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{Width: 16, Height: 16, Seed: 1})
+
+	require.NoError(t, err)
+	assert.Zero(t, got.MaxRoomEdges)
+}
+
+func TestMaxRoomEdgesCopiesTheWireValue(t *testing.T) {
+	t.Parallel()
+
+	got, err := ConfigFromProto(&daedalusv1.Config{
+		Width: 16, Height: 16, Seed: 1, MaxRoomEdges: 4,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, uint32(4), got.MaxRoomEdges)
+	assert.Equal(t, uint32(4), ConfigToProto(got).GetMaxRoomEdges())
+}
+
+func TestGenerateRejectsAMaxRoomEdgesCeilingOfOne(t *testing.T) {
+	t.Parallel()
+
+	server := New(daedalus.Generator{}.GenerateContext, NewAdmission(1))
+
+	_, err := server.Generate(context.Background(), &daedalusv1.GenerateRequest{
+		Config: &daedalusv1.Config{Width: 8, Height: 8, Seed: 1, MaxRoomEdges: 1},
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
 func TestPresentCorridorGeometryCopiesWidths(t *testing.T) {
 	t.Parallel()
 

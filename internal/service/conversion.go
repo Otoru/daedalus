@@ -25,6 +25,7 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 		MaxAttempts: source.MaxAttempts, MaxRooms: source.MaxRooms,
 		CorridorOrder:  mapCorridorOrder(source.CorridorOrder),
 		ExtraEdgeCount: source.ExtraEdgeCount,
+		MaxRoomEdges:   source.MaxRoomEdges,
 	}
 
 	target.RoomRoleRequests = make([]daedalus.RoomRoleRequest, len(source.RoomRoleRequests))
@@ -130,6 +131,7 @@ func ConfigToProto(source daedalus.Config) *daedalusv1.Config {
 		MaxAttempts: source.MaxAttempts, MaxRooms: source.MaxRooms,
 		CorridorOrder:    mapCorridorOrderToProto(source.CorridorOrder),
 		ExtraEdgeCount:   source.ExtraEdgeCount,
+		MaxRoomEdges:     source.MaxRoomEdges,
 		RoomRoleRequests: make([]*daedalusv1.RoomRoleRequest, len(source.RoomRoleRequests)),
 		DensityRegions:   make([]*daedalusv1.DensityRegion, len(source.DensityRegions)),
 		RoomGeometry:     roomGeometryToProto(source.RoomGeometry),

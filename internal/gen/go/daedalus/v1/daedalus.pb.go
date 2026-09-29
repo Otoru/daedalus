@@ -965,8 +965,13 @@ type Config struct {
 	// A present message must list at least one width; an empty message is not
 	// the absent case.
 	CorridorGeometry *CorridorGeometry `protobuf:"bytes,14,opt,name=corridor_geometry,json=corridorGeometry,proto3,oneof" json:"corridor_geometry,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// max_room_edges is the largest number of corridors that may reach one
+	// room. Zero means unlimited, and the room's geometry is then the only
+	// ceiling. When set it must be at least 2: a spanning tree over n rooms
+	// needs n-1 edges, so a ceiling of 1 can connect only two rooms.
+	MaxRoomEdges  uint32 `protobuf:"varint,15,opt,name=max_room_edges,json=maxRoomEdges,proto3" json:"max_room_edges,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Config) Reset() {
@@ -1095,6 +1100,13 @@ func (x *Config) GetCorridorGeometry() *CorridorGeometry {
 		return x.CorridorGeometry
 	}
 	return nil
+}
+
+func (x *Config) GetMaxRoomEdges() uint32 {
+	if x != nil {
+		return x.MaxRoomEdges
+	}
+	return 0
 }
 
 // RoomGeometry defines the area, spacing and per-shape ranges of Rooms.
@@ -2331,7 +2343,7 @@ const file_daedalus_v1_daedalus_proto_rawDesc = "" +
 	"\aresults\x18\x01 \x03(\v2\x18.daedalus.v1.QueryResultR\aresults\"\"\n" +
 	"\x04Cell\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x02 \x01(\x05R\x01y\"\xc6\x05\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\"\xec\x05\n" +
 	"\x06Config\x12\x14\n" +
 	"\x05width\x18\x01 \x01(\rR\x05width\x12\x16\n" +
 	"\x06height\x18\x02 \x01(\rR\x06height\x12\x1b\n" +
@@ -2347,7 +2359,8 @@ const file_daedalus_v1_daedalus_proto_rawDesc = "" +
 	"\x0fdensity_regions\x18\v \x03(\v2\x1a.daedalus.v1.DensityRegionR\x0edensityRegions\x12>\n" +
 	"\rplant_catalog\x18\f \x01(\v2\x19.daedalus.v1.PlantCatalogR\fplantCatalog\x12C\n" +
 	"\rroom_geometry\x18\r \x01(\v2\x19.daedalus.v1.RoomGeometryH\x00R\froomGeometry\x88\x01\x01\x12O\n" +
-	"\x11corridor_geometry\x18\x0e \x01(\v2\x1d.daedalus.v1.CorridorGeometryH\x01R\x10corridorGeometry\x88\x01\x01B\x10\n" +
+	"\x11corridor_geometry\x18\x0e \x01(\v2\x1d.daedalus.v1.CorridorGeometryH\x01R\x10corridorGeometry\x88\x01\x01\x12$\n" +
+	"\x0emax_room_edges\x18\x0f \x01(\rR\fmaxRoomEdgesB\x10\n" +
 	"\x0e_room_geometryB\x14\n" +
 	"\x12_corridor_geometry\"\xdc\x01\n" +
 	"\fRoomGeometry\x12.\n" +
