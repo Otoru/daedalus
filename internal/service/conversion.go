@@ -44,6 +44,7 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 		}
 		target.RoomRoleRequests[index] = daedalus.RoomRoleRequest{
 			Role: mapRoomRole(request.Role), Count: request.Count,
+			MaxRoomEdges: request.MaxRoomEdges,
 			RequiredTags: append([]string(nil), request.RequiredTags...),
 		}
 	}
@@ -151,6 +152,7 @@ func ConfigToProto(source daedalus.Config) *daedalusv1.Config {
 	for index, request := range source.RoomRoleRequests {
 		target.RoomRoleRequests[index] = &daedalusv1.RoomRoleRequest{
 			Role: mapRoomRoleToProto(request.Role), Count: request.Count,
+			MaxRoomEdges: request.MaxRoomEdges,
 			RequiredTags: append([]string(nil), request.RequiredTags...),
 		}
 	}
@@ -570,5 +572,98 @@ func mapCellKindToProto(source daedalus.CellKind) daedalusv1.CellKind {
 		return daedalusv1.CellKind_CELL_KIND_CORRIDOR
 	default:
 		return daedalusv1.CellKind_CELL_KIND_UNSPECIFIED
+	}
+}
+
+func layoutFromProto(source *daedalusv1.Layout) (daedalus.Layout, error) {
+	if source == nil || source.Grid == nil {
+		return daedalus.Layout{}, fmt.Errorf("%w: layout and grid are required", daedalus.ErrInvalidGating)
+	}
+	target := daedalus.Layout{Seed: daedalus.Seed(source.Seed), Grid: daedalus.Grid{
+		Width: source.Grid.Width, Height: source.Grid.Height, CellSize: source.Grid.CellSize,
+		Cells: make([]daedalus.CellState, len(source.Grid.Cells)),
+	}, Rooms: make([]daedalus.Room, len(source.Rooms)), Corridors: make([]daedalus.Corridor, len(source.Corridors)), Doors: make([]daedalus.Door, len(source.Doors))}
+	if source.Grid.Terrain != nil {
+		terrain := source.Grid.Terrain
+		target.Grid.Terrain = &daedalus.TerrainLayer{Indices: append([]byte(nil), terrain.Indices...), Palette: make([]daedalus.TerrainDefinition, len(terrain.Palette))}
+		for i, definition := range terrain.Palette {
+			if definition == nil {
+				return daedalus.Layout{}, fmt.Errorf("%w: terrain palette[%d] missing", daedalus.ErrInvalidGating, i)
+			}
+			target.Grid.Terrain.Palette[i] = daedalus.TerrainDefinition{ID: daedalus.TerrainID(definition.Id), EntryCost: uint8(definition.EntryCost), Transparent: definition.Transparent}
+		}
+	}
+	for i, cell := range source.Grid.Cells {
+		if cell == nil || cell.At == nil {
+			return daedalus.Layout{}, fmt.Errorf("%w: grid cell %d missing", daedalus.ErrInvalidGating, i)
+		}
+		target.Grid.Cells[i] = daedalus.CellState{At: cellFromProto(cell.At), Kind: mapCellKind(cell.Kind), CorridorIDs: make([]daedalus.CorridorID, len(cell.CorridorIds))}
+		if cell.RoomId != nil {
+			roomID := daedalus.RoomID(*cell.RoomId)
+			target.Grid.Cells[i].RoomID = &roomID
+		}
+		for j, id := range cell.CorridorIds {
+			target.Grid.Cells[i].CorridorIDs[j] = daedalus.CorridorID(id)
+		}
+	}
+	for i, room := range source.Rooms {
+		if room == nil || room.At == nil || room.Origin == nil {
+			return daedalus.Layout{}, fmt.Errorf("%w: room %d is incomplete", daedalus.ErrInvalidGating, i)
+		}
+		target.Rooms[i] = daedalus.Room{ID: daedalus.RoomID(room.Id), At: cellFromProto(room.At), PlantID: daedalus.PlantID(room.PlantId), Tags: append([]string(nil), room.Tags...), DoorIDs: make([]daedalus.DoorID, len(room.DoorIds)), Shape: mapRoomShape(room.Shape), Origin: cellFromProto(room.Origin), Width: room.Width, Height: room.Height, Cells: make([]daedalus.Cell, len(room.Cells))}
+		if room.Role != nil {
+			role := mapRoomRole(*room.Role)
+			target.Rooms[i].Role = &role
+		}
+		for j, id := range room.DoorIds {
+			target.Rooms[i].DoorIDs[j] = daedalus.DoorID(id)
+		}
+		for j, cell := range room.Cells {
+			if cell == nil {
+				return daedalus.Layout{}, fmt.Errorf("%w: room %d cell %d missing", daedalus.ErrInvalidGating, i, j)
+			}
+			target.Rooms[i].Cells[j] = cellFromProto(cell)
+		}
+	}
+	for i, corridor := range source.Corridors {
+		if corridor == nil {
+			return daedalus.Layout{}, fmt.Errorf("%w: corridor %d missing", daedalus.ErrInvalidGating, i)
+		}
+		target.Corridors[i] = daedalus.Corridor{ID: daedalus.CorridorID(corridor.Id), FromRoomID: daedalus.RoomID(corridor.FromRoomId), ToRoomID: daedalus.RoomID(corridor.ToRoomId), FromDoorID: daedalus.DoorID(corridor.FromDoorId), ToDoorID: daedalus.DoorID(corridor.ToDoorId), PlantID: daedalus.PlantID(corridor.PlantId), Tags: append([]string(nil), corridor.Tags...), Cells: make([]daedalus.Cell, len(corridor.Cells)), Centerline: make([]daedalus.Cell, len(corridor.Centerline))}
+		for j, cell := range corridor.Cells {
+			if cell == nil {
+				return daedalus.Layout{}, fmt.Errorf("%w: corridor %d cell %d missing", daedalus.ErrInvalidGating, i, j)
+			}
+			target.Corridors[i].Cells[j] = cellFromProto(cell)
+		}
+		for j, cell := range corridor.Centerline {
+			if cell == nil {
+				return daedalus.Layout{}, fmt.Errorf("%w: corridor %d centerline %d missing", daedalus.ErrInvalidGating, i, j)
+			}
+			target.Corridors[i].Centerline[j] = cellFromProto(cell)
+		}
+	}
+	for i, door := range source.Doors {
+		if door == nil || door.At == nil {
+			return daedalus.Layout{}, fmt.Errorf("%w: door %d is incomplete", daedalus.ErrInvalidGating, i)
+		}
+		target.Doors[i] = daedalus.Door{ID: daedalus.DoorID(door.Id), RoomID: daedalus.RoomID(door.RoomId), At: cellFromProto(door.At), Direction: mapDirection(door.Direction), Span: door.Span, CorridorIDs: make([]daedalus.CorridorID, len(door.CorridorIds))}
+		for j, id := range door.CorridorIds {
+			target.Doors[i].CorridorIDs[j] = daedalus.CorridorID(id)
+		}
+	}
+	return target, nil
+}
+
+func mapCellKind(source daedalusv1.CellKind) daedalus.CellKind {
+	switch source {
+	case daedalusv1.CellKind_CELL_KIND_EMPTY:
+		return daedalus.CellKindEmpty
+	case daedalusv1.CellKind_CELL_KIND_ROOM:
+		return daedalus.CellKindRoom
+	case daedalusv1.CellKind_CELL_KIND_CORRIDOR:
+		return daedalus.CellKindCorridor
+	default:
+		return daedalus.CellKindEmpty
 	}
 }

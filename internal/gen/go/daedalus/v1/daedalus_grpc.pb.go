@@ -22,6 +22,7 @@ const (
 	DaedalusService_Generate_FullMethodName          = "/daedalus.v1.DaedalusService/Generate"
 	DaedalusService_ComputeSteps_FullMethodName      = "/daedalus.v1.DaedalusService/ComputeSteps"
 	DaedalusService_ComputeVisibility_FullMethodName = "/daedalus.v1.DaedalusService/ComputeVisibility"
+	DaedalusService_BuildGatingPlan_FullMethodName   = "/daedalus.v1.DaedalusService/BuildGatingPlan"
 )
 
 // DaedalusServiceClient is the client API for DaedalusService service.
@@ -49,6 +50,8 @@ type DaedalusServiceClient interface {
 	// the response. A malformed grid returns InvalidArgument; a count or
 	// dimension past the ceiling returns ResourceExhausted.
 	ComputeVisibility(ctx context.Context, in *ComputeVisibilityRequest, opts ...grpc.CallOption) (*ComputeVisibilityResponse, error)
+	// BuildGatingPlan computes a detached progression overlay for a complete Layout.
+	BuildGatingPlan(ctx context.Context, in *BuildGatingPlanRequest, opts ...grpc.CallOption) (*BuildGatingPlanResponse, error)
 }
 
 type daedalusServiceClient struct {
@@ -89,6 +92,16 @@ func (c *daedalusServiceClient) ComputeVisibility(ctx context.Context, in *Compu
 	return out, nil
 }
 
+func (c *daedalusServiceClient) BuildGatingPlan(ctx context.Context, in *BuildGatingPlanRequest, opts ...grpc.CallOption) (*BuildGatingPlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BuildGatingPlanResponse)
+	err := c.cc.Invoke(ctx, DaedalusService_BuildGatingPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaedalusServiceServer is the server API for DaedalusService service.
 // All implementations must embed UnimplementedDaedalusServiceServer
 // for forward compatibility.
@@ -114,6 +127,8 @@ type DaedalusServiceServer interface {
 	// the response. A malformed grid returns InvalidArgument; a count or
 	// dimension past the ceiling returns ResourceExhausted.
 	ComputeVisibility(context.Context, *ComputeVisibilityRequest) (*ComputeVisibilityResponse, error)
+	// BuildGatingPlan computes a detached progression overlay for a complete Layout.
+	BuildGatingPlan(context.Context, *BuildGatingPlanRequest) (*BuildGatingPlanResponse, error)
 	mustEmbedUnimplementedDaedalusServiceServer()
 }
 
@@ -132,6 +147,9 @@ func (UnimplementedDaedalusServiceServer) ComputeSteps(context.Context, *Compute
 }
 func (UnimplementedDaedalusServiceServer) ComputeVisibility(context.Context, *ComputeVisibilityRequest) (*ComputeVisibilityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ComputeVisibility not implemented")
+}
+func (UnimplementedDaedalusServiceServer) BuildGatingPlan(context.Context, *BuildGatingPlanRequest) (*BuildGatingPlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BuildGatingPlan not implemented")
 }
 func (UnimplementedDaedalusServiceServer) mustEmbedUnimplementedDaedalusServiceServer() {}
 func (UnimplementedDaedalusServiceServer) testEmbeddedByValue()                         {}
@@ -208,6 +226,24 @@ func _DaedalusService_ComputeVisibility_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaedalusService_BuildGatingPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BuildGatingPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaedalusServiceServer).BuildGatingPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaedalusService_BuildGatingPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaedalusServiceServer).BuildGatingPlan(ctx, req.(*BuildGatingPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DaedalusService_ServiceDesc is the grpc.ServiceDesc for DaedalusService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -226,6 +262,10 @@ var DaedalusService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ComputeVisibility",
 			Handler:    _DaedalusService_ComputeVisibility_Handler,
+		},
+		{
+			MethodName: "BuildGatingPlan",
+			Handler:    _DaedalusService_BuildGatingPlan_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

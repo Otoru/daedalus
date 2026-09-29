@@ -25,6 +25,8 @@ service DaedalusService {
   // the response. A malformed grid returns InvalidArgument; a count or
   // dimension past the ceiling returns ResourceExhausted.
   rpc ComputeVisibility(ComputeVisibilityRequest) returns (ComputeVisibilityResponse);
+  // BuildGatingPlan computes a detached progression overlay for a complete Layout.
+  rpc BuildGatingPlan(BuildGatingPlanRequest) returns (BuildGatingPlanResponse);
 }
 
 // GenerateRequest carries every Config datum, including extra_edge_count,
@@ -370,6 +372,44 @@ message RoomRoleRequest {
   uint32 count = 2;
   // required_tags lists non-empty UTF-8 tags with no duplicates.
   repeated string required_tags = 3;
+  // max_room_edges is the largest number of corridors that may reach each
+  // room assigned this role. Zero means no role-specific ceiling; one is valid.
+  uint32 max_room_edges = 4;
+}
+
+enum GateKind {
+  GATE_KIND_UNSPECIFIED = 0;
+  GATE_KIND_MAIN = 1;
+  GATE_KIND_OPTIONAL = 2;
+}
+
+message GatingRequest {
+  uint64 seed = 1;
+  uint32 start_room_id = 2;
+  optional uint32 target_room_id = 3;
+  uint32 main_gate_count = 4;
+  uint32 optional_gate_count = 5;
+}
+
+message BuildGatingPlanRequest {
+  Layout layout = 1;
+  GatingRequest request = 2;
+}
+
+message Gate {
+  uint32 id = 1;
+  GateKind kind = 2;
+  uint32 door_id = 3;
+  uint32 key_room_id = 4;
+}
+
+message GatingPlan {
+  uint64 seed = 1;
+  repeated Gate gates = 2;
+}
+
+message BuildGatingPlanResponse {
+  GatingPlan plan = 1;
 }
 
 // DensityRegion is a Grid rectangle that replaces min_distance with a local

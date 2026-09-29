@@ -166,6 +166,8 @@ func StatusError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid navigation request")
 	case errors.Is(err, daedalus.ErrInvalidVisibility):
 		return status.Error(codes.InvalidArgument, "invalid visibility request")
+	case errors.Is(err, daedalus.ErrInvalidGating):
+		return status.Error(codes.InvalidArgument, "invalid gating request")
 	case errors.Is(err, daedalus.ErrLimitExceeded):
 		return status.Error(codes.ResourceExhausted, "resource limit exceeded")
 	case errors.Is(err, daedalus.ErrNoCompatiblePlant):
@@ -183,6 +185,8 @@ func StatusError(err error) error {
 		return status.Error(codes.FailedPrecondition, "placement cannot be connected under the separation rule")
 	case errors.Is(err, daedalus.ErrUnsatisfiedRoleConstraint):
 		return status.Error(codes.FailedPrecondition, "room role edge constraint cannot be satisfied")
+	case errors.Is(err, daedalus.ErrInsufficientGates):
+		return status.Error(codes.FailedPrecondition, "layout cannot host the requested gates")
 	case errors.Is(err, daedalus.ErrInvalidPlugin):
 		// Unreachable over gRPC, which only ever runs the built-in algorithms.
 		// Dishonest output from an injected Placer or Connector — a mask that
