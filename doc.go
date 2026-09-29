@@ -215,7 +215,10 @@
 // first, before any stream is drawn and before any Grid is allocated. The
 // Placer then proposes RoomPlacements, and every Cell of an accepted footprint
 // is reserved. The Connector proposes topological edges. Requested thematic
-// roles are assigned on that backbone. Optional shortcuts are reintroduced
+// roles are assigned on that backbone. A RoomRoleRequest.MaxRoomEdges value
+// greater than zero filters candidates by their degree in the Connector graph;
+// Boss and Treasure therefore mean the farthest eligible Room. Optional
+// shortcuts are reintroduced
 // from the short edges the backbone discarded. Each edge is traced as an
 // orthogonal Corridor. Doors are derived from the ends of those routes. Only
 // then are optional plant metadata resolved and an immutable Layout
@@ -377,7 +380,9 @@
 // The graph stays connected either way; extra edges are the only way it gains
 // a cycle. Fewer shortcuts than requested is a successful Layout when the
 // budget runs out. Shortcuts spend the same opening budget as the backbone,
-// including a MaxRoomEdges ceiling. A ceiling of exactly 2 is legal and
+// including a MaxRoomEdges ceiling. A role ceiling of exactly 1 is legal and
+// selects a leaf when one is available; the global Config.MaxRoomEdges still
+// retains its separate minimum of 2. A ceiling of exactly 2 is legal and
 // worth noticing: every Room holds at most two Corridors, so the backbone is
 // a single unbranched chain. That is a usable floor. The only shortcut that
 // can still fit joins the two ends of that chain; any further cycle does not

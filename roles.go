@@ -3,6 +3,7 @@ package daedalus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 )
@@ -54,17 +55,35 @@ func applyTopologyOptions(
 	maxRoomEdges uint32,
 	tryRoute func(from, to RoomID) (bool, error),
 ) ([]*RoomRole, []Connection, error) {
-	roles, err := assignRoomRoles(ctx, rooms, backbone, requests)
+	roles, err := assignRoomRolesWithConstraints(ctx, rooms, backbone, requests, gridWidth, gridHeight, corridorWidth, maxRoomEdges)
 	if err != nil {
 		return nil, nil, err
 	}
-	connections, err := addExtraConnections(
+	roleCeilings := roleCeilingsForAssignedRooms(rooms, roles, requests, gridWidth, gridHeight, corridorWidth, maxRoomEdges)
+	connections, err := addExtraConnectionsWithRoleCeilings(
 		ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth, maxRoomEdges, tryRoute,
+		roleCeilings,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := validateRoleDegrees(rooms, connections, roles, roleCeilings); err != nil {
+		return nil, nil, err
+	}
 	return roles, connections, nil
+}
+
+func validateRoleDegrees(rooms []PlacedRoom, connections []Connection, roles []*RoomRole, ceilings []uint32) error {
+	if len(ceilings) != len(rooms) {
+		return nil
+	}
+	degrees := connectionDegrees(rooms, connections)
+	for index, ceiling := range ceilings {
+		if ceiling != 0 && roles[index] != nil && uint32(degrees[index]) > ceiling {
+			return fmt.Errorf("%w: role=%d room=%d degree=%d ceiling=%d", errGeneratorInvariant, *roles[index], rooms[index].ID, degrees[index], ceiling)
+		}
+	}
+	return nil
 }
 
 // assignRoomRoles assigns roles in declared order, reserving RoomID 0 for Start
@@ -76,6 +95,27 @@ func assignRoomRoles(
 	rooms []PlacedRoom,
 	backbone []Connection,
 	requests []RoomRoleRequest,
+) ([]*RoomRole, error) {
+	return assignRoomRolesWithConstraints(ctx, rooms, backbone, requests, 0, 0, 0, 0)
+}
+
+func assignRoomRolesWithConstraints(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	backbone []Connection,
+	requests []RoomRoleRequest,
+	gridWidth, gridHeight, corridorWidth, globalCeiling uint32,
+) ([]*RoomRole, error) {
+	return assignRoomRolesWithDegreeConnections(ctx, rooms, backbone, backbone, requests, gridWidth, gridHeight, corridorWidth, globalCeiling)
+}
+
+func assignRoomRolesWithDegreeConnections(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	backbone []Connection,
+	degreeConnections []Connection,
+	requests []RoomRoleRequest,
+	gridWidth, gridHeight, corridorWidth, globalCeiling uint32,
 ) ([]*RoomRole, error) {
 	ctx = topologyContext(ctx)
 	if err := ctx.Err(); err != nil {
@@ -91,12 +131,18 @@ func assignRoomRoles(
 	if summary.hasBoss && !summary.hasStart {
 		return nil, errBossRoleWithoutStart
 	}
+	degree := connectionDegrees(rooms, degreeConnections)
+	roleCeilingsByRole := roleCeilingsByRequestedRole(rooms, requests, gridWidth, gridHeight, corridorWidth, globalCeiling)
+	roleCeilings := roleCeilingsByRole[RoomRoleStart]
 
 	startIndex := topologyFirstRoomIndex
 	if rooms[startIndex].ID != RoomID(topologyFirstRoomIndex) {
 		return nil, errTopologyUnknownRoom
 	}
 	if summary.hasStart {
+		if len(roleCeilings) == len(rooms) && roleCeilings[startIndex] != 0 && uint32(degree[startIndex]) > roleCeilings[startIndex] {
+			return nil, fmt.Errorf("%w: role=%d ordinal=1 ceiling=%d observed_degree=%d", ErrUnsatisfiedRoleConstraint, RoomRoleStart, roleCeilings[startIndex], degree[startIndex])
+		}
 		roles[startIndex] = roomRolePointer(RoomRoleStart)
 	}
 
@@ -113,7 +159,7 @@ func assignRoomRoles(
 		}
 	}
 
-	if err := assignNonStartRoles(ctx, rooms, backbone, roles, distances, requests); err != nil {
+	if err := assignNonStartRoles(ctx, rooms, backbone, roles, distances, requests, degree, roleCeilingsByRole); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -156,8 +202,10 @@ func assignNonStartRoles(
 	roles []*RoomRole,
 	distances []float64,
 	requests []RoomRoleRequest,
+	degree []int,
+	roleCeilingsByRole map[RoomRole][]uint32,
 ) error {
-	for _, request := range requests {
+	for requestIndex, request := range requests {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -165,9 +213,12 @@ func assignNonStartRoles(
 		case RoomRoleStart:
 			continue
 		case RoomRoleBoss:
-			assignFarthestRole(rooms, roles, distances, RoomRoleBoss)
+			roleCeilings := roleCeilingsByRole[request.Role]
+			if !assignFarthestRoleConstrained(rooms, roles, distances, RoomRoleBoss, degree, roleCeilings, request.MaxRoomEdges != 0) && hasUnassignedRoleRoom(roles) && request.MaxRoomEdges != 0 {
+				return roleConstraintError(request, uint32(requestIndex), degree, roleCeilings)
+			}
 		case RoomRoleTreasure:
-			if err := assignSpreadTreasures(ctx, rooms, backbone, roles, distances, request.Count); err != nil {
+			if err := assignSpreadTreasures(ctx, rooms, backbone, roles, distances, request.Count, degree, roleCeilingsByRole[request.Role], request); err != nil {
 				return err
 			}
 		}
@@ -190,6 +241,9 @@ func assignSpreadTreasures(
 	roles []*RoomRole,
 	originDistances []float64,
 	count uint32,
+	degree []int,
+	roleCeilings []uint32,
+	request RoomRoleRequest,
 ) error {
 	for assigned := uint32(0); assigned < count; assigned++ {
 		if err := ctx.Err(); err != nil {
@@ -199,7 +253,10 @@ func assignSpreadTreasures(
 		if err != nil {
 			return err
 		}
-		if !assignFarthestRole(rooms, roles, distances, RoomRoleTreasure) {
+		if !assignFarthestRoleConstrained(rooms, roles, distances, RoomRoleTreasure, degree, roleCeilings, request.MaxRoomEdges != 0) {
+			if request.MaxRoomEdges != 0 && hasUnassignedRoleRoom(roles) {
+				return roleConstraintError(request, assigned, degree, roleCeilings)
+			}
 			break
 		}
 	}
@@ -329,20 +386,16 @@ func weightedRoomAdjacency(
 	return adjacency, nil
 }
 
-func assignFarthestRole(
-	rooms []PlacedRoom,
-	roles []*RoomRole,
-	distances []float64,
-	role RoomRole,
-) bool {
+func assignFarthestRoleConstrained(rooms []PlacedRoom, roles []*RoomRole, distances []float64, role RoomRole, degree []int, ceilings []uint32, constrained bool) bool {
 	selectedIndex := topologyNoRoomIndex
 	for roomIndex, room := range rooms {
 		if roles[roomIndex] != nil {
 			continue
 		}
-		if selectedIndex == topologyNoRoomIndex ||
-			distances[roomIndex] > distances[selectedIndex] ||
-			(distances[roomIndex] == distances[selectedIndex] && room.ID < rooms[selectedIndex].ID) {
+		if constrained && ceilings[roomIndex] != 0 && uint32(degree[roomIndex]) > ceilings[roomIndex] {
+			continue
+		}
+		if selectedIndex == topologyNoRoomIndex || distances[roomIndex] > distances[selectedIndex] || (distances[roomIndex] == distances[selectedIndex] && room.ID < rooms[selectedIndex].ID) {
 			selectedIndex = roomIndex
 		}
 	}
@@ -351,6 +404,86 @@ func assignFarthestRole(
 	}
 	roles[selectedIndex] = roomRolePointer(role)
 	return true
+}
+
+func hasUnassignedRoleRoom(roles []*RoomRole) bool {
+	for _, role := range roles {
+		if role == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func connectionDegrees(rooms []PlacedRoom, connections []Connection) []int {
+	degrees := make([]int, len(rooms))
+	for _, connection := range connections {
+		from := roomIndexByID(rooms, connection.FromRoomID)
+		to := roomIndexByID(rooms, connection.ToRoomID)
+		if from >= 0 {
+			degrees[from]++
+		}
+		if to >= 0 {
+			degrees[to]++
+		}
+	}
+	return degrees
+}
+
+func roleCeilingsByRequestedRole(rooms []PlacedRoom, requests []RoomRoleRequest, gridWidth, gridHeight, corridorWidth, globalCeiling uint32) map[RoomRole][]uint32 {
+	result := make(map[RoomRole][]uint32, len(requests))
+	for _, request := range requests {
+		ceilings := make([]uint32, len(rooms))
+		if request.MaxRoomEdges != 0 {
+			for index, room := range rooms {
+				ceiling := request.MaxRoomEdges
+				if globalCeiling != 0 && globalCeiling < ceiling {
+					ceiling = globalCeiling
+				}
+				geometry := roomOpeningCapacity(placedRoomFootprint(room), gridWidth, gridHeight, corridorWidth)
+				if geometry < int(ceiling) {
+					ceiling = uint32(geometry)
+				}
+				ceilings[index] = ceiling
+			}
+		}
+		result[request.Role] = ceilings
+	}
+	return result
+}
+
+func roleCeilingsForAssignedRooms(rooms []PlacedRoom, roles []*RoomRole, requests []RoomRoleRequest, gridWidth, gridHeight, corridorWidth, globalCeiling uint32) []uint32 {
+	ceilings := make([]uint32, len(rooms))
+	for index, role := range roles {
+		if role == nil {
+			continue
+		}
+		for _, request := range requests {
+			if request.Role != *role || request.MaxRoomEdges == 0 {
+				continue
+			}
+			ceiling := request.MaxRoomEdges
+			if globalCeiling != 0 && globalCeiling < ceiling {
+				ceiling = globalCeiling
+			}
+			geometry := roomOpeningCapacity(placedRoomFootprint(rooms[index]), gridWidth, gridHeight, corridorWidth)
+			if geometry < int(ceiling) {
+				ceiling = uint32(geometry)
+			}
+			ceilings[index] = ceiling
+		}
+	}
+	return ceilings
+}
+
+func roleConstraintError(request RoomRoleRequest, ordinal uint32, degrees []int, ceilings []uint32) error {
+	minimum := int(^uint(0) >> 1)
+	for index, degree := range degrees {
+		if ceilings[index] != 0 && degree < minimum {
+			minimum = degree
+		}
+	}
+	return fmt.Errorf("%w: role=%d ordinal=%d ceiling=%d smallest_observed_degree=%d", ErrUnsatisfiedRoleConstraint, request.Role, ordinal+1, request.MaxRoomEdges, minimum)
 }
 
 func roomRolePointer(role RoomRole) *RoomRole {
@@ -373,6 +506,21 @@ func addExtraConnections(
 	corridorWidth uint32,
 	maxRoomEdges uint32,
 	tryRoute func(from, to RoomID) (bool, error),
+) ([]Connection, error) {
+	return addExtraConnectionsWithRoleCeilings(ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth, maxRoomEdges, tryRoute, nil)
+}
+
+func addExtraConnectionsWithRoleCeilings(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	backbone []Connection,
+	extraEdgeCount uint32,
+	gridWidth uint32,
+	gridHeight uint32,
+	corridorWidth uint32,
+	maxRoomEdges uint32,
+	tryRoute func(from, to RoomID) (bool, error),
+	roleCeilings []uint32,
 ) ([]Connection, error) {
 	ctx = topologyContext(ctx)
 	if err := ctx.Err(); err != nil {
@@ -407,6 +555,9 @@ func addExtraConnections(
 	used := make([]int, len(rooms))
 	for roomIndex, room := range rooms {
 		capacity[roomIndex] = roomOpeningBudget(placedRoomFootprint(room), gridWidth, gridHeight, width, maxRoomEdges)
+		if len(roleCeilings) == len(rooms) && roleCeilings[roomIndex] != 0 && int(roleCeilings[roomIndex]) < capacity[roomIndex] {
+			capacity[roomIndex] = int(roleCeilings[roomIndex])
+		}
 	}
 	for _, connection := range backbone {
 		fromIndex := roomIndexByID(rooms, connection.FromRoomID)

@@ -192,6 +192,10 @@ type RoomRoleRequest struct {
 	// Plant must contain. It restricts catalog selection but does not change the
 	// topological Room choice.
 	RequiredTags []string
+	// MaxRoomEdges is the largest number of Corridors that may reach each
+	// Room assigned this role. Zero means no role-specific ceiling; one is
+	// valid and selects a leaf when the topology provides one.
+	MaxRoomEdges uint32
 }
 
 // DensityRegion is a Grid rectangle that replaces Config.MinDistance with a

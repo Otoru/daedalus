@@ -281,17 +281,21 @@ func applyGeneratorTopologyOptions(
 	// the first edges that reach every Room form that tree, and edges that close
 	// a cycle already consume the shortcut budget.
 	roleBackbone := connectorSpanningTree(len(rooms), connections)
-	roles, err := assignRoomRoles(ctx, rooms, roleBackbone, effective.roomRoleRequests)
+	roles, err := assignRoomRolesWithDegreeConnections(ctx, rooms, roleBackbone, connections, effective.roomRoleRequests, effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths), effective.maxRoomEdges)
 	if err != nil {
 		return nil, nil, err
 	}
 	remainingExtraEdges := effective.extraEdgeCount - uint32(existingExtraEdges)
-	finalConnections, err := addExtraConnections(
+	roleCeilings := roleCeilingsForAssignedRooms(rooms, roles, effective.roomRoleRequests, effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths), effective.maxRoomEdges)
+	finalConnections, err := addExtraConnectionsWithRoleCeilings(
 		ctx, rooms, connections, remainingExtraEdges,
 		effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths),
-		effective.maxRoomEdges, tryRoute,
+		effective.maxRoomEdges, tryRoute, roleCeilings,
 	)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateRoleDegrees(rooms, finalConnections, roles, roleCeilings); err != nil {
 		return nil, nil, err
 	}
 	return roles, finalConnections, nil

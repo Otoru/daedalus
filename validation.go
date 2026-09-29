@@ -836,6 +836,7 @@ func validateRoomRoleRequests(requests []RoomRoleRequest, maxRooms uint32) ([]Ro
 		validated = append(validated, RoomRoleRequest{
 			Role: request.Role, Count: request.Count,
 			RequiredTags: append([]string(nil), request.RequiredTags...),
+			MaxRoomEdges: request.MaxRoomEdges,
 		})
 	}
 	if err := validateRoleTotals(seen, hasStart, assignedRooms, maxRooms); err != nil {

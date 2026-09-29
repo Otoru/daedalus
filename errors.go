@@ -10,7 +10,7 @@ import "errors"
 // In the gRPC service, the mapping is: ErrInvalidConfig and
 // ErrInvalidNavigation → InvalidArgument, ErrLimitExceeded →
 // ResourceExhausted, ErrNoCompatiblePlant, ErrUnroutableEdge,
-// ErrUnconnectablePlacement, and ErrInvalidPlugin → FailedPrecondition,
+// ErrUnconnectablePlacement, ErrUnsatisfiedRoleConstraint, and ErrInvalidPlugin → FailedPrecondition,
 // deadline expiration → DeadlineExceeded, and caller cancellation →
 // Canceled.
 // Cancellation and deadlines use context.Canceled and
@@ -25,6 +25,10 @@ var (
 	// (MaxCells or MaxRooms). It is detected before allocation, generation, or
 	// RNG consumption, and the Config is never silently truncated.
 	ErrLimitExceeded = errors.New("daedalus: product limit exceeded")
+
+	// ErrUnsatisfiedRoleConstraint marks a valid role request for which no
+	// eligible Room can satisfy its edge ceiling.
+	ErrUnsatisfiedRoleConstraint = errors.New("daedalus: room role edge constraint cannot be satisfied")
 
 	// ErrNoCompatiblePlant marks a valid Config whose catalog contains no
 	// RoomPlant whose DoorDirections support a Room's required Directions and

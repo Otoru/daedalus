@@ -181,6 +181,8 @@ func StatusError(err error) error {
 		// The Rooms cannot host a separated spanning tree. That is a property
 		// of the placement, known before routing, and the same 422 category.
 		return status.Error(codes.FailedPrecondition, "placement cannot be connected under the separation rule")
+	case errors.Is(err, daedalus.ErrUnsatisfiedRoleConstraint):
+		return status.Error(codes.FailedPrecondition, "room role edge constraint cannot be satisfied")
 	case errors.Is(err, daedalus.ErrInvalidPlugin):
 		// Unreachable over gRPC, which only ever runs the built-in algorithms.
 		// Dishonest output from an injected Placer or Connector — a mask that
