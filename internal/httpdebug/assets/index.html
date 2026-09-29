@@ -26,6 +26,19 @@
       <span><i class="swatch room"></i>Room</span>
       <span><i class="swatch corridor"></i>Corridor</span>
       <span><i class="swatch door"></i>Door</span>
+      <span><i class="swatch near"></i>Near</span>
+      <span><i class="swatch far"></i>Far</span>
+      <span><i class="swatch unreachable"><b></b></i>Unreachable</span>
+      <span><i class="swatch route"></i>Route</span>
+    </div>
+    <div class="field-controls" aria-label="Distance field">
+      <p id="click-hint" class="click-hint">First click sets the goal. The next click sets the position.</p>
+      <output id="click-mode" class="click-mode">Next click sets the goal</output>
+      <label class="centerline-toggle" for="flee">
+        <input id="flee" type="checkbox">
+        Flee
+      </label>
+      <button id="clear-field" class="button secondary compact" type="button">Clear field</button>
     </div>
     <div class="zoom-controls">
       <label for="zoom">Scale</label>
@@ -43,7 +56,7 @@
     <section class="map-panel" aria-labelledby="map-title">
       <h2 id="map-title" class="visually-hidden">Interactive map</h2>
       <div id="map-viewport" class="map-viewport">
-        <canvas id="map-canvas" class="map-canvas" tabindex="0" aria-label="Generated map. Click a cell to inspect it."></canvas>
+        <canvas id="map-canvas" class="map-canvas" tabindex="0" aria-label="Generated map. The first click sets the goal, the next click sets the position. Click a cell to inspect its distance and status."></canvas>
         <p id="map-placeholder" class="map-placeholder">Generate a map to view its cells, rooms, corridors and doors.</p>
         <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
           <h3 id="inspector-title">Selected cell</h3>

@@ -49,6 +49,9 @@ const elements = {
   zoomValue: document.querySelector("#zoom-value"),
   fitMap: document.querySelector("#fit-map"),
   showCenterline: document.querySelector("#show-centerline"),
+  clickMode: document.querySelector("#click-mode"),
+  flee: document.querySelector("#flee"),
+  clearField: document.querySelector("#clear-field"),
   viewport: document.querySelector("#map-viewport"),
   canvas: document.querySelector("#map-canvas"),
   placeholder: document.querySelector("#map-placeholder"),
@@ -68,6 +71,12 @@ const state = {
   layout: null,
   responseText: "",
   selectedCell: null,
+  goal: null,
+  position: null,
+  field: null,
+  fieldToken: 0,
+  clickPhase: "goal",
+  flee: false,
   origin: {x: 0, y: 0},
   scale: Number(elements.zoom.value),
   fitted: true,
@@ -112,6 +121,13 @@ elements.showCenterline.addEventListener("change", () => {
   state.showCenterline = elements.showCenterline.checked;
   renderLayout();
 });
+elements.flee.addEventListener("change", () => {
+  state.flee = elements.flee.checked;
+  if (state.goal) {
+    void loadField();
+  }
+});
+elements.clearField.addEventListener("click", clearField);
 elements.canvas.addEventListener("click", selectCellFromPointer);
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
 elements.requestTrigger.addEventListener("click", () => toggleDrawer("request"));
@@ -159,6 +175,7 @@ async function generateLayout() {
     const layout = JSON.parse(responseText);
     state.layout = layout;
     state.selectedCell = null;
+    clearFieldState();
     clearInspector();
     fitMap();
     const roomCount = Array.isArray(layout.rooms) ? layout.rooms.length : 0;
@@ -349,7 +366,14 @@ function renderLayout() {
   drawRoomBoundaries(context, scale);
   drawGrid(context, grid.width, grid.height, scale);
   drawCorridorBands(context, scale);
+  drawField(context, scale);
+  drawCenterlines(context, scale);
+  if (state.field) {
+    drawRoomBoundaries(context, scale);
+  }
   drawDoors(context, scale);
+  drawRoute(context, scale);
+  drawFieldMarkers(context, scale);
   drawSelection(context, scale);
   context.restore();
 }
@@ -422,24 +446,31 @@ function drawCorridorBands(context, scale) {
   band.forEach((cell) => {
     context.fillRect(cell.x * scale, cell.y * scale, scale, scale);
   });
-  if (state.showCenterline) {
-    context.strokeStyle = cellColors.corridorRoute;
-    context.lineCap = "square";
-    context.lineJoin = "miter";
-    context.lineWidth = Math.max(1, scale * 0.18);
-    corridors.forEach((corridor) => {
-      const centerline = corridor.centerline || [];
-      if (centerline.length === 0) {
-        return;
-      }
-      context.beginPath();
-      context.moveTo((centerline[0].x + 0.5) * scale, (centerline[0].y + 0.5) * scale);
-      centerline.slice(1).forEach((cell) => {
-        context.lineTo((cell.x + 0.5) * scale, (cell.y + 0.5) * scale);
-      });
-      context.stroke();
-    });
+  context.restore();
+}
+
+function drawCenterlines(context, scale) {
+  if (!state.showCenterline) {
+    return;
   }
+  const corridors = Array.isArray(state.layout.corridors) ? state.layout.corridors : [];
+  context.save();
+  context.strokeStyle = cellColors.corridorRoute;
+  context.lineCap = "square";
+  context.lineJoin = "miter";
+  context.lineWidth = Math.max(1, scale * 0.18);
+  corridors.forEach((corridor) => {
+    const centerline = corridor.centerline || [];
+    if (centerline.length === 0) {
+      return;
+    }
+    context.beginPath();
+    context.moveTo((centerline[0].x + 0.5) * scale, (centerline[0].y + 0.5) * scale);
+    centerline.slice(1).forEach((cell) => {
+      context.lineTo((cell.x + 0.5) * scale, (cell.y + 0.5) * scale);
+    });
+    context.stroke();
+  });
   context.restore();
 }
 
@@ -575,8 +606,28 @@ function selectCell(x, y) {
     return;
   }
   state.selectedCell = {x, y};
+  if (state.clickPhase === "goal") {
+    if (!isPassableCell(x, y)) {
+      updateInspector(x, y);
+      renderLayout();
+      setStatus("A goal has to be a room or corridor cell", "failure");
+      return;
+    }
+    state.goal = {x, y};
+    state.position = null;
+    state.clickPhase = "position";
+    updateClickMode();
+    updateInspector(x, y);
+    renderLayout();
+    void loadField();
+    return;
+  }
+  state.position = {x, y};
+  state.clickPhase = "goal";
+  updateClickMode();
   updateInspector(x, y);
   renderLayout();
+  describePosition();
 }
 
 function clearInspector() {
@@ -600,9 +651,12 @@ function updateInspector(x, y) {
   });
   corridorIDs.sort((first, second) => Number(first) - Number(second));
   const corridors = (state.layout.corridors || []).filter((corridor) => corridorIDs.includes(corridor.id));
+  const step = stepAt(x, y);
   const details = {
     coordinates: {x, y},
     kind: readableEnum(cell.kind, "CELL_KIND_"),
+    distance: step ? step.distance : null,
+    status: step ? statusLabel(step.status) : null,
     corridor_ids: corridorIDs,
     rooms: rooms.map((room) => ({
       id: room.id,
@@ -629,7 +683,10 @@ function updateInspector(x, y) {
       corridor_ids: door.corridor_ids || [],
     })),
   };
-  elements.cellDetails.textContent = JSON.stringify(details, null, 2);
+  const headline = step
+    ? `${statusLabel(step.status)} · distance ${step.distance}`
+    : "No field on this cell yet.";
+  elements.cellDetails.textContent = `${headline}\n${JSON.stringify(details, null, 2)}`;
   elements.inspector.hidden = false;
 }
 
@@ -667,6 +724,361 @@ function syncViewportToContainer() {
 }
 
 updateZoomLabel();
+updateClickMode();
+
+// MaxStepsPerCall on the navigation contract. A larger positions list is
+// rejected, so a 256×256 grid is posted as several legal ComputeSteps calls.
+const maxStepsPerCall = 16384;
+
+function updateClickMode() {
+  elements.clickMode.textContent = state.clickPhase === "goal"
+    ? "Next click sets the goal"
+    : "Next click sets the position";
+}
+
+function clearField() {
+  clearFieldState();
+  if (state.selectedCell) {
+    updateInspector(state.selectedCell.x, state.selectedCell.y);
+  }
+  renderLayout();
+  setStatus("Field cleared", "success");
+}
+
+function clearFieldState() {
+  state.goal = null;
+  state.position = null;
+  state.field = null;
+  state.fieldToken += 1;
+  state.clickPhase = "goal";
+  updateClickMode();
+}
+
+function isPassableCell(x, y) {
+  const kind = kindAt(x, y);
+  return kind === "CELL_KIND_ROOM" || kind === "CELL_KIND_CORRIDOR";
+}
+
+function kindAt(x, y) {
+  const grid = state.layout.grid;
+  const cell = (grid.cells || [])[y * grid.width + x];
+  return cell ? cell.kind : "CELL_KIND_EMPTY";
+}
+
+function stepAt(x, y) {
+  if (!state.field || !state.layout?.grid) {
+    return null;
+  }
+  return state.field[y * state.layout.grid.width + x] || null;
+}
+
+function statusLabel(status) {
+  const raw = readableEnum(status, "STEP_STATUS_");
+  if (typeof raw !== "string" || raw.length === 0) {
+    return "Unspecified";
+  }
+  return raw.charAt(0) + raw.slice(1).toLowerCase();
+}
+
+// DefaultCostRule: a room or corridor cell costs 1, everything else is
+// impassable (0). The page builds that grid and posts it; it does not ask
+// the server to derive costs from the Layout.
+function costBytes(layout) {
+  const width = layout.grid.width;
+  const height = layout.grid.height;
+  const count = width * height;
+  const costs = new Uint8Array(count);
+  const cells = layout.grid.cells || [];
+  for (let index = 0; index < count; index += 1) {
+    const kind = cells[index] ? cells[index].kind : "CELL_KIND_EMPTY";
+    if (kind === "CELL_KIND_ROOM" || kind === "CELL_KIND_CORRIDOR") {
+      costs[index] = 1;
+    }
+  }
+  return costs;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunk = 4096;
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    const slice = bytes.subarray(offset, offset + chunk);
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return btoa(binary);
+}
+
+async function loadField() {
+  if (!state.layout?.grid || !state.goal) {
+    return;
+  }
+  const token = state.fieldToken + 1;
+  state.fieldToken = token;
+  const goal = {x: state.goal.x, y: state.goal.y};
+  const flee = state.flee;
+  const layout = state.layout;
+  const width = layout.grid.width;
+  const height = layout.grid.height;
+  const total = width * height;
+  setStatus(flee ? "Computing the flee field…" : "Computing the field…", "busy");
+
+  try {
+    const costs = bytesToBase64(costBytes(layout));
+    const steps = new Array(total);
+    for (let offset = 0; offset < total; offset += maxStepsPerCall) {
+      const end = Math.min(total, offset + maxStepsPerCall);
+      const positions = [];
+      for (let index = offset; index < end; index += 1) {
+        positions.push({x: index % width, y: Math.floor(index / width)});
+      }
+      const response = await fetch("/api/v1/compute-steps", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          cost_grid: {width, height, costs},
+          queries: [{
+            sources: [{at: goal}],
+            positions,
+            flee,
+          }],
+        }),
+      });
+      const responseText = await response.text();
+      if (token !== state.fieldToken) {
+        return;
+      }
+      if (!response.ok) {
+        showServerError(response.status, responseText);
+        setStatus(`Field request failed · HTTP ${response.status}`, "failure");
+        state.field = null;
+        renderLayout();
+        return;
+      }
+      const payload = JSON.parse(responseText);
+      const batch = payload.results && payload.results[0] ? payload.results[0].steps : null;
+      if (!Array.isArray(batch) || batch.length !== positions.length) {
+        showLocalError("ComputeSteps returned a step list that does not match the positions.");
+        setStatus("Field response was incomplete", "failure");
+        state.field = null;
+        renderLayout();
+        return;
+      }
+      for (let index = 0; index < batch.length; index += 1) {
+        steps[offset + index] = batch[index];
+      }
+    }
+    if (token !== state.fieldToken) {
+      return;
+    }
+    state.field = steps;
+    renderLayout();
+    if (state.selectedCell) {
+      updateInspector(state.selectedCell.x, state.selectedCell.y);
+    }
+    if (state.position) {
+      describePosition();
+      return;
+    }
+    setStatus(flee ? "Flee field ready" : "Field ready", "success");
+  } catch (error) {
+    if (token !== state.fieldToken) {
+      return;
+    }
+    showLocalError(`Could not complete the field request: ${error.message}`);
+    setStatus("Field request failed", "failure");
+  }
+}
+
+function describePosition() {
+  if (!state.position || !state.field) {
+    return;
+  }
+  const step = stepAt(state.position.x, state.position.y);
+  if (!step) {
+    return;
+  }
+  const label = statusLabel(step.status);
+  if (step.status === "STEP_STATUS_UNREACHABLE") {
+    setStatus("Position is Unreachable", "failure");
+    return;
+  }
+  if (step.status === "STEP_STATUS_BLOCKED") {
+    setStatus(state.flee ? "Flee holds here · Blocked" : "Position is Blocked", "success");
+    return;
+  }
+  setStatus(state.flee ? `Flee route · ${label}` : `Route toward the goal · ${label}`, "success");
+}
+
+function fieldRange() {
+  const grid = state.layout.grid;
+  let min = null;
+  let max = null;
+  const count = grid.width * grid.height;
+  for (let index = 0; index < count; index += 1) {
+    const x = index % grid.width;
+    const y = Math.floor(index / grid.width);
+    if (!isPassableCell(x, y)) {
+      continue;
+    }
+    const step = state.field[index];
+    if (!isFiniteFieldStep(step)) {
+      continue;
+    }
+    const distance = Number(step.distance);
+    if (min === null || distance < min) {
+      min = distance;
+    }
+    if (max === null || distance > max) {
+      max = distance;
+    }
+  }
+  return {min, max};
+}
+
+// Unreachable is the sentinel -1. It stays off the lightness ramp: folding it
+// in would paint a walled-off cell as merely one step past the nearest floor.
+function isFiniteFieldStep(step) {
+  if (!step) {
+    return false;
+  }
+  return step.status !== "STEP_STATUS_UNREACHABLE" && step.status !== "STEP_STATUS_OUTSIDE";
+}
+
+function lightnessFor(distance, range) {
+  if (range.min === null || range.max === null || range.max === range.min) {
+    return 58;
+  }
+  const span = range.max - range.min;
+  const t = (distance - range.min) / span;
+  return Math.round(74 - t * 38);
+}
+
+function drawField(context, scale) {
+  if (!state.field || !state.layout?.grid) {
+    return;
+  }
+  const grid = state.layout.grid;
+  const range = fieldRange();
+  const cells = grid.cells || [];
+  for (let y = 0; y < grid.height; y += 1) {
+    for (let x = 0; x < grid.width; x += 1) {
+      const index = y * grid.width + x;
+      const kind = cells[index] ? cells[index].kind : "CELL_KIND_EMPTY";
+      if (kind !== "CELL_KIND_ROOM" && kind !== "CELL_KIND_CORRIDOR") {
+        continue;
+      }
+      const step = state.field[index];
+      if (!isFiniteFieldStep(step)) {
+        drawUnreachableCell(context, x, y, scale);
+        continue;
+      }
+      context.fillStyle = `hsl(0 0% ${lightnessFor(Number(step.distance), range)}%)`;
+      context.fillRect(x * scale, y * scale, scale, scale);
+    }
+  }
+}
+
+function drawUnreachableCell(context, x, y, scale) {
+  const left = x * scale;
+  const top = y * scale;
+  context.fillStyle = "hsl(0 0% 20%)";
+  context.fillRect(left, top, scale, scale);
+  if (scale < 4) {
+    return;
+  }
+  context.save();
+  context.beginPath();
+  context.rect(left, top, scale, scale);
+  context.clip();
+  context.strokeStyle = "hsl(0 0% 78%)";
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(left, top + scale);
+  context.lineTo(left + scale, top);
+  context.stroke();
+  context.restore();
+}
+
+function routeFrom(origin) {
+  const grid = state.layout.grid;
+  const path = [];
+  let x = origin.x;
+  let y = origin.y;
+  const seen = new Set();
+  const limit = grid.width * grid.height;
+  for (let stepCount = 0; stepCount <= limit; stepCount += 1) {
+    const key = `${x},${y}`;
+    if (seen.has(key)) {
+      break;
+    }
+    seen.add(key);
+    path.push({x, y});
+    const step = stepAt(x, y);
+    if (!step || step.status !== "STEP_STATUS_MOVED") {
+      break;
+    }
+    const delta = directionVector(step.direction);
+    const nextX = x + delta.x;
+    const nextY = y + delta.y;
+    if (nextX < 0 || nextY < 0 || nextX >= grid.width || nextY >= grid.height) {
+      break;
+    }
+    x = nextX;
+    y = nextY;
+  }
+  return path;
+}
+
+function drawRoute(context, scale) {
+  if (!state.position || !state.field) {
+    return;
+  }
+  const path = routeFrom(state.position);
+  if (path.length < 2) {
+    return;
+  }
+  context.save();
+  context.strokeStyle = "#f4f4f4";
+  context.lineCap = "square";
+  context.lineJoin = "miter";
+  context.lineWidth = Math.max(1, scale * 0.22);
+  context.beginPath();
+  context.moveTo((path[0].x + 0.5) * scale, (path[0].y + 0.5) * scale);
+  path.slice(1).forEach((cell) => {
+    context.lineTo((cell.x + 0.5) * scale, (cell.y + 0.5) * scale);
+  });
+  context.stroke();
+  context.restore();
+}
+
+function drawFieldMarkers(context, scale) {
+  context.save();
+  context.lineWidth = Math.max(1, scale * 0.16);
+  context.strokeStyle = "#f4f4f4";
+  if (state.goal) {
+    const inset = Math.max(1, scale * 0.28);
+    context.strokeRect(
+      state.goal.x * scale + inset,
+      state.goal.y * scale + inset,
+      scale - inset * 2,
+      scale - inset * 2,
+    );
+  }
+  if (state.position) {
+    const inset = Math.max(1, scale * 0.28);
+    const left = state.position.x * scale + inset;
+    const top = state.position.y * scale + inset;
+    const right = state.position.x * scale + scale - inset;
+    const bottom = state.position.y * scale + scale - inset;
+    context.beginPath();
+    context.moveTo(left, top);
+    context.lineTo(right, bottom);
+    context.moveTo(right, top);
+    context.lineTo(left, bottom);
+    context.stroke();
+  }
+  context.restore();
+}
 
 if (typeof ResizeObserver === "function") {
   const viewportObserver = new ResizeObserver(() => {

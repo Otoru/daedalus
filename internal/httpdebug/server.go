@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	daedalusv1 "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1"
@@ -84,6 +86,7 @@ func New(serviceServer *service.Server, version string, logger *zap.Logger) *Ser
 	mux.HandleFunc("GET /", server.root)
 	mux.HandleFunc("GET /debug/", server.debug)
 	mux.HandleFunc("POST /api/v1/generate", server.generate)
+	mux.HandleFunc("POST /api/v1/compute-steps", server.computeSteps)
 	server.handler = server.observeAndRestrict(mux)
 	return server
 }
@@ -187,34 +190,8 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 	// snake_case names, the same presence rules as protobuf, and a uint64
 	// such as Seed written as a decimal string. Missing required fields
 	// are rejected; they are not filled in with defaults.
-	mediaType, _, err := mime.ParseMediaType(request.Header.Get(contentTypeHeader))
-	if err != nil || mediaType != jsonMediaType {
-		writeError(
-			writer, request, http.StatusBadRequest,
-			"invalid_content_type", "Content-Type must be application/json",
-		)
-		return
-	}
-	if request.ContentLength > MaxHTTPDebugBodyBytes {
-		writeError(
-			writer, request, http.StatusRequestEntityTooLarge,
-			"body_too_large", "request body exceeds the 1 MiB limit",
-		)
-		return
-	}
-
-	request.Body = http.MaxBytesReader(writer, request.Body, MaxHTTPDebugBodyBytes)
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
-			writeError(
-				writer, request, http.StatusRequestEntityTooLarge,
-				"body_too_large", "request body exceeds the 1 MiB limit",
-			)
-			return
-		}
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "could not read the JSON body")
+	body, ok := readDebugJSON(writer, request)
+	if !ok {
 		return
 	}
 
@@ -247,10 +224,87 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 	_, _ = writer.Write(encoded)
 }
 
+func (server *Server) computeSteps(writer http.ResponseWriter, request *http.Request) {
+	// Same admission, body ceiling, request id, and error object as generate.
+	// The page posts the ComputeSteps a game would post: a base64 cost grid
+	// and queries. There is no debug-only field or shortcut route.
+	body, ok := readDebugJSON(writer, request)
+	if !ok {
+		return
+	}
+
+	var protoRequest daedalusv1.ComputeStepsRequest
+	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+
+	response, err := server.service.ComputeSteps(request.Context(), &protoRequest)
+	if err != nil {
+		httpStatus, code, message := mapServiceError(err)
+		writeError(writer, request, httpStatus, code, message)
+		return
+	}
+	encoded, err := (protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}).Marshal(response)
+	if err != nil {
+		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing steps")
+		return
+	}
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(encoded)
+}
+
+// readDebugJSON applies the shared debug POST limits: application/json, then
+// a 1 MiB ceiling before the body is buffered. A caller that gets false has
+// already received the structured error.
+func readDebugJSON(writer http.ResponseWriter, request *http.Request) ([]byte, bool) {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get(contentTypeHeader))
+	if err != nil || mediaType != jsonMediaType {
+		writeError(
+			writer, request, http.StatusBadRequest,
+			"invalid_content_type", "Content-Type must be application/json",
+		)
+		return nil, false
+	}
+	if request.ContentLength > MaxHTTPDebugBodyBytes {
+		writeError(
+			writer, request, http.StatusRequestEntityTooLarge,
+			"body_too_large", "request body exceeds the 1 MiB limit",
+		)
+		return nil, false
+	}
+
+	request.Body = http.MaxBytesReader(writer, request.Body, MaxHTTPDebugBodyBytes)
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeError(
+				writer, request, http.StatusRequestEntityTooLarge,
+				"body_too_large", "request body exceeds the 1 MiB limit",
+			)
+			return nil, false
+		}
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "could not read the JSON body")
+		return nil, false
+	}
+	return body, true
+}
+
 func validateCanonicalRequest(body []byte, descriptor protoreflect.MessageDescriptor) error {
 	required := map[protoreflect.FullName][]protoreflect.Name{
-		"daedalus.v1.GenerateRequest": {"config"},
-		"daedalus.v1.Config":          {"width", "height", "seed"},
+		"daedalus.v1.GenerateRequest":     {"config"},
+		"daedalus.v1.Config":              {"width", "height", "seed"},
+		"daedalus.v1.ComputeStepsRequest": {"cost_grid"},
+		"daedalus.v1.CostGrid":            {"width", "height", "costs"},
 	}
 	return validateCanonicalMessage(body, descriptor, required)
 }
@@ -292,6 +346,12 @@ func validateCanonicalField(
 			return err
 		}
 	}
+	// ProtoJSON carries bytes as a base64 string. A JSON array of numbers is
+	// a different contract and would let a caller skip the wire encoding the
+	// game has to use, so it is rejected here rather than handed to Unmarshal.
+	if field.Kind() == protoreflect.BytesKind {
+		return validateProtoBytes(name, value)
+	}
 	if field.Kind() != protoreflect.MessageKind || string(value) == "null" {
 		return nil
 	}
@@ -299,6 +359,26 @@ func validateCanonicalField(
 		return validateCanonicalList(name, value, field.Message(), required)
 	}
 	return validateCanonicalMessage(value, field.Message(), required)
+}
+
+func validateProtoBytes(name string, value json.RawMessage) error {
+	var text string
+	if err := json.Unmarshal(value, &text); err != nil {
+		return fmt.Errorf("bytes field %s must be a base64 string", name)
+	}
+	// Match protojson: standard alphabet, or the URL alphabet when '-' or '_'
+	// appears, and no padding when the length is not a multiple of four.
+	encoding := base64.StdEncoding
+	if strings.ContainsAny(text, "-_") {
+		encoding = base64.URLEncoding
+	}
+	if len(text)%4 != 0 {
+		encoding = encoding.WithPadding(base64.NoPadding)
+	}
+	if _, err := encoding.DecodeString(text); err != nil {
+		return fmt.Errorf("bytes field %s is not valid base64", name)
+	}
+	return nil
 }
 
 func validateQuotedProtoInteger(name string, value json.RawMessage) error {

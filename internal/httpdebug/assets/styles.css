@@ -183,6 +183,57 @@ h3 {
   background: var(--door-cell);
 }
 
+.swatch.near {
+  background: hsl(0 0% 74%);
+}
+
+.swatch.far {
+  background: hsl(0 0% 36%);
+}
+
+.swatch.route {
+  background: #f4f4f4;
+}
+
+.swatch.unreachable {
+  position: relative;
+  overflow: hidden;
+  background: hsl(0 0% 20%);
+}
+
+.swatch.unreachable b {
+  position: absolute;
+  top: 5px;
+  left: -3px;
+  width: 18px;
+  height: 1px;
+  background: #d6d6d6;
+  transform: rotate(-45deg);
+}
+
+.field-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.click-hint,
+.click-mode {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.click-mode {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid var(--text);
+  border-radius: 2px;
+  color: var(--text);
+  font-weight: 600;
+}
+
 .zoom-controls {
   display: flex;
   align-items: center;

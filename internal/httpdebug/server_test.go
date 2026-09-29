@@ -3,8 +3,10 @@ package httpdebug
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -171,6 +173,33 @@ func TestDebugMapExampleDrawsWideCorridors(t *testing.T) {
 	assert.Contains(t, source, "door.span")
 	assert.Contains(t, source, "corridor_ids")
 	assert.Contains(t, string(page), `id="show-centerline"`)
+}
+
+// TestDebugPageExploresTheFieldThroughComputeSteps checks that the embedded
+// page posts a real ComputeSteps body — base64 costs, no numeric cost array —
+// and that the controls name the goal click, the position click, flee, and
+// the Unreachable and Blocked outcomes.
+func TestDebugPageExploresTheFieldThroughComputeSteps(t *testing.T) {
+	t.Parallel()
+
+	script, err := fs.ReadFile(assets, "assets/app.js")
+	require.NoError(t, err)
+	page, err := fs.ReadFile(assets, "assets/index.html")
+	require.NoError(t, err)
+	source := string(script)
+	markup := string(page)
+
+	assert.Contains(t, source, "/api/v1/compute-steps")
+	assert.Contains(t, source, "CELL_KIND_ROOM")
+	assert.Contains(t, source, "CELL_KIND_CORRIDOR")
+	assert.Contains(t, source, "btoa")
+	assert.NotContains(t, source, "costs: [")
+	assert.Contains(t, source, "STEP_STATUS_UNREACHABLE")
+	assert.Contains(t, source, "STEP_STATUS_BLOCKED")
+	assert.Contains(t, markup, `id="flee"`)
+	assert.Contains(t, markup, `id="click-mode"`)
+	assert.Contains(t, markup, "goal")
+	assert.Contains(t, markup, "position")
 }
 
 func exampleRequestFromScript(t *testing.T, script string) string {
@@ -572,6 +601,134 @@ func TestHealthBecomesUnavailableDuringShutdown(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code)
 	assert.JSONEq(t, `{"status":"unavailable","version":"v0.1.0-test"}`, response.Body.String())
+}
+
+// TestComputeStepsHTTPMatchesTheService checks that POST /api/v1/compute-steps
+// accepts canonical ProtoJSON, including a base64 costs payload, and returns
+// the same steps the gRPC method returns for that request. Flee is a field on
+// that request, not a second algorithm.
+func TestComputeStepsHTTPMatchesTheService(t *testing.T) {
+	t.Parallel()
+
+	var generations atomic.Int32
+	serviceServer := service.New(func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		generations.Add(1)
+		return daedalus.Layout{}, nil
+	}, service.NewAdmission(1))
+	server := New(serviceServer, testVersion, zap.NewNop())
+
+	for _, flee := range []bool{false, true} {
+		flee := flee
+		t.Run(fmt.Sprintf("flee=%t", flee), func(t *testing.T) {
+			body := computeStepsBody(t, []byte{1, 1, 1, 1}, 4, 1, flee)
+			response := executeRequest(
+				server.Handler(), http.MethodPost, "/api/v1/compute-steps", strings.NewReader(body),
+			)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+
+			var wire daedalusv1.ComputeStepsRequest
+			require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal([]byte(body), &wire))
+			direct, err := serviceServer.ComputeSteps(context.Background(), &wire)
+			require.NoError(t, err)
+			encoded, err := (protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			}).Marshal(direct)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(encoded), response.Body.String())
+			assert.NotContains(t, response.Body.String(), "request_id")
+		})
+	}
+	assert.Zero(t, generations.Load())
+
+	without := executeRequest(
+		server.Handler(), http.MethodPost, "/api/v1/compute-steps",
+		strings.NewReader(computeStepsBody(t, []byte{1, 1, 1, 1}, 4, 1, false)),
+	)
+	with := executeRequest(
+		server.Handler(), http.MethodPost, "/api/v1/compute-steps",
+		strings.NewReader(computeStepsBody(t, []byte{1, 1, 1, 1}, 4, 1, true)),
+	)
+	require.Equal(t, http.StatusOK, without.Code, without.Body.String())
+	require.Equal(t, http.StatusOK, with.Code, with.Body.String())
+	assert.NotEqual(t, without.Body.String(), with.Body.String(), "flee must change the steps")
+}
+
+func computeStepsBody(t *testing.T, costs []byte, width, height int, flee bool) string {
+	t.Helper()
+	return fmt.Sprintf(`{
+		"cost_grid": {"width": %d, "height": %d, "costs": %q},
+		"queries": [{
+			"sources": [{"at": {"x": 0, "y": 0}}],
+			"positions": [{"x": %d, "y": 0}],
+			"flee": %t
+		}]
+	}`, width, height, base64.StdEncoding.EncodeToString(costs), width-1, flee)
+}
+
+// TestComputeStepsRejectsNonBase64CostsAndAMissingGrid checks that a bytes
+// field has to be base64 ProtoJSON, and that the structured error shape is
+// the same one generate uses.
+func TestComputeStepsRejectsNonBase64CostsAndAMissingGrid(t *testing.T) {
+	t.Parallel()
+
+	var generations atomic.Int32
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		generations.Add(1)
+		return daedalus.Layout{}, nil
+	}, service.NewAdmission(1), zap.NewNop())
+
+	cases := []struct {
+		name        string
+		contentType string
+		body        string
+		status      int
+	}{
+		{name: "missing content type", body: `{"cost_grid":{"width":1,"height":1,"costs":"AQ=="}}`, status: http.StatusBadRequest},
+		{name: "incorrect content type", contentType: "text/plain", body: `{}`, status: http.StatusBadRequest},
+		{name: "missing cost grid", contentType: "application/json", body: `{}`, status: http.StatusBadRequest},
+		{name: "missing costs", contentType: "application/json", body: `{"cost_grid":{"width":1,"height":1}}`, status: http.StatusBadRequest},
+		{name: "costs as a number array", contentType: "application/json", body: `{"cost_grid":{"width":1,"height":1,"costs":[1]}}`, status: http.StatusBadRequest},
+		{name: "costs not base64", contentType: "application/json", body: `{"cost_grid":{"width":1,"height":1,"costs":"****"}}`, status: http.StatusBadRequest},
+		{name: "camel case", contentType: "application/json", body: `{"costGrid":{"width":1,"height":1,"costs":"AQ=="}}`, status: http.StatusBadRequest},
+	}
+	for _, testCase := range cases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			request := newLocalRequest(http.MethodPost, "/api/v1/compute-steps", strings.NewReader(testCase.body))
+			if testCase.contentType != "" {
+				request.Header.Set("Content-Type", testCase.contentType)
+			}
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, request)
+			assert.Equal(t, testCase.status, response.Code)
+			assertStructuredError(t, response)
+			assert.NotContains(t, response.Body.String(), "panic")
+		})
+	}
+	assert.Zero(t, generations.Load())
+}
+
+// TestComputeStepsRejectsAnOversizedBody checks the same 1 MiB ceiling as
+// generate, before the service reads the grid.
+func TestComputeStepsRejectsAnOversizedBody(t *testing.T) {
+	t.Parallel()
+
+	var generations atomic.Int32
+	server := newTestServer(t, func(context.Context, daedalus.Config) (daedalus.Layout, error) {
+		generations.Add(1)
+		return daedalus.Layout{}, nil
+	}, service.NewAdmission(1), zap.NewNop())
+	body := strings.Repeat("x", MaxHTTPDebugBodyBytes+1)
+
+	response := executeRequest(
+		server.Handler(), http.MethodPost, "/api/v1/compute-steps", strings.NewReader(body),
+	)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
+	assertStructuredError(t, response)
+	assert.Zero(t, generations.Load())
 }
 
 func newTestServer(
