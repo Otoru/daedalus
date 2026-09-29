@@ -206,6 +206,10 @@ func TestDebugPageExploresTheFieldThroughComputeSteps(t *testing.T) {
 	assert.Contains(t, source, "visible_to_observer")
 	assert.Contains(t, markup, `id="visibility-radius"`)
 	assert.Contains(t, markup, `id="visibility-mode"`)
+	assert.Contains(t, source, "/api/v1/build-gating-plan")
+	assert.Contains(t, source, "drawGatingPlan")
+	assert.Contains(t, markup, `id="build-gating"`)
+	assert.Contains(t, markup, "Main gate")
 }
 
 // TestDebugMapExampleMarksRoomRoles checks that the shipped example asks for
@@ -902,6 +906,32 @@ func TestComputeVisibilityHTTPMatchesTheServiceContract(t *testing.T) {
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &decoded))
 	require.Len(t, decoded.Fields, 1)
 	assert.Equal(t, "Bw==", decoded.Fields[0].Visible)
+}
+
+func TestBuildGatingPlanHTTPReturnsTheServicePlan(t *testing.T) {
+	t.Parallel()
+	server := newTestServer(t, nil, service.NewAdmission(1), zap.NewNop())
+	request := &daedalusv1.BuildGatingPlanRequest{
+		Layout: &daedalusv1.Layout{
+			Grid: &daedalusv1.Grid{Width: 1, Height: 1, Cells: []*daedalusv1.CellState{{At: &daedalusv1.Cell{}}}},
+			Rooms: []*daedalusv1.Room{
+				{Id: 0, At: &daedalusv1.Cell{}, Origin: &daedalusv1.Cell{}, DoorIds: []uint32{0}},
+				{Id: 1, At: &daedalusv1.Cell{}, Origin: &daedalusv1.Cell{}, DoorIds: []uint32{1}},
+			},
+			Corridors: []*daedalusv1.Corridor{{Id: 0, FromRoomId: 0, ToRoomId: 1, FromDoorId: 0, ToDoorId: 1}},
+			Doors:     []*daedalusv1.Door{{Id: 0, RoomId: 0, At: &daedalusv1.Cell{}, CorridorIds: []uint32{0}}, {Id: 1, RoomId: 1, At: &daedalusv1.Cell{}, CorridorIds: []uint32{0}}},
+		},
+		Request: &daedalusv1.GatingRequest{Seed: 7, StartRoomId: 0, MainGateCount: 1},
+	}
+	body, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
+	require.NoError(t, err)
+	response := executeRequest(server.Handler(), http.MethodPost, "/api/v1/build-gating-plan", bytes.NewReader(body))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var plan daedalusv1.BuildGatingPlanResponse
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(response.Body.Bytes(), &plan))
+	require.NotNil(t, plan.Plan)
+	require.Len(t, plan.Plan.Gates, 1)
+	assert.Equal(t, uint32(0), plan.Plan.Gates[0].DoorId)
 }
 
 func TestGeneratedLayoutDefaultOpacityRoundTripsThroughVisibilityHTTP(t *testing.T) {

@@ -184,6 +184,14 @@ h3 {
   background: hsl(142 28% 42%);
 }
 
+.swatch.gate-main {
+  background: hsl(35 78% 62%);
+}
+
+.swatch.gate-key {
+  background: hsl(205 70% 68%);
+}
+
 .swatch.room {
   background: var(--room-cell);
 }

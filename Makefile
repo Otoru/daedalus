@@ -36,7 +36,7 @@ PLATFORMS := linux/amd64 darwin/arm64 windows/amd64
 CMD_DIR := ./cmd/daedalus
 HAS_CMD := $(wildcard cmd/daedalus)
 
-.PHONY: generate lint test bench build build-all
+.PHONY: generate lint test bench bench-freeze build build-all
 
 generate:
 	@test -n "$(BUF)" || { echo "buf not found; install with: $(GO) install github.com/bufbuild/buf/cmd/buf@latest (or pass BUF=/path/to/buf)" >&2; exit 1; }
@@ -73,6 +73,9 @@ bench:
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeSteps$$' -benchmem ./utils/pathfinding
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeVisibility$$' -benchmem ./utils/vision
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeVisibilityIntoWarm$$' -benchmem ./utils/vision
+
+bench-freeze:
+	rtk proxy go test -run '^$$' -bench . -benchtime 10x ./...
 
 build:
 ifeq ($(HAS_CMD),)

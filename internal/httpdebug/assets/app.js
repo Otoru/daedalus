@@ -84,6 +84,8 @@ const elements = {
   visibilityRadius: document.querySelector("#visibility-radius"),
   visibilityRadiusValue: document.querySelector("#visibility-radius-value"),
   clearVisibility: document.querySelector("#clear-visibility"),
+  buildGating: document.querySelector("#build-gating"),
+  clearGating: document.querySelector("#clear-gating"),
   viewport: document.querySelector("#map-viewport"),
   canvas: document.querySelector("#map-canvas"),
   placeholder: document.querySelector("#map-placeholder"),
@@ -106,6 +108,7 @@ const state = {
   position: null,
   field: null,
   visibility: null,
+  gatingPlan: null,
   observer: null,
   visibilityRadius: Number(elements.visibilityRadius.value),
   fieldToken: 0,
@@ -171,6 +174,8 @@ elements.visibilityRadius.addEventListener("input", () => {
   }
 });
 elements.clearVisibility.addEventListener("click", clearVisibility);
+elements.buildGating.addEventListener("click", buildGatingPlan);
+elements.clearGating.addEventListener("click", clearGatingPlan);
 elements.canvas.addEventListener("click", selectCellFromPointer);
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
 elements.requestTrigger.addEventListener("click", () => togglePanel("request"));
@@ -220,6 +225,7 @@ async function generateLayout() {
     state.selectedCell = null;
     clearFieldState();
     clearVisibilityState();
+    clearGatingPlan();
     clearInspector();
     fitMap();
     const roomCount = Array.isArray(layout.rooms) ? layout.rooms.length : 0;
@@ -444,6 +450,7 @@ function renderLayout() {
     drawRoomBoundaries(context, scale);
   }
   drawDoors(context, scale);
+  drawGatingPlan(context, scale);
   drawRoleMarkers(context, scale);
   drawRoute(context, scale);
   drawFieldMarkers(context, scale);
@@ -457,6 +464,8 @@ const cellColors = {
   corridorRoute: "hsl(40 12% 18%)",
   door: "hsl(16 14% 78%)",
   doorMark: "hsl(16 8% 24%)",
+  gateMain: "hsl(35 78% 62%)",
+  gateKey: "hsl(205 70% 68%)",
 };
 
 function colorForCell(cell) {
@@ -607,6 +616,71 @@ function drawDoors(context, scale) {
     context.lineTo(centerX + direction.x * scale * 0.42, centerY + direction.y * scale * 0.42);
     context.stroke();
   });
+  context.restore();
+}
+
+function drawGatingPlan(context, scale) {
+  const plan = state.gatingPlan;
+  if (!plan || !state.layout) {
+    return;
+  }
+  const doors = new Map((state.layout.doors || []).map((door) => [String(door.id), door]));
+  const rooms = new Map((state.layout.rooms || []).map((room) => [String(room.id), room]));
+  context.save();
+  context.lineCap = "square";
+  plan.gates.forEach((gate) => {
+    const door = doors.get(String(gate.door_id));
+    if (door?.at) {
+      const span = doorSpan(door, scale);
+      const direction = directionVector(door.direction);
+      const centerX = span.x + span.width / 2;
+      const centerY = span.y + span.height / 2;
+      context.strokeStyle = gate.kind === "GATE_KIND_OPTIONAL" ? cellColors.gateKey : cellColors.gateMain;
+      context.lineWidth = Math.max(2, scale * 0.24);
+      context.beginPath();
+      context.moveTo(centerX - direction.x * scale * 0.32, centerY - direction.y * scale * 0.32);
+      context.lineTo(centerX + direction.x * scale * 0.32, centerY + direction.y * scale * 0.32);
+      context.stroke();
+      drawGateLabel(context, `Lock ${gate.id} · Door ${gate.door_id}`, centerX, centerY, scale);
+    }
+    const room = rooms.get(String(gate.key_room_id));
+    const anchor = room && roleAnchor(room);
+    if (anchor) {
+      context.fillStyle = cellColors.gateKey;
+      context.strokeStyle = cellColors.doorMark;
+      context.lineWidth = Math.max(1, scale * 0.12);
+      context.beginPath();
+      context.arc(anchor.x * scale, anchor.y * scale, Math.max(3, scale * 0.26), 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      drawGateLabel(context, `Key ${gate.id} · Room ${gate.key_room_id}`, anchor.x * scale, anchor.y * scale, scale);
+    }
+  });
+  context.restore();
+}
+
+function drawGateLabel(context, text, x, y, scale) {
+  context.save();
+  const fontSize = Math.max(12, Math.min(16, scale * 1.2));
+  context.font = `600 ${fontSize}px system-ui, sans-serif`;
+  const padding = 7;
+  const width = context.measureText(text).width + padding * 2;
+  const height = fontSize + padding * 2;
+  const mapWidth = state.layout.grid.width * scale;
+  const labelX = Math.max(0, Math.min(x + scale, mapWidth - width));
+  const labelY = Math.max(0, y - height - scale);
+  context.fillStyle = "#181c20";
+  context.fillRect(labelX, labelY, width, height);
+  context.strokeStyle = "#e4c78b";
+  context.lineWidth = 1;
+  context.strokeRect(labelX, labelY, width, height);
+  context.beginPath();
+  context.moveTo(labelX + padding, labelY + height);
+  context.lineTo(x, y);
+  context.stroke();
+  context.fillStyle = "#fff4dc";
+  context.textBaseline = "top";
+  context.fillText(text, labelX + padding, labelY + padding);
   context.restore();
 }
 
@@ -1017,6 +1091,47 @@ function clearVisibility() {
   }
   renderLayout();
   setStatus("Vision cleared", "success");
+}
+
+function clearGatingPlan() {
+  state.gatingPlan = null;
+  renderLayout();
+}
+
+async function buildGatingPlan() {
+  if (!state.layout) {
+    setStatus("Generate a map before building gates", "failure");
+    return;
+  }
+  const startRoom = (state.layout.rooms || []).find((room) => room.role === "ROOM_ROLE_START") || state.layout.rooms[0];
+  if (!startRoom) {
+    setStatus("The layout has no room for a gating start", "failure");
+    return;
+  }
+  setStatus("Building the gating plan…", "busy");
+  try {
+    const response = await fetch("/api/v1/build-gating-plan", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        layout: state.layout,
+        request: {seed: state.layout.seed || "0", start_room_id: startRoom.id, main_gate_count: 1},
+      }),
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      showServerError(response.status, responseText);
+      setStatus(`Gating request failed · HTTP ${response.status}`, "failure");
+      return;
+    }
+    const payload = JSON.parse(responseText);
+    state.gatingPlan = payload.plan;
+    renderLayout();
+    setStatus(`Gating ready · ${state.gatingPlan.gates.length} gate`, "success");
+  } catch (error) {
+    showLocalError(`Could not complete the gating request: ${error.message}`);
+    setStatus("Gating request failed", "failure");
+  }
 }
 
 function clearVisibilityState() {

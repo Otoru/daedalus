@@ -81,6 +81,13 @@
         </div>
         <p id="visibility-hint" class="click-hint">Click a cell to set the observer and show its field of vision.</p>
       </div>
+      <div class="field-controls" aria-label="Gating plan">
+        <div class="toggle-row">
+          <button id="build-gating" class="button secondary compact" type="button">Show gates</button>
+          <button id="clear-gating" class="button secondary compact" type="button">Clear gates</button>
+        </div>
+        <p id="gating-hint" class="click-hint">Builds one main gate and marks its reachable key room.</p>
+      </div>
       <div class="legend" aria-label="Map legend">
         <span><i class="swatch empty"></i>Empty</span>
         <span><i class="swatch room"></i>Room</span>
@@ -94,6 +101,8 @@
         <span><i class="swatch unreachable"><b></b></i>Unreachable</span>
         <span><i class="swatch route"></i>Route</span>
         <span><i class="swatch terrain"></i>Terrain</span>
+        <span><i class="swatch gate-main"></i>Main gate</span>
+        <span><i class="swatch gate-key"></i>Key room</span>
       </div>
       <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
         <h3 id="inspector-title">Selected cell</h3>

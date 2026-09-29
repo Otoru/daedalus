@@ -224,6 +224,12 @@
 // then are optional plant metadata resolved and an immutable Layout
 // materialized. A failure in any phase discards the private work and returns
 // the zero Layout.
+// A non-zero RoomRoleRequest.MaxRoomEdges is a per-role ceiling on the number
+// of Corridors reaching an assigned Room; zero leaves the geometric opening
+// budget in charge. NewLoopConnector is an opt-in SDK-only Connector that
+// starts with a ring and grows branches, and costs about six times the default
+// Prim generation at the largest measured load. It never changes the nil
+// Connector default.
 //
 // The built-in Placer is a Poisson disk over anchors, not over footprint
 // Cells. One geometry draw selects the first Room. Normalization has already
@@ -607,6 +613,14 @@
 // geometry draws. Zero is invalid. Plant weights behave the same way inside a
 // catalog. None of these knobs, and none of the role, shortcut, or density
 // options, shifts the draws of another stream.
+//
+// # Companion utilities
+//
+// The root package owns generation, not gameplay queries. utils/pathfinding
+// computes entry-cost distance fields, utils/vision computes visibility with
+// symmetric shadowcasting, and utils/gating builds and validates a solvable
+// progression plan over a completed Layout. The service exposes the latter as
+// BuildGatingPlan; all three utilities are detached and leave the Layout alone.
 package daedalus
 
 // Terrain patch algorithm (normative v1 contract)

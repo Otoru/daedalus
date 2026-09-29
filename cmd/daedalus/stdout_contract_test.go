@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,21 +34,25 @@ func TestBinaryEmitsExactlyOneLineOnRealStdout(t *testing.T) {
 	build.Stderr = os.Stderr
 	require.NoError(t, build.Run(), "compile the subprocess")
 
-	command := exec.Command(binary)
+	processContext, cancelProcess := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelProcess()
+	command := exec.CommandContext(processContext, binary)
 	stdout, err := command.StdoutPipe()
 	require.NoError(t, err)
 	require.NoError(t, command.Start())
-	defer func() {
-		_ = command.Process.Kill()
-		_, _ = command.Process.Wait()
-	}()
 
-	// Gives the lifecycle time to finish and any improper write time to
-	// appear, before stopping and reading everything the process produced.
-	time.Sleep(2 * time.Second)
-	require.NoError(t, command.Process.Kill())
-	produced, err := readAllAvailable(stdout)
+	reader := bufio.NewReader(stdout)
+	firstLine, err := reader.ReadString('\n')
+	require.NoError(t, err, "the process must publish a complete handshake line")
+
+	// Allow an improper second write to reach the pipe before stopping the
+	// process, then drain the pipe without racing the handshake write.
+	time.Sleep(100 * time.Millisecond)
+	cancelProcess()
+	rest, err := io.ReadAll(reader)
 	require.NoError(t, err)
+	_ = command.Wait()
+	produced := firstLine + string(rest)
 
 	lines := strings.Split(strings.TrimSuffix(produced, "\n"), "\n")
 	require.Len(t, lines, 1, "stdout is a wire contract: only the handshake may be written to it, got %q", produced)
@@ -57,19 +64,4 @@ func TestBinaryEmitsExactlyOneLineOnRealStdout(t *testing.T) {
 	assert.NotEmpty(t, announced.Addr)
 	assert.Positive(t, announced.PID)
 	assert.NotEmpty(t, announced.Version)
-}
-
-func readAllAvailable(reader interface{ Read([]byte) (int, error) }) (string, error) {
-	var builder strings.Builder
-	buffer := make([]byte, 4096)
-	for {
-		read, err := reader.Read(buffer)
-		builder.Write(buffer[:read])
-		if err != nil {
-			return builder.String(), nil
-		}
-		if read == 0 {
-			return builder.String(), nil
-		}
-	}
 }

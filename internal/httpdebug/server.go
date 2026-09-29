@@ -88,6 +88,7 @@ func New(serviceServer *service.Server, version string, logger *zap.Logger) *Ser
 	mux.HandleFunc("POST /api/v1/generate", server.generate)
 	mux.HandleFunc("POST /api/v1/compute-steps", server.computeSteps)
 	mux.HandleFunc("POST /api/v1/compute-visibility", server.computeVisibility)
+	mux.HandleFunc("POST /api/v1/build-gating-plan", server.buildGatingPlan)
 	server.handler = server.observeAndRestrict(mux)
 	return server
 }
@@ -291,6 +292,41 @@ func (server *Server) computeVisibility(writer http.ResponseWriter, request *htt
 	}).Marshal(response)
 	if err != nil {
 		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing visibility")
+		return
+	}
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(encoded)
+}
+
+func (server *Server) buildGatingPlan(writer http.ResponseWriter, request *http.Request) {
+	body, ok := readDebugJSON(writer, request)
+	if !ok {
+		return
+	}
+
+	var protoRequest daedalusv1.BuildGatingPlanRequest
+	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+
+	response, err := server.service.BuildGatingPlan(request.Context(), &protoRequest)
+	if err != nil {
+		httpStatus, code, message := mapServiceError(err)
+		writeError(writer, request, httpStatus, code, message)
+		return
+	}
+	encoded, err := (protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}).Marshal(response)
+	if err != nil {
+		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing gating plan")
 		return
 	}
 	writer.Header().Set(contentTypeHeader, jsonMediaType)

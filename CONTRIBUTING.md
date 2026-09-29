@@ -12,6 +12,7 @@
 - `make lint` runs `buf lint` and `golangci-lint`.
 - `make test` runs `go test ./...`.
 - `make bench` runs `BenchmarkGenerate`, `BenchmarkBuildGatingPlan`, `BenchmarkComputeSteps`, and the three `BenchmarkComputeVisibility` loads, with `-benchmem`; it also runs the warm `AnswerInto` visibility benchmark.
+- `make bench-freeze` runs the release benchmark sweep with `-benchtime 10x` through `rtk proxy`, including every package; record `ns/op`, `B/op`, and `allocs/op` with the machine and Go version.
 - `make build` writes `bin/daedalus` and stamps `main.Version` from `git describe`.
 - `make build-all` cross-compiles `linux/amd64`, `darwin/arm64` and `windows/amd64`.
 
@@ -58,6 +59,11 @@ go test ./utils/vision -run '^TestFrozenVisionGoldens$' -count=1
 ```
 
 There is no Make target for rewriting them. After an intentional, reviewed visibility algorithm change, regenerate explicitly with `-update-vision`; changing a v1 fixture requires a new major version or an opt-in algorithm ID.
+
+Do not edit existing fixtures while integrating a feature. Run the frozen
+golden commands below first; if an output is intentionally changing, add a
+reviewed fixture and a new algorithm or major-version decision rather than
+using an update flag to make the suite green.
 
 Two traps the code guards against, worth knowing before touching the hot path:
 
