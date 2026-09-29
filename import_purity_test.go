@@ -23,6 +23,7 @@ var purePackages = []struct {
 	{directory: ".", allowed: nil},
 	{directory: "utils/pathfinding", allowed: []string{"github.com/Otoru/daedalus"}},
 	{directory: "utils/vision", allowed: []string{"github.com/Otoru/daedalus"}},
+	{directory: "utils/gating", allowed: []string{"github.com/Otoru/daedalus"}},
 }
 
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core

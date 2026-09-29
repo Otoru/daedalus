@@ -7,10 +7,10 @@ import "errors"
 // with context via fmt.Errorf and %w, and callers must test them exclusively
 // with errors.Is. No failure returns a partial Layout.
 //
-// In the gRPC service, the mapping is: ErrInvalidConfig and
-// ErrInvalidNavigation → InvalidArgument, ErrLimitExceeded →
+// In the gRPC service, the mapping is: ErrInvalidConfig, ErrInvalidNavigation,
+// and ErrInvalidGating → InvalidArgument, ErrLimitExceeded →
 // ResourceExhausted, ErrNoCompatiblePlant, ErrUnroutableEdge,
-// ErrUnconnectablePlacement, ErrUnsatisfiedRoleConstraint, and ErrInvalidPlugin → FailedPrecondition,
+// ErrUnconnectablePlacement, and ErrInvalidPlugin → FailedPrecondition,
 // deadline expiration → DeadlineExceeded, and caller cancellation →
 // Canceled.
 // Cancellation and deadlines use context.Canceled and
@@ -25,10 +25,6 @@ var (
 	// (MaxCells or MaxRooms). It is detected before allocation, generation, or
 	// RNG consumption, and the Config is never silently truncated.
 	ErrLimitExceeded = errors.New("daedalus: product limit exceeded")
-
-	// ErrUnsatisfiedRoleConstraint marks a valid role request for which no
-	// eligible Room can satisfy its edge ceiling.
-	ErrUnsatisfiedRoleConstraint = errors.New("daedalus: room role edge constraint cannot be satisfied")
 
 	// ErrNoCompatiblePlant marks a valid Config whose catalog contains no
 	// RoomPlant whose DoorDirections support a Room's required Directions and
@@ -63,6 +59,12 @@ var (
 	// outside the Grid, a Source on an impassable Cell, a duplicate Source, or a
 	// bias out of range. Count and dimension ceilings are ErrLimitExceeded.
 	ErrInvalidNavigation = errors.New("daedalus: invalid navigation request")
+
+	// ErrInvalidGating marks malformed Layout topology, gating requests, or plans.
+	ErrInvalidGating = errors.New("daedalus: invalid gating request")
+
+	// ErrInsufficientGates marks a valid Layout that cannot host the exact gate request.
+	ErrInsufficientGates = errors.New("daedalus: layout cannot host the requested gates")
 
 	// ErrInvalidVisibility marks a malformed visibility grid: a zero dimension,
 	// a Transparent length that disagrees with (Width×Height+7)/8, or a nonzero

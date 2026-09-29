@@ -69,6 +69,7 @@ test:
 # is anchored so a substring cannot pull in another Benchmark.
 bench:
 	$(GO) test -run '^$$' -bench '^BenchmarkGenerate$$' -benchmem .
+	$(GO) test -run '^$$' -bench '^BenchmarkBuildGatingPlan$$' -benchmem ./utils/gating
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeSteps$$' -benchmem ./utils/pathfinding
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeVisibility$$' -benchmem ./utils/vision
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeVisibilityIntoWarm$$' -benchmem ./utils/vision
