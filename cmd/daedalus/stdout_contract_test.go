@@ -19,7 +19,7 @@ import (
 // It runs the actual subprocess, and not an fx composition with an injected
 // writer.
 //
-// The other tests in this package pass a bytes.Buffer to newApp and prove
+// The other tests in this package pass a lockedBuffer to newApp and prove
 // that *that* writer receives a single line. That does not prove the process
 // contract. Stdout is the wire the client reads before it connects, and a
 // fmt.Println anywhere in the binary writes directly to os.Stdout and escapes

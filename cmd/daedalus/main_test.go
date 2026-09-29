@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,8 +26,8 @@ const testLifecycleTimeout = 5 * time.Second
 // TestStartupEmitsOneHandshakeLineAndServesGRPC checks that startup writes
 // exactly one valid handshake line, and that the client connects only after that.
 func TestStartupEmitsOneHandshakeLineAndServesGRPC(t *testing.T) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	var stdout lockedBuffer
+	var stderr lockedBuffer
 	processConfig := config.Default()
 	app := newApp(processConfig, &stdout, &stderr)
 
@@ -72,8 +73,8 @@ func TestBindFailureDoesNotAnnounceHandshake(t *testing.T) {
 
 	processConfig := config.Default()
 	processConfig.Addr = occupied.Addr().String()
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	var stdout lockedBuffer
+	var stderr lockedBuffer
 	app := newApp(processConfig, &stdout, &stderr)
 
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
@@ -85,8 +86,8 @@ func TestBindFailureDoesNotAnnounceHandshake(t *testing.T) {
 }
 
 func TestShutdownClosesGRPCListener(t *testing.T) {
-	var stdout bytes.Buffer
-	app := newApp(config.Default(), &stdout, &bytes.Buffer{})
+	var stdout lockedBuffer
+	app := newApp(config.Default(), &stdout, &lockedBuffer{})
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
 	require.NoError(t, app.Start(startContext))
 	cancelStart()
@@ -116,8 +117,8 @@ func TestDisabledHTTPDoesNotOpenPortOrChangeHandshake(t *testing.T) {
 	processConfig := config.Default()
 	processConfig.HTTPDebugEnabled = false
 	processConfig.HTTPDebugAddr = httpAddr
-	var stdout bytes.Buffer
-	app := newApp(processConfig, &stdout, &bytes.Buffer{})
+	var stdout lockedBuffer
+	app := newApp(processConfig, &stdout, &lockedBuffer{})
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
 	defer cancelStart()
 	require.NoError(t, app.Start(startContext))
@@ -145,8 +146,8 @@ func TestEnabledHTTPServesRoutesWithoutChangingGRPCHandshake(t *testing.T) {
 	processConfig := config.Default()
 	processConfig.HTTPDebugEnabled = true
 	processConfig.HTTPDebugAddr = httpAddr
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	var stdout lockedBuffer
+	var stderr lockedBuffer
 	app := newApp(processConfig, &stdout, &stderr)
 
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
@@ -192,8 +193,8 @@ func TestHTTPBindFailureAbortsStartupWithoutAnnouncingOrKeepingGRPC(t *testing.T
 	processConfig.Addr = grpcAddr
 	processConfig.HTTPDebugEnabled = true
 	processConfig.HTTPDebugAddr = occupiedHTTP.Addr().String()
-	var stdout bytes.Buffer
-	app := newApp(processConfig, &stdout, &bytes.Buffer{})
+	var stdout lockedBuffer
+	app := newApp(processConfig, &stdout, &lockedBuffer{})
 
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
 	defer cancelStart()
@@ -213,8 +214,8 @@ func TestShutdownClosesGRPCAndHTTPListeners(t *testing.T) {
 	processConfig := config.Default()
 	processConfig.HTTPDebugEnabled = true
 	processConfig.HTTPDebugAddr = httpAddr
-	var stdout bytes.Buffer
-	app := newApp(processConfig, &stdout, &bytes.Buffer{})
+	var stdout lockedBuffer
+	app := newApp(processConfig, &stdout, &lockedBuffer{})
 
 	startContext, cancelStart := context.WithTimeout(context.Background(), testLifecycleTimeout)
 	require.NoError(t, app.Start(startContext))
@@ -237,6 +238,31 @@ func TestShutdownClosesGRPCAndHTTPListeners(t *testing.T) {
 		}
 		require.Error(t, err, "listener %s remained open", addr)
 	}
+}
+
+// lockedBuffer lets the test read process output while zap is still writing
+// request logs into the same buffer. A bytes.Buffer is not safe for that.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *lockedBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return bytes.Clone(b.buf.Bytes())
 }
 
 func reserveTCPAddress(t *testing.T) string {
