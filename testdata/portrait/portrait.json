@@ -1,0 +1,34 @@
+[
+  {
+    "name": "01-default-geometry",
+    "hash": "9098ba66a5a62a60981dba5fbf1b89a5701e9b3101ccdece2ad9916f196451ae"
+  },
+  {
+    "name": "02-shape-catalog",
+    "hash": "5b0f4fbc8e2c7ab24359f6189a2ff3217cf518ae32f774c64df0958c62caae3e"
+  },
+  {
+    "name": "03-corridor-widths-1-and-3",
+    "hash": "1a1ad4cbeb2b4f4a9cf91e6c7cf075c8acddfd58276f4af1a810eb53926f65ef"
+  },
+  {
+    "name": "04-corridor-width-3-only",
+    "error": "ErrInvalidConfig"
+  },
+  {
+    "name": "05-roles",
+    "hash": "cf42ac0d7370dc01bfa3f670a96784a25e9ab62efc98bdaf0465da22b2b7513f"
+  },
+  {
+    "name": "06-density-regions",
+    "hash": "b384f924136301d02e7954207114b4e59c641fcfca0607b7f68b0cd8bc859001"
+  },
+  {
+    "name": "07-extra-edges",
+    "hash": "8a2c694086b99a95e15358367d032b9c5d973f3ff654918327915778809c312a"
+  },
+  {
+    "name": "08-max-room-edges",
+    "hash": "9d7682afe3f574dc9c057d82815b3880c1f271d6c35ff5bace645f90e376d08f"
+  }
+]
