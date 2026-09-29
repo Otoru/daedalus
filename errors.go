@@ -59,4 +59,9 @@ var (
 	// outside the Grid, a Source on an impassable Cell, a duplicate Source, or a
 	// bias out of range. Count and dimension ceilings are ErrLimitExceeded.
 	ErrInvalidNavigation = errors.New("daedalus: invalid navigation request")
+
+	// ErrInvalidVisibility marks a malformed visibility grid: a zero dimension,
+	// a Transparent length that disagrees with (Width×Height+7)/8, or a nonzero
+	// padding bit in the final byte. A product above MaxCells is ErrLimitExceeded.
+	ErrInvalidVisibility = errors.New("daedalus: invalid visibility request")
 )

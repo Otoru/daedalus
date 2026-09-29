@@ -14,23 +14,24 @@ import (
 
 // purePackages lists every package whose imports are policed, with the
 // non-GOROOT import paths each one is permitted. The root permits none.
-// utils/pathfinding permits the root and nothing else: it is the generation
-// core plus one algorithm, not a place for grpc, protobuf, fx or zap.
+// utils/pathfinding and utils/vision each permit the root and nothing else:
+// grpc, protobuf, fx, and zap stay outside them.
 var purePackages = []struct {
 	directory string   // relative to the repository root
 	allowed   []string // import paths permitted outside GOROOT
 }{
 	{directory: ".", allowed: nil},
 	{directory: "utils/pathfinding", allowed: []string{"github.com/Otoru/daedalus"}},
+	{directory: "utils/vision", allowed: []string{"github.com/Otoru/daedalus"}},
 }
 
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core
 // independently importable. Each entry in purePackages is checked as a
 // subtest: the root permits only the standard library, and utils/pathfinding
-// may also import the root module. grpc, protobuf, fx, zap, and generated
-// bindings stay outside both. Analysis uses the AST (go/parser). An import
-// is accepted when it is on that package's allowlist or when go/build
-// resolves it inside GOROOT.
+// and utils/vision may also import the root module. grpc, protobuf, fx, zap,
+// and generated bindings stay outside all three. Analysis uses the AST
+// (go/parser). An import is accepted when it is on that package's allowlist
+// or when go/build resolves it inside GOROOT.
 func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
 	for _, pure := range purePackages {
 		t.Run(pure.directory, func(t *testing.T) {
@@ -50,12 +51,13 @@ func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
 // TestAllowedImport locks the allowlist decision itself. A scan of the tree
 // can stay green while the assertion is a tautology, because every import
 // that exists today is legitimate. These cases are the ones the tree does
-// not contain: grpc is refused by both packages, the root module is refused
-// at the root and accepted by utils/pathfinding, and a standard-library path
-// is accepted by both.
+// not contain: grpc is refused by every policed package, the root module is
+// refused at the root and accepted by utils/pathfinding and utils/vision,
+// and a standard-library path is accepted by all three.
 func TestAllowedImport(t *testing.T) {
 	root := allowlist(t, ".")
 	pathfinding := allowlist(t, "utils/pathfinding")
+	vision := allowlist(t, "utils/vision")
 	cases := []struct {
 		name       string
 		importPath string
@@ -64,10 +66,13 @@ func TestAllowedImport(t *testing.T) {
 	}{
 		{name: "grpc rejected by root", importPath: "google.golang.org/grpc", allowed: root, want: false},
 		{name: "grpc rejected by pathfinding", importPath: "google.golang.org/grpc", allowed: pathfinding, want: false},
+		{name: "grpc rejected by vision", importPath: "google.golang.org/grpc", allowed: vision, want: false},
 		{name: "root module rejected by root", importPath: "github.com/Otoru/daedalus", allowed: root, want: false},
 		{name: "root module accepted by pathfinding", importPath: "github.com/Otoru/daedalus", allowed: pathfinding, want: true},
+		{name: "root module accepted by vision", importPath: "github.com/Otoru/daedalus", allowed: vision, want: true},
 		{name: "stdlib accepted by root", importPath: "fmt", allowed: root, want: true},
 		{name: "stdlib accepted by pathfinding", importPath: "fmt", allowed: pathfinding, want: true},
+		{name: "stdlib accepted by vision", importPath: "fmt", allowed: vision, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
