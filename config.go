@@ -81,7 +81,8 @@ type Config struct {
 	RoomGeometry *RoomGeometry
 	// CorridorGeometry defines the width distribution for Corridors. Nil means
 	// every Corridor is one Cell wide and the width stream is never consumed,
-	// which keeps the Layout identical to the historical one-Cell routes.
+	// which keeps the Layout identical to the historical one-Cell routes. A
+	// non-nil value must declare width 1.
 	CorridorGeometry *CorridorGeometry
 	// PlantCatalog is the optional asset-metadata catalog, or nil when absent; in
 	// that case PlantID and Tags remain empty in the Layout.
@@ -116,7 +117,11 @@ type DimensionRange struct {
 // A nil pointer means every Corridor is one Cell wide.
 type CorridorGeometry struct {
 	// Widths lists positive weights by corridor width, with no duplicate widths.
-	// The list must be non-empty when CorridorGeometry itself is non-nil.
+	// The list must be non-empty when CorridorGeometry itself is non-nil, and it
+	// must include width 1. Degradation only walks declared widths, so without 1
+	// a Room whose perimeter admits nothing wider has no routable edge at all;
+	// a catalog missing it is ErrInvalidConfig. Declaring 1 removes that failure,
+	// it does not promise that every request generates.
 	Widths []CorridorWidthWeight
 }
 

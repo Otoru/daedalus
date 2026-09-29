@@ -206,10 +206,16 @@ func TestCorridorWidthValidation(t *testing.T) {
 	})
 	t.Run("width 64 is accepted", func(t *testing.T) {
 		config := base
-		config.CorridorGeometry = &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 64, Weight: 1}}}
+		config.CorridorGeometry = &CorridorGeometry{Widths: []CorridorWidthWeight{
+			{Width: 1, Weight: 1},
+			{Width: 64, Weight: 1},
+		}}
 		effective, err := normalizeConfig(config)
 		require.NoError(t, err)
-		assert.Equal(t, []CorridorWidthWeight{{Width: 64, Weight: 1}}, effective.corridorWidths)
+		assert.Equal(t, []CorridorWidthWeight{
+			{Width: 1, Weight: 1},
+			{Width: 64, Weight: 1},
+		}, effective.corridorWidths)
 	})
 	t.Run("nil geometry draws nothing", func(t *testing.T) {
 		effective, err := normalizeConfig(base)

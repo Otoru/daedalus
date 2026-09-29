@@ -211,7 +211,12 @@ func goldenCases() []goldenCase {
 					MaxFootprintCells: 8, MinRoomGap: 1,
 					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 2, 1, 4)},
 				},
-				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
+				// Width 1 is mandatory in every catalog; the heavier weight on 2 keeps
+				// both draws on the even width this fixture freezes.
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{
+					{Width: 1, Weight: 1},
+					{Width: 2, Weight: 4},
+				}},
 			},
 			generator: Generator{
 				Placer: goldenPlacer{
@@ -236,7 +241,10 @@ func goldenCases() []goldenCase {
 					MaxFootprintCells: 2, MinRoomGap: 1,
 					Shapes: []RoomShapeWeight{shapeSpan(RoomShapeRectangle, 1, 1, 2, 1, 2)},
 				},
-				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 2, Weight: 1}}},
+				CorridorGeometry: &CorridorGeometry{Widths: []CorridorWidthWeight{
+					{Width: 1, Weight: 1},
+					{Width: 2, Weight: 1},
+				}},
 			},
 			generator: Generator{
 				Placer: goldenPlacer{

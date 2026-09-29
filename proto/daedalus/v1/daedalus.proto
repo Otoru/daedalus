@@ -207,8 +207,8 @@ message Config {
   optional RoomGeometry room_geometry = 13;
   // corridor_geometry is the optional Corridor width distribution. When
   // absent, every Corridor is one Cell wide, the same as a nil pointer in Go.
-  // A present message must list at least one width; an empty message is not
-  // the absent case.
+  // A present message must list at least one width and must include width 1;
+  // an empty message is not the absent case.
   optional CorridorGeometry corridor_geometry = 14;
   // max_room_edges is the largest number of corridors that may reach one
   // room. Zero means unlimited, and the room's geometry is then the only
@@ -261,7 +261,11 @@ message RoomShapeWeight {
 // message, means every Corridor is one Cell wide.
 message CorridorGeometry {
   // widths lists positive weights per corridor width, with no duplicate
-  // widths. Each width is 1..64 and each weight is 1..2^32-1.
+  // widths. Each width is 1..64 and each weight is 1..2^32-1. The list must
+  // include width 1: degradation walks declared widths and nothing else, so
+  // without it a Room whose perimeter admits no wider Corridor has no routable
+  // edge at all. A list without width 1 is rejected as an invalid config.
+  // Declaring it removes that failure, it does not promise a Layout.
   repeated CorridorWidthWeight widths = 1;
 }
 

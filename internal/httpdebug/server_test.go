@@ -518,7 +518,7 @@ func TestGenerateCarriesCenterlineAndDoorSpan(t *testing.T) {
 				}]
 			},
 			"corridor_geometry": {
-				"widths": [{"width": 2, "weight": 1}]
+				"widths": [{"width": 1, "weight": 1}, {"width": 2, "weight": 8}]
 			}
 		}
 	}`))

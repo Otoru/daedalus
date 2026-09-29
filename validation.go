@@ -229,8 +229,8 @@ func validateMaxRoomEdges(count uint32) error {
 // normalizeCorridorGeometry accepts a nil geometry as "every Corridor is one
 // Cell wide" and returns a nil slice so routing never draws a width. A non-nil
 // geometry must list widths in 1..64, duplicate-free, each with a positive
-// weight. The returned slice is sorted by Width so the draw does not depend
-// on the request order.
+// weight, and must declare width 1. The returned slice is sorted by Width so
+// the draw does not depend on the request order.
 func normalizeCorridorGeometry(source *CorridorGeometry) ([]CorridorWidthWeight, error) {
 	if source == nil {
 		return nil, nil
@@ -252,6 +252,14 @@ func normalizeCorridorGeometry(source *CorridorGeometry) ([]CorridorWidthWeight,
 		}
 		seen[item.Width] = struct{}{}
 		weights[index] = item
+	}
+	// Degradation only walks declared widths, so a catalog without 1 leaves a
+	// Room whose perimeter admits nothing wider with no routable edge at all.
+	if _, exists := seen[1]; !exists {
+		return nil, fmt.Errorf(
+			"%w: CorridorGeometry.Widths must declare width 1, the fallback every Corridor can degrade to",
+			ErrInvalidConfig,
+		)
 	}
 	sort.Slice(weights, func(first, second int) bool {
 		return weights[first].Width < weights[second].Width

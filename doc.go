@@ -164,6 +164,15 @@
 // 1..64 and each Weight is 1..2^32-1. A width above 64 is ErrInvalidConfig,
 // not ErrLimitExceeded: it is a nonsense value, not a product limit.
 //
+// A non-empty catalog must declare width 1. Degradation walks declared widths
+// and nothing else, so a catalog without 1 gives a Room whose perimeter admits
+// no wider Corridor nowhere to fall back to: every one of its edges is
+// unroutable and the whole call ends in ErrUnconnectablePlacement naming that
+// Room, when the fault is the catalog. The catalog is rejected up front with
+// ErrInvalidConfig instead. Declaring 1 removes that one failure mode. It does
+// not promise the request generates: corridor separation can still leave a
+// Room unconnectable.
+//
 // One draw is taken per Corridor, in creation order, immediately before that
 // Corridor is routed. Candidates are sorted by Width ascending before the
 // draw, so the order of Widths in the request cannot change the result. The
@@ -171,10 +180,11 @@
 // to the total weight, then the first candidate whose cumulative weight
 // reaches that ticket. If the drawn width W cannot be routed, degradation
 // walks the declared widths that are strictly narrower than W, descending, and
-// nothing else. With only [3] the options are 3 or ErrUnroutableEdge. With
-// [1, 3], a 3 that does not fit falls straight to 1. The first declared width
-// that routes wins. Only when every remaining declared width fails is the
-// error ErrUnroutableEdge. Degradation consumes no further randomness.
+// nothing else. With [1, 3], a 3 that does not fit falls straight to 1, never
+// to an undeclared 2. The first declared width that routes wins. Because 1 is
+// always declared, the walk always ends at a one-Cell attempt. Only when every
+// remaining declared width fails, 1 included, is the error ErrUnroutableEdge.
+// Degradation consumes no further randomness.
 //
 // The centerline is the route as computed for a one-Cell Corridor. The band is
 // the centerline dilated perpendicular to the direction of travel. Odd W:

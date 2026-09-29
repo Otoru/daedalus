@@ -432,3 +432,47 @@ func clonePlantCatalogForTest(source PlantCatalog) PlantCatalog {
 	}
 	return clone
 }
+
+// TestValidationRequiresCorridorWidthOne checks the one catalog shape the
+// router cannot work with. Degradation walks declared widths only, so a
+// catalog without width 1 has nowhere to fall back to; the rejection names
+// the catalog rather than leaving a later Room to fail as unconnectable.
+func TestValidationRequiresCorridorWidthOne(t *testing.T) {
+	cases := []struct {
+		name     string
+		geometry *CorridorGeometry
+		want     error
+	}{
+		{"nil geometry stays legal", nil, nil},
+		{"only width 1", &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 1, Weight: 1}}}, nil},
+		{"width 1 alongside a wider one", &CorridorGeometry{Widths: []CorridorWidthWeight{
+			{Width: 1, Weight: 2},
+			{Width: 3, Weight: 1},
+		}}, nil},
+		{"a single wide width", &CorridorGeometry{Widths: []CorridorWidthWeight{{Width: 3, Weight: 1}}}, ErrInvalidConfig},
+		{"wide widths without 1", &CorridorGeometry{Widths: []CorridorWidthWeight{
+			{Width: 2, Weight: 1},
+			{Width: 3, Weight: 1},
+		}}, ErrInvalidConfig},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := normalizeConfig(Config{Width: 8, Height: 8, CorridorGeometry: tc.geometry})
+			if tc.want == nil {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, tc.want)
+			assert.Contains(t, err.Error(), "CorridorGeometry.Widths must declare width 1")
+		})
+	}
+}
+
+// TestEmptyCorridorWidthsKeepTheEmptyMessage pins the order of the two
+// catalog-shaped checks: an empty list is empty, not a list missing width 1.
+func TestEmptyCorridorWidthsKeepTheEmptyMessage(t *testing.T) {
+	_, err := normalizeConfig(Config{Width: 8, Height: 8, CorridorGeometry: &CorridorGeometry{}})
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "must not be empty")
+	assert.NotContains(t, err.Error(), "must declare width 1")
+}
