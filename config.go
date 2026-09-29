@@ -87,6 +87,33 @@ type Config struct {
 	// PlantCatalog is the optional asset-metadata catalog, or nil when absent; in
 	// that case PlantID and Tags remain empty in the Layout.
 	PlantCatalog *PlantCatalog
+	// Terrain is the optional terrain vocabulary and placement configuration. Nil
+	// is the only no-terrain default; a present value must declare at least one
+	// distribution.
+	Terrain *TerrainConfig
+}
+
+// TerrainConfig declares the terrain definitions and the distributions that
+// later generation phases may use for Room and Corridor cells. One cell can
+// select one TerrainID; callers needing combined effects can declare a
+// composite ID.
+type TerrainConfig struct {
+	Definitions []TerrainDefinition
+	Rooms       *TerrainDistribution
+	Corridors   *TerrainDistribution
+}
+
+// TerrainDistribution gives the weighted candidates for one base cell kind.
+// NoneWeight selects no terrain and is kept separate from the definitions.
+type TerrainDistribution struct {
+	NoneWeight uint32
+	Terrains   []TerrainWeight
+}
+
+// TerrainWeight associates a positive selection weight with a declared terrain.
+type TerrainWeight struct {
+	TerrainID TerrainID
+	Weight    uint32
 }
 
 // RoomGeometry defines area, spacing, and per-shape dimension ranges for Rooms

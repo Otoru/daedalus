@@ -74,12 +74,17 @@ type effectiveConfig struct {
 	geometryCombinations []roomGeometryCombination
 	corridorWidths       []CorridorWidthWeight
 	plantCatalog         *PlantCatalog
+	terrain              *TerrainConfig
 }
 
 // normalizeConfig validates all input before any generation phase and returns
 // an effective copy with defaults applied and geometry enumerated.
 func normalizeConfig(config Config) (effectiveConfig, error) {
 	width, height, err := normalizeGrid(config.Width, config.Height)
+	if err != nil {
+		return effectiveConfig{}, err
+	}
+	terrain, err := normalizeTerrainConfig(config.Terrain)
 	if err != nil {
 		return effectiveConfig{}, err
 	}
@@ -147,7 +152,105 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		geometryCombinations: combinations,
 		corridorWidths:       corridorWidths,
 		plantCatalog:         catalog,
+		terrain:              terrain,
 	}, nil
+}
+
+// normalizeTerrainConfig validates every field before producing the detached,
+// bytewise-canonical representation consumed by later generation phases.
+func normalizeTerrainConfig(source *TerrainConfig) (*TerrainConfig, error) {
+	if source == nil {
+		return nil, nil
+	}
+	if len(source.Definitions) == 0 {
+		return nil, fmt.Errorf("%w: TerrainConfig.Definitions must not be empty", ErrInvalidConfig)
+	}
+	if len(source.Definitions) > MaxTerrainKinds {
+		return nil, fmt.Errorf("%w: TerrainConfig.Definitions has %d entries, above %d", ErrLimitExceeded, len(source.Definitions), MaxTerrainKinds)
+	}
+
+	definitionIDs := make(map[TerrainID]struct{}, len(source.Definitions))
+	var definitionBytes uint64
+	for _, definition := range source.Definitions {
+		if definition.ID == "" || !utf8.ValidString(string(definition.ID)) {
+			return nil, fmt.Errorf("%w: TerrainID must be non-empty UTF-8", ErrInvalidConfig)
+		}
+		if _, exists := definitionIDs[definition.ID]; exists {
+			return nil, fmt.Errorf("%w: duplicate TerrainID", ErrInvalidConfig)
+		}
+		if definitionBytes > math.MaxUint64-uint64(len(string(definition.ID))) {
+			return nil, fmt.Errorf("%w: Terrain definition ID bytes overflow", ErrLimitExceeded)
+		}
+		definitionBytes += uint64(len(string(definition.ID)))
+		if definitionBytes > uint64(MaxTerrainPaletteBytes) {
+			return nil, fmt.Errorf("%w: Terrain definition IDs use %d bytes, above %d", ErrLimitExceeded, definitionBytes, MaxTerrainPaletteBytes)
+		}
+		definitionIDs[definition.ID] = struct{}{}
+	}
+	if source.Rooms == nil && source.Corridors == nil {
+		return nil, fmt.Errorf("%w: TerrainConfig must declare Rooms or Corridors", ErrInvalidConfig)
+	}
+	if err := validateTerrainDistribution(source.Rooms, definitionIDs); err != nil {
+		return nil, err
+	}
+	if err := validateTerrainDistribution(source.Corridors, definitionIDs); err != nil {
+		return nil, err
+	}
+
+	canonical := &TerrainConfig{
+		Definitions: append([]TerrainDefinition(nil), source.Definitions...),
+	}
+	sort.Slice(canonical.Definitions, func(first, second int) bool {
+		return canonical.Definitions[first].ID < canonical.Definitions[second].ID
+	})
+	canonical.Rooms = cloneTerrainDistribution(source.Rooms)
+	canonical.Corridors = cloneTerrainDistribution(source.Corridors)
+	return canonical, nil
+}
+
+func validateTerrainDistribution(source *TerrainDistribution, definitions map[TerrainID]struct{}) error {
+	if source == nil {
+		return nil
+	}
+	seen := make(map[TerrainID]struct{}, len(source.Terrains))
+	total := uint64(source.NoneWeight)
+	for _, terrain := range source.Terrains {
+		if terrain.TerrainID == "" || !utf8.ValidString(string(terrain.TerrainID)) {
+			return fmt.Errorf("%w: TerrainID in weight must be non-empty UTF-8", ErrInvalidConfig)
+		}
+		if _, exists := definitions[terrain.TerrainID]; !exists {
+			return fmt.Errorf("%w: TerrainID %q is not declared", ErrInvalidConfig, terrain.TerrainID)
+		}
+		if _, exists := seen[terrain.TerrainID]; exists {
+			return fmt.Errorf("%w: duplicate TerrainID in TerrainDistribution", ErrInvalidConfig)
+		}
+		if terrain.Weight == 0 {
+			return fmt.Errorf("%w: Terrain weight must be positive", ErrInvalidConfig)
+		}
+		if total > math.MaxUint64-uint64(terrain.Weight) {
+			return fmt.Errorf("%w: TerrainDistribution weight sum overflows uint64", ErrInvalidConfig)
+		}
+		total += uint64(terrain.Weight)
+		seen[terrain.TerrainID] = struct{}{}
+	}
+	if total == 0 {
+		return fmt.Errorf("%w: TerrainDistribution total weight must be positive", ErrInvalidConfig)
+	}
+	return nil
+}
+
+func cloneTerrainDistribution(source *TerrainDistribution) *TerrainDistribution {
+	if source == nil {
+		return nil
+	}
+	clone := &TerrainDistribution{
+		NoneWeight: source.NoneWeight,
+		Terrains:   append([]TerrainWeight(nil), source.Terrains...),
+	}
+	sort.Slice(clone.Terrains, func(first, second int) bool {
+		return clone.Terrains[first].TerrainID < clone.Terrains[second].TerrainID
+	})
+	return clone
 }
 
 func normalizeGrid(width, height uint32) (uint32, uint32, error) {
