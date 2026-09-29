@@ -202,6 +202,79 @@ func TestDebugPageExploresTheFieldThroughComputeSteps(t *testing.T) {
 	assert.Contains(t, markup, "position")
 }
 
+// TestDebugMapExampleMarksRoomRoles checks that the shipped example asks for
+// one Start, one Boss and a few Treasure rooms, that the server accepts that
+// literal request, and that the page names each role in the legend and draws
+// a marker from the room role.
+func TestDebugMapExampleMarksRoomRoles(t *testing.T) {
+	t.Parallel()
+
+	script, err := fs.ReadFile(assets, "assets/app.js")
+	require.NoError(t, err)
+	page, err := fs.ReadFile(assets, "assets/index.html")
+	require.NoError(t, err)
+	style, err := fs.ReadFile(assets, "assets/styles.css")
+	require.NoError(t, err)
+
+	example := exampleRequestFromScript(t, string(script))
+	var request struct {
+		Config struct {
+			RoomRoleRequests []struct {
+				Role  string `json:"role"`
+				Count uint32 `json:"count"`
+			} `json:"room_role_requests"`
+		} `json:"config"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(example), &request))
+
+	counts := map[string]uint32{}
+	for _, item := range request.Config.RoomRoleRequests {
+		counts[item.Role] = item.Count
+	}
+	assert.Equal(t, uint32(1), counts["ROOM_ROLE_START"])
+	assert.Equal(t, uint32(1), counts["ROOM_ROLE_BOSS"])
+	assert.GreaterOrEqual(t, counts["ROOM_ROLE_TREASURE"], uint32(2))
+	assert.LessOrEqual(t, counts["ROOM_ROLE_TREASURE"], uint32(4))
+
+	source := string(script)
+	assert.Contains(t, source, "drawRoleMarkers(context, scale)")
+	assert.Contains(t, source, "ROOM_ROLE_START")
+	assert.Contains(t, source, "ROOM_ROLE_BOSS")
+	assert.Contains(t, source, "ROOM_ROLE_TREASURE")
+	assert.Contains(t, source, "cellColors.door")
+
+	markup := string(page)
+	assert.Contains(t, markup, ">Start<")
+	assert.Contains(t, markup, ">Boss<")
+	assert.Contains(t, markup, ">Treasure<")
+	assert.Contains(t, markup, `class="role-mark"`)
+	assert.Contains(t, string(style), ".role-mark")
+	assert.Contains(t, string(style), "var(--door-cell)")
+
+	generator := daedalus.Generator{}
+	server := newTestServer(t, generator.GenerateContext, service.NewAdmission(1), zap.NewNop())
+	response := executeRequest(
+		server.Handler(), http.MethodPost, "/api/v1/generate", strings.NewReader(example),
+	)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	var layout struct {
+		Rooms []struct {
+			Role string `json:"role"`
+		} `json:"rooms"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &layout))
+	assigned := map[string]int{}
+	for _, room := range layout.Rooms {
+		if room.Role != "" {
+			assigned[room.Role]++
+		}
+	}
+	assert.Equal(t, 1, assigned["ROOM_ROLE_START"])
+	assert.Equal(t, 1, assigned["ROOM_ROLE_BOSS"])
+	assert.Equal(t, int(counts["ROOM_ROLE_TREASURE"]), assigned["ROOM_ROLE_TREASURE"])
+}
+
 func exampleRequestFromScript(t *testing.T, script string) string {
 	t.Helper()
 

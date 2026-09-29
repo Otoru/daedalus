@@ -183,6 +183,17 @@ h3 {
   background: var(--door-cell);
 }
 
+.role-mark {
+  display: inline-block;
+  width: 12px;
+  color: var(--door-cell);
+  font-style: normal;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 12px;
+  text-align: center;
+}
+
 .swatch.near {
   background: hsl(0 0% 74%);
 }

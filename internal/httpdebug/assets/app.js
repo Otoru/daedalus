@@ -11,7 +11,11 @@ const exampleRequest = `{
     "max_rooms": 128,
     "corridor_order": "CORRIDOR_ORDER_X_THEN_Y",
     "extra_edge_count": 0,
-    "room_role_requests": [],
+    "room_role_requests": [
+      {"role": "ROOM_ROLE_START", "count": 1},
+      {"role": "ROOM_ROLE_BOSS", "count": 1},
+      {"role": "ROOM_ROLE_TREASURE", "count": 3}
+    ],
     "density_regions": [],
     "room_geometry": {
       "max_footprint_cells": 81,
@@ -372,6 +376,7 @@ function renderLayout() {
     drawRoomBoundaries(context, scale);
   }
   drawDoors(context, scale);
+  drawRoleMarkers(context, scale);
   drawRoute(context, scale);
   drawFieldMarkers(context, scale);
   drawSelection(context, scale);
@@ -527,6 +532,127 @@ function doorCoversCell(door, x, y) {
     return y === door.at.y && x >= door.at.x && x < door.at.x + count;
   }
   return x === door.at.x && y >= door.at.y && y < door.at.y + count;
+}
+
+// Role marks are a fixed screen size, clamped from 8px to 20px, on the occupied
+// cell nearest the room centroid. A stroke scaled with the cell vanishes at
+// 2px and turns crude at 24px. Below 14px only the outline is drawn: a circle
+// with a centre dot, a heavier square, or a diamond, in the existing door
+// tone. At 14px and above a system-font letter is added. Doors are pale bars
+// on the room edge, so a closed shape in the interior does not read as one.
+const roleMarkerMinPx = 8;
+const roleGlyphMinPx = 14;
+const roleMarkerMaxPx = 20;
+
+function drawRoleMarkers(context, scale) {
+  const rooms = Array.isArray(state.layout.rooms) ? state.layout.rooms : [];
+  context.save();
+  context.lineJoin = "miter";
+  context.lineCap = "square";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  rooms.forEach((room) => {
+    const kind = roleKind(room.role);
+    const anchor = roleAnchor(room);
+    if (!kind || !anchor) {
+      return;
+    }
+    const diameter = roleMarkerDiameter(room, scale);
+    const centerX = anchor.x * scale;
+    const centerY = anchor.y * scale;
+    drawRoleOutline(context, kind, centerX, centerY, diameter);
+    if (diameter < roleGlyphMinPx) {
+      return;
+    }
+    context.font = `600 ${Math.round(diameter * 0.42)}px ui-monospace, sans-serif`;
+    context.lineWidth = 3;
+    context.strokeStyle = cellColors.doorMark;
+    context.strokeText(kind.glyph, centerX, centerY);
+    context.fillStyle = cellColors.door;
+    context.fillText(kind.glyph, centerX, centerY);
+  });
+  context.restore();
+}
+
+function roleKind(role) {
+  if (role === "ROOM_ROLE_START") {
+    return {shape: "circle", glyph: "S"};
+  }
+  if (role === "ROOM_ROLE_BOSS") {
+    return {shape: "square", glyph: "B"};
+  }
+  if (role === "ROOM_ROLE_TREASURE") {
+    return {shape: "diamond", glyph: "T"};
+  }
+  return null;
+}
+
+function roleAnchor(room) {
+  const cells = room.cells || [];
+  if (cells.length === 0) {
+    return null;
+  }
+  let sumX = 0;
+  let sumY = 0;
+  cells.forEach((cell) => {
+    sumX += cell.x;
+    sumY += cell.y;
+  });
+  const centerX = sumX / cells.length;
+  const centerY = sumY / cells.length;
+  let best = cells[0];
+  let bestDistance = Infinity;
+  cells.forEach((cell) => {
+    const dx = cell.x - centerX;
+    const dy = cell.y - centerY;
+    const distance = dx * dx + dy * dy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = cell;
+    }
+  });
+  return {x: best.x + 0.5, y: best.y + 0.5};
+}
+
+function roleMarkerDiameter(room, scale) {
+  const width = Math.max(1, Number(room.width) || 1);
+  const height = Math.max(1, Number(room.height) || 1);
+  return clamp(Math.min(width, height) * scale * 0.5, roleMarkerMinPx, roleMarkerMaxPx);
+}
+
+function drawRoleOutline(context, kind, centerX, centerY, diameter) {
+  const radius = diameter / 2;
+  traceRoleShape(context, kind.shape, centerX, centerY, radius);
+  context.lineWidth = kind.shape === "square" ? 3.5 : 2.5;
+  context.strokeStyle = cellColors.doorMark;
+  context.stroke();
+  context.lineWidth = kind.shape === "square" ? 1.75 : 1.25;
+  context.strokeStyle = cellColors.door;
+  context.stroke();
+  if (kind.shape !== "circle" || diameter >= roleGlyphMinPx) {
+    return;
+  }
+  context.beginPath();
+  context.arc(centerX, centerY, Math.max(1.25, diameter * 0.16), 0, Math.PI * 2);
+  context.fillStyle = cellColors.door;
+  context.fill();
+}
+
+function traceRoleShape(context, shape, centerX, centerY, radius) {
+  context.beginPath();
+  if (shape === "circle") {
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    return;
+  }
+  if (shape === "square") {
+    context.rect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+    return;
+  }
+  context.moveTo(centerX, centerY - radius);
+  context.lineTo(centerX + radius, centerY);
+  context.lineTo(centerX, centerY + radius);
+  context.lineTo(centerX - radius, centerY);
+  context.closePath();
 }
 
 function directionVector(direction) {
