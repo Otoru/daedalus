@@ -66,12 +66,12 @@ func TestAnswerReusesOneScratchField(t *testing.T) {
 		}
 	})
 	t.Logf("Answer allocations: one query %.0f, eight queries %.0f", single, multi)
-	// Eight queries that each built a fresh field would multiply the
-	// distance-buffer allocations. Reusing one scratch field adds only the
-	// per-query result slices, so the eight-query call stays well under
-	// twice the one-query call.
-	assert.Less(t, multi, single*1.5)
+	// The scratch field is allocated once per Answer. Each extra query adds
+	// its result slice, so eight queries sit a small additive gap above one
+	// query. Eight fresh fields would land near eight times the one-query cost.
 	assert.Greater(t, multi, single)
+	assert.Less(t, multi, single+16)
+	assert.Less(t, multi, single*4)
 }
 
 func TestAnswerPreservesQueryOrderAndFleeDefaults(t *testing.T) {

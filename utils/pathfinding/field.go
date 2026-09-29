@@ -34,13 +34,15 @@ type Source struct {
 // Field stores the cheapest accumulated entry cost from a set of Sources.
 // Distances is row-major and uses Unreachable for impassable Cells and
 // passable components that contain no Source. The private buffers let
-// ComputeInto reuse all search storage after it has grown once.
+// ComputeInto reuse all search storage after it has grown once. The queue
+// is a pointer so a value copy of Field, which Step and DistanceAt do,
+// copies a word rather than the search buckets.
 type Field struct {
 	Width     uint32
 	Height    uint32
 	Distances []Distance
 
-	queue        bucketQueue
+	queue        *bucketQueue
 	generation   uint32
 	settled      []uint32
 	sourceStamps []uint32
@@ -58,7 +60,8 @@ func Compute(ctx context.Context, grid CostGrid, sources []Source) (Field, error
 
 // ComputeInto fills dst with the distance Field for grid and sources. Grid and
 // source validation finishes before any reusable buffer grows. A subsequent
-// call of the same or smaller size reuses Distances, stamps, and bucket slices.
+// call of the same or smaller size reuses Distances, stamps, and the queue
+// backing array.
 func ComputeInto(ctx context.Context, dst *Field, grid CostGrid, sources []Source) error {
 	if dst == nil {
 		return fmt.Errorf("%w: destination Field is nil", daedalus.ErrInvalidNavigation)
@@ -170,6 +173,14 @@ func (field *Field) prepare(width, height uint32, cellCount int) {
 		field.sourceStamps = field.sourceStamps[:cellCount]
 	}
 	field.nextGeneration()
+	field.resetQueue(cellCount)
+}
+
+func (field *Field) resetQueue(cellCount int) {
+	if field.queue == nil {
+		field.queue = &bucketQueue{}
+	}
+	field.queue.ensure(cellCount)
 	field.queue.reset()
 }
 

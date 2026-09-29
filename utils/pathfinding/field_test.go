@@ -224,6 +224,27 @@ func TestComputeIntoResetsDirtyBuffersAndAllocatesOnlyForGrowth(t *testing.T) {
 	t.Logf("ComputeInto allocations after warm-up: %.0f", allocations)
 }
 
+// A fresh field may allocate its distance buffer, stamp buffers, and the
+// queue's backing storage. It must not allocate once per bucket growth:
+// a 64×64 open grid used to do that hundreds of times inside one search.
+func TestFreshComputeIntoAllocatesBuffersNotBucketGrowth(t *testing.T) {
+	const side = 64
+	grid := fieldGrid(side, side, makeUniformCosts(side*side, pathfinding.MinCost)...)
+	sources := []pathfinding.Source{{At: cell(0, 0)}}
+
+	allocations := testing.AllocsPerRun(5, func() {
+		var field pathfinding.Field
+		if err := pathfinding.ComputeInto(context.Background(), &field, grid, sources); err != nil {
+			panic(err)
+		}
+		if field.DistanceAt(cell(side-1, side-1)) == pathfinding.Unreachable {
+			panic("fresh field did not reach the far cell")
+		}
+	})
+	t.Logf("fresh ComputeInto allocations: %.0f", allocations)
+	assert.Less(t, allocations, float64(16))
+}
+
 func TestDistanceCeilingsAreSafe(t *testing.T) {
 	assert.Equal(t, pathfinding.Distance(16_711_680), pathfinding.MaxDistance)
 	assert.Less(t, int64(pathfinding.MaxDistance), int64(1<<31-1))

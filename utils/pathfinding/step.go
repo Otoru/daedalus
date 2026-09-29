@@ -64,6 +64,10 @@ type StepResult struct {
 // cell the caller has just closed; without this rule every creature is told
 // it cannot move.
 func (field Field) Step(from daedalus.Cell) StepResult {
+	return (&field).step(from)
+}
+
+func (field *Field) step(from daedalus.Cell) StepResult {
 	if !field.inBounds(from) {
 		return StepResult{Distance: Unreachable, Status: StepStatusOutside}
 	}
@@ -108,8 +112,9 @@ func (field Field) Steps(positions []daedalus.Cell, dst []StepResult) []StepResu
 	} else {
 		dst = dst[:len(positions)]
 	}
+	view := &field
 	for index, at := range positions {
-		dst[index] = field.Step(at)
+		dst[index] = view.step(at)
 	}
 	return dst
 }
@@ -119,6 +124,10 @@ func (field Field) Steps(positions []daedalus.Cell, dst []StepResult) []StepResu
 // source. A blocked, unreachable, or outside read stops the walk, as does a
 // walk longer than the field, so a transformed field cannot loop.
 func (field Field) Path(from daedalus.Cell, dst []daedalus.Cell) ([]daedalus.Cell, bool) {
+	return (&field).path(from, dst)
+}
+
+func (field *Field) path(from daedalus.Cell, dst []daedalus.Cell) ([]daedalus.Cell, bool) {
 	dst = dst[:0]
 	if !field.inBounds(from) {
 		return dst, false
@@ -127,7 +136,7 @@ func (field Field) Path(from daedalus.Cell, dst []daedalus.Cell) ([]daedalus.Cel
 	current := from
 	for step := int64(0); step <= limit; step++ {
 		dst = append(dst, current)
-		result := field.Step(current)
+		result := field.step(current)
 		if result.Status == StepStatusArrived {
 			return dst, true
 		}
@@ -167,7 +176,7 @@ func Route(ctx context.Context, grid CostGrid, from, to daedalus.Cell, dst []dae
 // from and that neighbour is a legal strict descent. A finite cell may step
 // only to a strictly smaller distance. An unreachable cell — the impassable
 // cell a creature is standing on — may step to any finite neighbour.
-func (field Field) descendingNeighbor(from daedalus.Cell, self Distance, selfFinite bool, direction daedalus.Direction) (Distance, bool) {
+func (field *Field) descendingNeighbor(from daedalus.Cell, self Distance, selfFinite bool, direction daedalus.Direction) (Distance, bool) {
 	delta := direction.Delta()
 	neighbor := daedalus.Cell{X: from.X + delta.X, Y: from.Y + delta.Y}
 	if !field.inBounds(neighbor) {
@@ -192,7 +201,7 @@ func (field Field) descendingNeighbor(from daedalus.Cell, self Distance, selfFin
 // finite cell.
 const finiteStamp uint32 = 0x80000000
 
-func (field Field) distanceFinite(index int64) bool {
+func (field *Field) distanceFinite(index int64) bool {
 	if index < 0 || index >= int64(len(field.Distances)) {
 		return false
 	}
@@ -224,19 +233,19 @@ func (field *Field) markFiniteSentinel(index int) {
 	field.sourceStamps[index] = field.generation | finiteStamp
 }
 
-func (field Field) inBounds(at daedalus.Cell) bool {
+func (field *Field) inBounds(at daedalus.Cell) bool {
 	if at.X < 0 || at.Y < 0 {
 		return false
 	}
 	return uint32(at.X) < field.Width && uint32(at.Y) < field.Height
 }
 
-func (field Field) offset(at daedalus.Cell) int64 {
+func (field *Field) offset(at daedalus.Cell) int64 {
 	row := int64(at.Y) * int64(field.Width)
 	return row + int64(at.X)
 }
 
-func (field Field) sourceAt(index int64) bool {
+func (field *Field) sourceAt(index int64) bool {
 	if field.generation == 0 || index < 0 || index >= int64(len(field.sourceStamps)) {
 		return false
 	}

@@ -198,7 +198,7 @@ func shiftOne(distance Distance, delta int64) (Distance, error) {
 }
 
 func relaxNonNegative(ctx context.Context, field *Field, grid CostGrid) error {
-	field.queue.reset()
+	field.resetQueue(len(field.Distances))
 	for index := range field.Distances {
 		if !field.distanceFinite(int64(index)) {
 			continue
