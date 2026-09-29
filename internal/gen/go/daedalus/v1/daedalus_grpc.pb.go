@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaedalusService_Generate_FullMethodName     = "/daedalus.v1.DaedalusService/Generate"
-	DaedalusService_ComputeSteps_FullMethodName = "/daedalus.v1.DaedalusService/ComputeSteps"
+	DaedalusService_Generate_FullMethodName          = "/daedalus.v1.DaedalusService/Generate"
+	DaedalusService_ComputeSteps_FullMethodName      = "/daedalus.v1.DaedalusService/ComputeSteps"
+	DaedalusService_ComputeVisibility_FullMethodName = "/daedalus.v1.DaedalusService/ComputeVisibility"
 )
 
 // DaedalusServiceClient is the client API for DaedalusService service.
@@ -43,6 +44,11 @@ type DaedalusServiceClient interface {
 	// the nearest goal of that query. The service stores nothing: the grid
 	// travels on every call and no field survives the response.
 	ComputeSteps(ctx context.Context, in *ComputeStepsRequest, opts ...grpc.CallOption) (*ComputeStepsResponse, error)
+	// ComputeVisibility answers one visibility bitset per query. The service
+	// stores nothing: the grid travels on every call and no field survives
+	// the response. A malformed grid returns InvalidArgument; a count or
+	// dimension past the ceiling returns ResourceExhausted.
+	ComputeVisibility(ctx context.Context, in *ComputeVisibilityRequest, opts ...grpc.CallOption) (*ComputeVisibilityResponse, error)
 }
 
 type daedalusServiceClient struct {
@@ -73,6 +79,16 @@ func (c *daedalusServiceClient) ComputeSteps(ctx context.Context, in *ComputeSte
 	return out, nil
 }
 
+func (c *daedalusServiceClient) ComputeVisibility(ctx context.Context, in *ComputeVisibilityRequest, opts ...grpc.CallOption) (*ComputeVisibilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ComputeVisibilityResponse)
+	err := c.cc.Invoke(ctx, DaedalusService_ComputeVisibility_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaedalusServiceServer is the server API for DaedalusService service.
 // All implementations must embed UnimplementedDaedalusServiceServer
 // for forward compatibility.
@@ -93,6 +109,11 @@ type DaedalusServiceServer interface {
 	// the nearest goal of that query. The service stores nothing: the grid
 	// travels on every call and no field survives the response.
 	ComputeSteps(context.Context, *ComputeStepsRequest) (*ComputeStepsResponse, error)
+	// ComputeVisibility answers one visibility bitset per query. The service
+	// stores nothing: the grid travels on every call and no field survives
+	// the response. A malformed grid returns InvalidArgument; a count or
+	// dimension past the ceiling returns ResourceExhausted.
+	ComputeVisibility(context.Context, *ComputeVisibilityRequest) (*ComputeVisibilityResponse, error)
 	mustEmbedUnimplementedDaedalusServiceServer()
 }
 
@@ -108,6 +129,9 @@ func (UnimplementedDaedalusServiceServer) Generate(context.Context, *GenerateReq
 }
 func (UnimplementedDaedalusServiceServer) ComputeSteps(context.Context, *ComputeStepsRequest) (*ComputeStepsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ComputeSteps not implemented")
+}
+func (UnimplementedDaedalusServiceServer) ComputeVisibility(context.Context, *ComputeVisibilityRequest) (*ComputeVisibilityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ComputeVisibility not implemented")
 }
 func (UnimplementedDaedalusServiceServer) mustEmbedUnimplementedDaedalusServiceServer() {}
 func (UnimplementedDaedalusServiceServer) testEmbeddedByValue()                         {}
@@ -166,6 +190,24 @@ func _DaedalusService_ComputeSteps_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaedalusService_ComputeVisibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ComputeVisibilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaedalusServiceServer).ComputeVisibility(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaedalusService_ComputeVisibility_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaedalusServiceServer).ComputeVisibility(ctx, req.(*ComputeVisibilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DaedalusService_ServiceDesc is the grpc.ServiceDesc for DaedalusService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -180,6 +222,10 @@ var DaedalusService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ComputeSteps",
 			Handler:    _DaedalusService_ComputeSteps_Handler,
+		},
+		{
+			MethodName: "ComputeVisibility",
+			Handler:    _DaedalusService_ComputeVisibility_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

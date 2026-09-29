@@ -20,6 +20,11 @@ service DaedalusService {
   // the nearest goal of that query. The service stores nothing: the grid
   // travels on every call and no field survives the response.
   rpc ComputeSteps(ComputeStepsRequest) returns (ComputeStepsResponse);
+  // ComputeVisibility answers one visibility bitset per query. The service
+  // stores nothing: the grid travels on every call and no field survives
+  // the response. A malformed grid returns InvalidArgument; a count or
+  // dimension past the ceiling returns ResourceExhausted.
+  rpc ComputeVisibility(ComputeVisibilityRequest) returns (ComputeVisibilityResponse);
 }
 
 // GenerateRequest carries every Config datum, including extra_edge_count,
@@ -96,6 +101,55 @@ message QueryResult {
 // No field is retained after the call returns.
 message ComputeStepsResponse {
   repeated QueryResult results = 1;
+}
+
+// OpacityGrid is one transparency bit per Cell, row-major, packed.
+// transparent is bytes rather than a packed repeated bool: the length is
+// exactly (width*height+7)/8, one length-delimited block and one allocation,
+// and a short or long buffer cannot be a valid grid. A repeated bool would
+// be a tag per bit and a size that depends on how many cells are open. The
+// stored bit is transparent, so a zero-filled buffer is solid terrain.
+message OpacityGrid {
+  uint32 width = 1;
+  uint32 height = 2;
+  // transparent holds exactly (width*height+7)/8 bytes. Bit i is
+  // transparent[i>>3] & (1<<(i&7)), with i = y*width+x, least-significant
+  // bit first inside each byte. Unused high bits of the final byte are not
+  // cells and must be zero, so one terrain has one encoding.
+  bytes transparent = 3;
+}
+
+// VisibilityQuery is one observer. Field numbers stay in 1..15 so each tag
+// is one byte: a query repeats once per observer, as Source and Cell do.
+// radius 0 is a real radius, the origin alone. It is a plain uint32, not an
+// optional, so zero is that radius rather than an omitted default.
+message VisibilityQuery {
+  Cell origin = 1;
+  uint32 radius = 2;
+}
+
+// ComputeVisibilityRequest carries one turn of observers. Nothing in it is
+// stored after the response: no handle, no session and no cache. The grid
+// travels once per turn rather than once per observer.
+message ComputeVisibilityRequest {
+  OpacityGrid opacity_grid = 1;
+  repeated VisibilityQuery queries = 2;
+}
+
+// VisibilityField is the bitset that answers one VisibilityQuery. visible
+// uses the same row-major, least-significant-bit-first packing and zero
+// padding as OpacityGrid.transparent, and the same exact length. Width and
+// height stay on the request: repeating them on every field would multiply
+// a constant by the query count.
+message VisibilityField {
+  bytes visible = 1;
+}
+
+// ComputeVisibilityResponse returns one VisibilityField per VisibilityQuery,
+// in request order. Field i answers query i. Origins and radii are not
+// echoed. Nothing is retained after the call returns.
+message ComputeVisibilityResponse {
+  repeated VisibilityField fields = 1;
 }
 
 // CorridorOrder chooses the preferred elbow of the orthogonal L-shaped route.
