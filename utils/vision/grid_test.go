@@ -211,6 +211,51 @@ func TestNewOpacityGridFuncNilRuleUsesTheDefault(t *testing.T) {
 	assert.Equal(t, vision.NewOpacityGrid(layout), vision.NewOpacityGridFunc(layout, nil))
 }
 
+func TestNewTerrainOpacityGridUsesTransparencyAndFailsClosed(t *testing.T) {
+	layout := rectangleLayout()
+	layout.Grid.Terrain = &daedalus.TerrainLayer{
+		Palette: []daedalus.TerrainDefinition{
+			{ID: "glass", EntryCost: 0, Transparent: true},
+			{ID: "smoke", EntryCost: 1, Transparent: false},
+		},
+		Indices: []byte{0, 1, 2, 0},
+	}
+	grid := vision.NewTerrainOpacityGrid(layout)
+
+	assert.False(t, grid.TransparentAt(daedalus.Cell{X: 0, Y: 0}))
+	assert.True(t, grid.TransparentAt(daedalus.Cell{X: 1, Y: 0}))
+	assert.False(t, grid.TransparentAt(daedalus.Cell{X: 0, Y: 1}))
+	assert.False(t, grid.TransparentAt(daedalus.Cell{X: 1, Y: 1}))
+
+	layout.Grid.Terrain.Indices[1] = 3
+	failedClosed := vision.NewTerrainOpacityGrid(layout)
+	require.NoError(t, failedClosed.Validate())
+	assert.Len(t, failedClosed.Transparent, 1)
+	assert.Equal(t, []byte{0}, failedClosed.Transparent)
+	for y := int32(0); y < 2; y++ {
+		for x := int32(0); x < 2; x++ {
+			assert.False(t, failedClosed.TransparentAt(daedalus.Cell{X: x, Y: y}))
+		}
+	}
+}
+
+func TestNewTerrainOpacityGridWithoutTerrainMatchesLegacy(t *testing.T) {
+	layout := rectangleLayout()
+	assert.Equal(t, vision.NewOpacityGrid(layout), vision.NewTerrainOpacityGrid(layout))
+}
+
+func TestNewTerrainOpacityGridFuncReceivesIndependentFacts(t *testing.T) {
+	layout := rectangleLayout()
+	layout.Grid.Terrain = &daedalus.TerrainLayer{
+		Palette: []daedalus.TerrainDefinition{{ID: "water", EntryCost: 9, Transparent: false}},
+		Indices: []byte{0, 1, 0, 0},
+	}
+	grid := vision.NewTerrainOpacityGridFunc(layout, func(state daedalus.CellState, terrain *daedalus.TerrainDefinition) bool {
+		return state.Kind == daedalus.CellKindRoom && terrain != nil && terrain.EntryCost == 9 && !terrain.Transparent
+	})
+	assert.True(t, grid.TransparentAt(daedalus.Cell{X: 1, Y: 0}))
+}
+
 func TestNewOpacityGridFuncAppliesTheRuleToEveryCell(t *testing.T) {
 	layout := rectangleLayout()
 	layout.Grid.Cells = layout.Grid.Cells[:2]

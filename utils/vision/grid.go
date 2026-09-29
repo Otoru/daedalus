@@ -22,6 +22,10 @@ type OpacityGrid struct {
 // the caller passes nil.
 type OpacityRule func(daedalus.CellState) bool
 
+// LayoutOpacityRule reports whether one Cell is transparent from its state
+// and its optional terrain definition. A nil terrain means no overlay.
+type LayoutOpacityRule func(daedalus.CellState, *daedalus.TerrainDefinition) bool
+
 // DefaultOpacityRule is the conversion of a generated Layout. CellKindRoom
 // and CellKindCorridor are transparent. CellKindEmpty and any kind this
 // rule does not name are opaque. Entities do not occlude by default.
@@ -32,6 +36,19 @@ func DefaultOpacityRule(state daedalus.CellState) bool {
 	default:
 		return false
 	}
+}
+
+// DefaultLayoutOpacityRule preserves the base-kind rule and then applies the
+// terrain transparency independently of its entry cost. Empty and unknown
+// base kinds remain opaque; a Room or Corridor without terrain is transparent.
+func DefaultLayoutOpacityRule(state daedalus.CellState, terrain *daedalus.TerrainDefinition) bool {
+	if !DefaultOpacityRule(state) {
+		return false
+	}
+	if terrain == nil {
+		return true
+	}
+	return terrain.Transparent
 }
 
 // NewOpacityGrid packs layout with DefaultOpacityRule. A zero dimension or a
@@ -71,6 +88,54 @@ func NewOpacityGridFunc(layout daedalus.Layout, rule OpacityRule) OpacityGrid {
 				state = cells[int(index)]
 			}
 			if rule(state) {
+				setTransparentBit(bits, index)
+			}
+		}
+	}
+	grid.Transparent = bits
+	return grid
+}
+
+// NewTerrainOpacityGrid packs layout with DefaultLayoutOpacityRule. Unlike
+// the legacy constructors, it reads the optional terrain layer.
+func NewTerrainOpacityGrid(layout daedalus.Layout) OpacityGrid {
+	return NewTerrainOpacityGridFunc(layout, nil)
+}
+
+// NewTerrainOpacityGridFunc packs every Cell with rule. A nil rule uses
+// DefaultLayoutOpacityRule. Invalid terrain rejects the whole layer before
+// any cell is priced, but returns a valid, fully opaque OpacityGrid.
+func NewTerrainOpacityGridFunc(layout daedalus.Layout, rule LayoutOpacityRule) OpacityGrid {
+	if rule == nil {
+		rule = DefaultLayoutOpacityRule
+	}
+	grid := OpacityGrid{Width: layout.Grid.Width, Height: layout.Grid.Height}
+	if grid.Width == 0 || grid.Height == 0 {
+		return grid
+	}
+	product := uint64(grid.Width) * uint64(grid.Height)
+	if product > uint64(daedalus.MaxCells) {
+		return grid
+	}
+	bits := make([]byte, (product+7)/8)
+	if layout.Grid.ValidateTerrain() != nil {
+		grid.Transparent = bits
+		return grid
+	}
+	cells := layout.Grid.Cells
+	for y := uint32(0); y < grid.Height; y++ {
+		for x := uint32(0); x < grid.Width; x++ {
+			at := daedalus.Cell{X: int32(x), Y: int32(y)}
+			index, ok := grid.Index(at)
+			if !ok {
+				continue
+			}
+			var state daedalus.CellState
+			if int(index) < len(cells) {
+				state = cells[int(index)]
+			}
+			terrain, _ := layout.Grid.TerrainAt(at)
+			if rule(state, terrain) {
 				setTransparentBit(bits, index)
 			}
 		}

@@ -144,6 +144,52 @@ func TestNewCostGridFuncNilRuleUsesTheDefault(t *testing.T) {
 	assert.Equal(t, pathfinding.NewCostGrid(layout), pathfinding.NewCostGridFunc(layout, nil))
 }
 
+func TestNewTerrainCostGridUsesEntryCostAndFailsClosed(t *testing.T) {
+	layout := rectangleLayout()
+	layout.Grid.Terrain = &daedalus.TerrainLayer{
+		Palette: []daedalus.TerrainDefinition{
+			{ID: "glass", EntryCost: 0, Transparent: true},
+			{ID: "smoke", EntryCost: 1, Transparent: false},
+		},
+		Indices: []byte{0, 1, 2, 0},
+	}
+	grid := pathfinding.NewTerrainCostGrid(layout)
+
+	assert.Equal(t, pathfinding.CostImpassable, grid.At(daedalus.Cell{X: 0, Y: 0}))
+	assert.Equal(t, pathfinding.CostImpassable, grid.At(daedalus.Cell{X: 1, Y: 0}))
+	assert.Equal(t, pathfinding.MinCost, grid.At(daedalus.Cell{X: 0, Y: 1}))
+	assert.Equal(t, pathfinding.CostImpassable, grid.At(daedalus.Cell{X: 1, Y: 1}))
+
+	layout.Grid.Terrain.Indices[1] = 3
+	failedClosed := pathfinding.NewTerrainCostGrid(layout)
+	require.NoError(t, failedClosed.Validate())
+	assert.Len(t, failedClosed.Costs, 4)
+	for index, cost := range failedClosed.Costs {
+		assert.Equal(t, pathfinding.CostImpassable, cost, "cell %d", index)
+	}
+	assert.Equal(t, pathfinding.CostImpassable, failedClosed.At(daedalus.Cell{X: 1, Y: 0}))
+}
+
+func TestNewTerrainCostGridWithoutTerrainMatchesLegacy(t *testing.T) {
+	layout := rectangleLayout()
+	assert.Equal(t, pathfinding.NewCostGrid(layout), pathfinding.NewTerrainCostGrid(layout))
+}
+
+func TestNewTerrainCostGridFuncReceivesIndependentFacts(t *testing.T) {
+	layout := rectangleLayout()
+	layout.Grid.Terrain = &daedalus.TerrainLayer{
+		Palette: []daedalus.TerrainDefinition{{ID: "water", EntryCost: 9, Transparent: false}},
+		Indices: []byte{0, 1, 0, 0},
+	}
+	grid := pathfinding.NewTerrainCostGridFunc(layout, func(state daedalus.CellState, terrain *daedalus.TerrainDefinition) pathfinding.Cost {
+		if state.Kind == daedalus.CellKindRoom && terrain != nil && terrain.Transparent == false {
+			return pathfinding.Cost(terrain.EntryCost)
+		}
+		return pathfinding.CostImpassable
+	})
+	assert.Equal(t, pathfinding.Cost(9), grid.At(daedalus.Cell{X: 1, Y: 0}))
+}
+
 func TestNewCostGridFuncAppliesTheRuleToEveryCell(t *testing.T) {
 	layout := rectangleLayout()
 	layout.Grid.Cells = layout.Grid.Cells[:2]

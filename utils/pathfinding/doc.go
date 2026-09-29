@@ -26,6 +26,9 @@
 // plain, and a short or truncated payload decodes to walls rather than to
 // floor. Failing closed is the point. MinCost is the cheapest step that
 // still moves. MaxCost is the highest entry cost a Cell can carry.
+// The terrain-aware constructors validate the optional terrain layer before
+// pricing it; a malformed layer produces a valid full-size CostGrid filled
+// with CostImpassable.
 //
 // DefaultCostRule is the only passability rule this module asserts.
 // CellKindEmpty is CostImpassable, and every Room or Corridor Cell is

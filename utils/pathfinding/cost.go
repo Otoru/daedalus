@@ -36,6 +36,10 @@ type CostGrid struct {
 // passes nil.
 type CostRule func(daedalus.CellState) Cost
 
+// LayoutCostRule prices one Cell from its state and its optional terrain
+// definition. A nil terrain means that the cell has no terrain overlay.
+type LayoutCostRule func(daedalus.CellState, *daedalus.TerrainDefinition) Cost
+
 // DefaultCostRule is the only passability rule this module asserts.
 // CellKindEmpty is CostImpassable, and every Room or Corridor Cell is
 // MinCost. The root package deliberately ships no passability helper; this
@@ -48,6 +52,20 @@ func DefaultCostRule(state daedalus.CellState) Cost {
 	default:
 		return CostImpassable
 	}
+}
+
+// DefaultLayoutCostRule preserves the base-kind rule and then applies the
+// terrain entry cost independently of terrain transparency. Empty and unknown
+// base kinds remain impassable; a Room or Corridor without terrain costs one.
+func DefaultLayoutCostRule(state daedalus.CellState, terrain *daedalus.TerrainDefinition) Cost {
+	base := DefaultCostRule(state)
+	if base == CostImpassable {
+		return CostImpassable
+	}
+	if terrain == nil {
+		return MinCost
+	}
+	return Cost(terrain.EntryCost)
 }
 
 // NewCostGrid prices layout with DefaultCostRule. A zero dimension or a
@@ -87,6 +105,52 @@ func NewCostGridFunc(layout daedalus.Layout, rule CostRule) CostGrid {
 				state = cells[int(index)]
 			}
 			costs[int(index)] = rule(state)
+		}
+	}
+	grid.Costs = costs
+	return grid
+}
+
+// NewTerrainCostGrid prices layout with DefaultLayoutCostRule. Unlike the
+// legacy constructors, it reads the optional terrain layer.
+func NewTerrainCostGrid(layout daedalus.Layout) CostGrid {
+	return NewTerrainCostGridFunc(layout, nil)
+}
+
+// NewTerrainCostGridFunc prices every Cell with rule. A nil rule uses
+// DefaultLayoutCostRule. Invalid terrain rejects the whole layer before any
+// cell is priced, but returns a valid, fully impassable CostGrid.
+func NewTerrainCostGridFunc(layout daedalus.Layout, rule LayoutCostRule) CostGrid {
+	if rule == nil {
+		rule = DefaultLayoutCostRule
+	}
+	grid := CostGrid{Width: layout.Grid.Width, Height: layout.Grid.Height}
+	if grid.Width == 0 || grid.Height == 0 {
+		return grid
+	}
+	product := uint64(grid.Width) * uint64(grid.Height)
+	if product > uint64(daedalus.MaxCells) {
+		return grid
+	}
+	costs := make([]Cost, product)
+	if layout.Grid.ValidateTerrain() != nil {
+		grid.Costs = costs
+		return grid
+	}
+	cells := layout.Grid.Cells
+	for y := uint32(0); y < grid.Height; y++ {
+		for x := uint32(0); x < grid.Width; x++ {
+			at := daedalus.Cell{X: int32(x), Y: int32(y)}
+			index, ok := grid.Index(at)
+			if !ok {
+				continue
+			}
+			var state daedalus.CellState
+			if int(index) < len(cells) {
+				state = cells[int(index)]
+			}
+			terrain, _ := layout.Grid.TerrainAt(at)
+			costs[int(index)] = rule(state, terrain)
 		}
 	}
 	grid.Costs = costs

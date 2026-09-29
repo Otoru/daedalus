@@ -25,6 +25,9 @@
 // truncated payload, reads as opaque rather than as an open view. Outside
 // cells are opaque too. Failing closed is the point: a forgotten grid must
 // not become an open view.
+// The terrain-aware constructors validate the optional terrain layer before
+// packing it; a malformed layer produces a valid full-size OpacityGrid with
+// every transparency bit cleared.
 //
 // The slice length is exactly (Width*Height+7)/8. Unused high bits of the
 // final byte are not cells and must be zero, so one terrain has one
