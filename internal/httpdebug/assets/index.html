@@ -8,52 +8,28 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="toolbar">
-    <div class="brand">
-      <h1>Daedalus</h1>
-      <p class="local-note">Local same-origin execution · No data is persisted</p>
-    </div>
-    <div class="status-slot">
+  <button id="request-trigger" class="button secondary edge-trigger edge-trigger-left" type="button" aria-expanded="false" aria-controls="request-pane">Request</button>
+  <button id="response-trigger" class="button secondary edge-trigger edge-trigger-right" type="button" aria-expanded="false" aria-controls="response-pane">View</button>
+
+  <aside id="request-pane" class="side-panel side-panel-left" aria-labelledby="request-title" tabindex="-1" hidden>
+    <div class="panel-header stack">
+      <div class="brand">
+        <h1>Daedalus</h1>
+        <p class="local-note">Local same-origin execution · No data is persisted</p>
+      </div>
+      <h2 id="request-title">Request</h2>
       <output id="status" class="status" aria-live="polite">Ready to generate</output>
     </div>
-    <button id="generate" class="button primary" type="button">
-      <span>Generate map</span>
-    </button>
-    <button id="request-trigger" class="button secondary" type="button" aria-expanded="false" aria-controls="request-pane">Complete ProtoJSON</button>
-    <button id="response-trigger" class="button secondary" type="button" aria-expanded="false" aria-controls="response-pane">Returned ProtoJSON</button>
-    <div class="legend" aria-label="Map legend">
-      <span><i class="swatch empty"></i>Empty</span>
-      <span><i class="swatch room"></i>Room</span>
-      <span><i class="swatch corridor"></i>Corridor</span>
-      <span><i class="swatch door"></i>Door</span>
-      <span><i class="role-mark" aria-hidden="true">○</i>Start</span>
-      <span><i class="role-mark" aria-hidden="true">□</i>Boss</span>
-      <span><i class="role-mark" aria-hidden="true">◇</i>Treasure</span>
-      <span><i class="swatch near"></i>Near</span>
-      <span><i class="swatch far"></i>Far</span>
-      <span><i class="swatch unreachable"><b></b></i>Unreachable</span>
-      <span><i class="swatch route"></i>Route</span>
+    <div class="actions">
+      <button id="generate" class="button primary" type="button">
+        <span>Generate map</span>
+      </button>
+      <button id="load-example" class="button secondary" type="button">Load example</button>
+      <button id="copy-request" class="button secondary" type="button">Copy request</button>
     </div>
-    <div class="field-controls" aria-label="Distance field">
-      <p id="click-hint" class="click-hint">First click sets the goal. The next click sets the position.</p>
-      <output id="click-mode" class="click-mode">Next click sets the goal</output>
-      <label class="centerline-toggle" for="flee">
-        <input id="flee" type="checkbox">
-        Flee
-      </label>
-      <button id="clear-field" class="button secondary compact" type="button">Clear field</button>
-    </div>
-    <div class="zoom-controls">
-      <label for="zoom">Scale</label>
-      <input id="zoom" type="range" min="2" max="24" value="8">
-      <output id="zoom-value" for="zoom">8 px</output>
-      <label class="centerline-toggle" for="show-centerline">
-        <input id="show-centerline" type="checkbox" checked>
-        Centerline
-      </label>
-      <button id="fit-map" class="button secondary compact" type="button">Fit</button>
-    </div>
-  </header>
+    <label class="visually-hidden" for="request-editor">GenerateRequest in ProtoJSON</label>
+    <textarea id="request-editor" class="code-editor" spellcheck="false" autocomplete="off"></textarea>
+  </aside>
 
   <main class="stage">
     <section class="map-panel" aria-labelledby="map-title">
@@ -61,36 +37,61 @@
       <div id="map-viewport" class="map-viewport">
         <canvas id="map-canvas" class="map-canvas" tabindex="0" aria-label="Generated map. The first click sets the goal, the next click sets the position. Click a cell to inspect its distance and status."></canvas>
         <p id="map-placeholder" class="map-placeholder">Generate a map to view its cells, rooms, corridors and doors.</p>
-        <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
-          <h3 id="inspector-title">Selected cell</h3>
-          <pre id="cell-details">No cell selected.</pre>
-        </aside>
       </div>
     </section>
-
-    <div id="json-drawer" class="drawer" hidden>
-      <section id="request-pane" class="panel drawer-pane" aria-labelledby="request-title" tabindex="-1" hidden>
-        <div class="panel-header">
-          <h2 id="request-title">Complete ProtoJSON</h2>
-          <div class="actions">
-            <button id="load-example" class="button secondary" type="button">Load example</button>
-            <button id="copy-request" class="button secondary" type="button">Copy request</button>
-          </div>
-        </div>
-        <label class="visually-hidden" for="request-editor">GenerateRequest in ProtoJSON</label>
-        <textarea id="request-editor" class="code-editor" spellcheck="false" autocomplete="off"></textarea>
-      </section>
-
-      <section id="response-pane" class="panel drawer-pane" aria-labelledby="response-title" tabindex="-1" hidden>
-        <div class="panel-header">
-          <h2 id="response-title">Returned ProtoJSON</h2>
-          <button id="copy-response" class="button secondary" type="button" disabled>Copy response</button>
-        </div>
-        <div id="error-box" class="error-box" role="alert" hidden></div>
-        <pre id="response-viewer" class="response-viewer">The response will appear here.</pre>
-      </section>
-    </div>
   </main>
+
+  <aside id="response-pane" class="side-panel side-panel-right" aria-labelledby="view-title" tabindex="-1" hidden>
+    <div class="panel-header">
+      <h2 id="view-title">View</h2>
+    </div>
+    <div class="view-controls">
+      <div class="zoom-controls">
+        <label for="zoom">Scale</label>
+        <input id="zoom" type="range" min="2" max="24" value="8">
+        <output id="zoom-value" for="zoom">8 px</output>
+        <button id="fit-map" class="button secondary compact" type="button">Fit</button>
+      </div>
+      <div class="field-controls" aria-label="Distance field">
+        <div class="toggle-row">
+          <label class="centerline-toggle" for="show-centerline">
+            <input id="show-centerline" type="checkbox" checked>
+            Centerline
+          </label>
+          <label class="centerline-toggle" for="flee">
+            <input id="flee" type="checkbox">
+            Flee
+          </label>
+          <button id="clear-field" class="button secondary compact" type="button">Clear field</button>
+        </div>
+        <p id="click-hint" class="click-hint">First click sets the goal. The next click sets the position.</p>
+        <output id="click-mode" class="click-mode">Next click sets the goal</output>
+      </div>
+      <div class="legend" aria-label="Map legend">
+        <span><i class="swatch empty"></i>Empty</span>
+        <span><i class="swatch room"></i>Room</span>
+        <span><i class="swatch corridor"></i>Corridor</span>
+        <span><i class="swatch door"></i>Door</span>
+        <span><i class="role-mark" aria-hidden="true">○</i>Start</span>
+        <span><i class="role-mark" aria-hidden="true">□</i>Boss</span>
+        <span><i class="role-mark" aria-hidden="true">◇</i>Treasure</span>
+        <span><i class="swatch near"></i>Near</span>
+        <span><i class="swatch far"></i>Far</span>
+        <span><i class="swatch unreachable"><b></b></i>Unreachable</span>
+        <span><i class="swatch route"></i>Route</span>
+      </div>
+      <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
+        <h3 id="inspector-title">Selected cell</h3>
+        <pre id="cell-details">No cell selected.</pre>
+      </aside>
+      <div id="error-box" class="error-box" role="alert" hidden></div>
+    </div>
+    <div class="panel-header">
+      <h2 id="response-title">Returned ProtoJSON</h2>
+      <button id="copy-response" class="button secondary" type="button" disabled>Copy response</button>
+    </div>
+    <pre id="response-viewer" class="response-viewer">The response will appear here.</pre>
+  </aside>
 
   <script src="app.js" defer></script>
 </body>

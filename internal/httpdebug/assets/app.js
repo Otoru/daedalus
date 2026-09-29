@@ -68,7 +68,6 @@ const elements = {
   responseTrigger: document.querySelector("#response-trigger"),
   requestPane: document.querySelector("#request-pane"),
   responsePane: document.querySelector("#response-pane"),
-  drawer: document.querySelector("#json-drawer"),
 };
 
 const state = {
@@ -85,10 +84,11 @@ const state = {
   scale: Number(elements.zoom.value),
   fitted: true,
   showCenterline: true,
-  openDrawer: null,
+  openPanels: {request: false, response: false},
+  lastOpenedPanel: null,
 };
 
-const drawerPanes = {
+const panels = {
   request: {trigger: elements.requestTrigger, pane: elements.requestPane},
   response: {trigger: elements.responseTrigger, pane: elements.responsePane},
 };
@@ -134,15 +134,15 @@ elements.flee.addEventListener("change", () => {
 elements.clearField.addEventListener("click", clearField);
 elements.canvas.addEventListener("click", selectCellFromPointer);
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
-elements.requestTrigger.addEventListener("click", () => toggleDrawer("request"));
-elements.responseTrigger.addEventListener("click", () => toggleDrawer("response"));
+elements.requestTrigger.addEventListener("click", () => togglePanel("request"));
+elements.responseTrigger.addEventListener("click", () => togglePanel("response"));
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || !state.openDrawer) {
+  if (event.key !== "Escape" || !anyPanelOpen()) {
     return;
   }
   event.preventDefault();
-  closeDrawer();
+  closeForegroundPanel();
 });
 
 async function generateLayout() {
@@ -210,13 +210,13 @@ function showServerError(statusCode, responseText) {
   ];
   elements.errorBox.textContent = lines.join("\n");
   elements.errorBox.hidden = false;
-  openDrawer("response");
+  openPanel("response");
 }
 
 function showLocalError(message) {
   elements.errorBox.textContent = message;
   elements.errorBox.hidden = false;
-  openDrawer("response");
+  openPanel("response");
 }
 
 function clearError() {
@@ -248,22 +248,28 @@ async function copyExactText(text, successMessage) {
   }
 }
 
-function toggleDrawer(name) {
-  if (state.openDrawer === name) {
-    closeDrawer();
-    return;
-  }
-  openDrawer(name);
+function anyPanelOpen() {
+  return state.openPanels.request || state.openPanels.response;
 }
 
-function openDrawer(name) {
-  state.openDrawer = name;
-  elements.drawer.hidden = false;
-  Object.entries(drawerPanes).forEach(([key, entry]) => {
-    const open = key === name;
-    entry.pane.hidden = !open;
-    entry.trigger.setAttribute("aria-expanded", open ? "true" : "false");
-  });
+function togglePanel(name) {
+  if (state.openPanels[name]) {
+    closePanel(name);
+    return;
+  }
+  openPanel(name);
+}
+
+// The request and view panels sit on opposite edges, so each opens and closes
+// on its own. Both may be open together. The map gives up width on each side
+// and is measured again from the new viewport box.
+function openPanel(name) {
+  const entry = panels[name];
+  state.openPanels[name] = true;
+  state.lastOpenedPanel = name;
+  entry.pane.hidden = false;
+  entry.trigger.setAttribute("aria-expanded", "true");
+  scheduleViewportSync();
   if (name === "request") {
     elements.requestEditor.focus();
     elements.requestEditor.setSelectionRange(0, 0);
@@ -277,16 +283,36 @@ function openDrawer(name) {
   elements.responsePane.focus();
 }
 
-function closeDrawer() {
-  const trigger = state.openDrawer ? drawerPanes[state.openDrawer].trigger : null;
-  state.openDrawer = null;
-  elements.drawer.hidden = true;
-  Object.values(drawerPanes).forEach((entry) => {
-    entry.pane.hidden = true;
-    entry.trigger.setAttribute("aria-expanded", "false");
-  });
-  if (trigger) {
-    trigger.focus();
+function closePanel(name) {
+  const entry = panels[name];
+  if (!entry || !state.openPanels[name]) {
+    return;
+  }
+  state.openPanels[name] = false;
+  entry.pane.hidden = true;
+  entry.trigger.setAttribute("aria-expanded", "false");
+  scheduleViewportSync();
+  entry.trigger.focus();
+}
+
+function closeForegroundPanel() {
+  const active = document.activeElement;
+  for (const name of ["request", "response"]) {
+    const entry = panels[name];
+    if (state.openPanels[name] && entry.pane.contains(active)) {
+      closePanel(name);
+      return;
+    }
+  }
+  if (state.lastOpenedPanel && state.openPanels[state.lastOpenedPanel]) {
+    closePanel(state.lastOpenedPanel);
+    return;
+  }
+  for (const name of ["response", "request"]) {
+    if (state.openPanels[name]) {
+      closePanel(name);
+      return;
+    }
   }
 }
 
@@ -308,7 +334,7 @@ function applyFitScale() {
   }
   // Fit is the largest scale that keeps every cell of the grid inside the
   // current viewport. Recompute it from that box whenever the viewport changes
-  // while the map is fitted, so a drawer or window resize does not leave a
+  // while the map is fitted, so a side panel or window resize does not leave a
   // stale zoom.
   const horizontalScale = Math.floor(width / grid.width);
   const verticalScale = Math.floor(height / grid.height);
@@ -341,7 +367,7 @@ function renderLayout() {
   const dpr = window.devicePixelRatio || 1;
   // A canvas does not reflow with its container. Size the backing store from
   // the CSS box and the device pixel ratio, then redraw, or the picture
-  // stretches when the drawer or the window changes the map.
+  // stretches when a side panel or the window changes the map.
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
   canvas.width = Math.max(1, Math.round(cssWidth * dpr));

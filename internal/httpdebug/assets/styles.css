@@ -31,8 +31,9 @@ body {
 }
 
 body {
+  position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-width: 320px;
   height: 100dvh;
   margin: 0;
@@ -75,14 +76,23 @@ h3 {
   font-weight: 600;
 }
 
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+.edge-trigger {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  border-radius: 0 0 2px 2px;
+}
+
+.edge-trigger-left {
+  left: 0;
+  border-top: 0;
+  border-left: 0;
+}
+
+.edge-trigger-right {
+  right: 0;
+  border-top: 0;
+  border-right: 0;
 }
 
 .brand {
@@ -97,15 +107,11 @@ h3 {
   font-size: 0.68rem;
 }
 
-.status-slot {
-  min-width: 0;
-}
-
 .status {
   /* <output> is inline by default, and max-width does not apply to a
      non-replaced inline element. */
-  display: inline-block;
-  max-width: 44ch;
+  display: block;
+  max-width: 100%;
   margin-bottom: 0;
   padding: 3px 8px;
   border: 1px solid var(--border);
@@ -113,7 +119,7 @@ h3 {
   background: var(--background);
   color: var(--muted);
   font-size: 0.75rem;
-  text-align: right;
+  text-align: left;
 }
 
 .status.busy {
@@ -136,6 +142,7 @@ h3 {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -143,6 +150,7 @@ h3 {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -150,6 +158,7 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 0 8px 8px;
   color: var(--muted);
   font-size: 0.72rem;
 }
@@ -224,6 +233,14 @@ h3 {
 
 .field-controls {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+}
+
+.toggle-row {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
@@ -247,9 +264,10 @@ h3 {
 
 .zoom-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+  padding: 8px 8px 0;
   color: var(--muted);
   font-size: 0.72rem;
 }
@@ -332,6 +350,7 @@ input:focus-visible {
 .map-viewport {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
@@ -361,12 +380,8 @@ input:focus-visible {
 }
 
 .inspector {
-  position: absolute;
-  z-index: 2;
-  right: 8px;
-  bottom: 8px;
-  width: min(340px, calc(100% - 16px));
-  max-height: min(46%, 320px);
+  max-height: 220px;
+  margin: 0 8px 8px;
   overflow: auto;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -387,29 +402,35 @@ input:focus-visible {
   white-space: pre-wrap;
 }
 
-.drawer {
+.side-panel {
   display: flex;
-  flex: 0 0 clamp(180px, 40vh, 460px);
+  flex: 0 0 min(400px, 38vw);
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
-  border-top: 1px solid var(--border);
+  padding-top: 40px;
+  overflow: hidden;
   background: var(--surface);
 }
 
-.drawer-pane {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+.side-panel-left {
+  border-right: 1px solid var(--border);
 }
 
-.drawer-pane:focus {
+.side-panel-right {
+  border-left: 1px solid var(--border);
+}
+
+.side-panel:focus {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+.view-controls {
+  flex: 0 1 auto;
+  max-height: 55%;
+  min-height: 0;
+  overflow: auto;
 }
 
 .panel-header {
@@ -421,10 +442,17 @@ input:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 
+.panel-header.stack {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
 .actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  padding: 8px;
 }
 
 .code-editor,
@@ -474,20 +502,11 @@ input:focus-visible {
 }
 
 @media (max-width: 860px) {
-  .toolbar,
+  .side-panel {
+    flex-basis: min(280px, 42vw);
+  }
+
   .panel-header {
     align-items: flex-start;
-  }
-
-  .zoom-controls {
-    margin-left: 0;
-  }
-
-  .status {
-    text-align: left;
-  }
-
-  .actions {
-    flex-wrap: wrap;
   }
 }

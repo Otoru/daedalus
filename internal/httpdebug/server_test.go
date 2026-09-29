@@ -275,6 +275,73 @@ func TestDebugMapExampleMarksRoomRoles(t *testing.T) {
 	assert.Equal(t, int(counts["ROOM_ROLE_TREASURE"]), assigned["ROOM_ROLE_TREASURE"])
 }
 
+// TestDebugPageUsesIndependentSidePanels checks that sending a request and
+// reading the map live in two edge panels that start closed, so the map is
+// full width, and that opening one does not close the other. The canvas still
+// sizes its backing store from the CSS box and the device pixel ratio.
+func TestDebugPageUsesIndependentSidePanels(t *testing.T) {
+	t.Parallel()
+
+	script, err := fs.ReadFile(assets, "assets/app.js")
+	require.NoError(t, err)
+	page, err := fs.ReadFile(assets, "assets/index.html")
+	require.NoError(t, err)
+	style, err := fs.ReadFile(assets, "assets/styles.css")
+	require.NoError(t, err)
+
+	markup := string(page)
+	source := string(script)
+	css := string(style)
+
+	assert.NotContains(t, markup, `class="toolbar"`)
+	assert.NotContains(t, markup, `id="json-drawer"`)
+	assert.NotContains(t, css, ".toolbar")
+	assert.NotContains(t, css, ".drawer")
+	assert.Regexp(t, `(?s)body\s*\{[^}]*flex-direction:\s*row`, css)
+	assert.Contains(t, css, ".side-panel")
+	assert.Contains(t, css, "flex: 0 0 min(400px, 38vw)")
+
+	requestPane := elementOuterHTML(t, markup, "request-pane")
+	responsePane := elementOuterHTML(t, markup, "response-pane")
+	viewport := elementOuterHTML(t, markup, "map-viewport")
+
+	assert.Contains(t, openingTag(t, requestPane), "hidden")
+	assert.Contains(t, openingTag(t, responsePane), "hidden")
+	assert.NotContains(t, requestPane, `id="request-trigger"`)
+	assert.NotContains(t, responsePane, `id="response-trigger"`)
+	assert.Contains(t, markup, `id="request-trigger"`)
+	assert.Contains(t, markup, `aria-controls="request-pane"`)
+	assert.Contains(t, markup, `aria-expanded="false"`)
+	assert.Contains(t, markup, `id="response-trigger"`)
+	assert.Contains(t, markup, `aria-controls="response-pane"`)
+
+	assert.Contains(t, requestPane, `id="generate"`)
+	assert.Contains(t, requestPane, `id="load-example"`)
+	assert.Contains(t, requestPane, `id="request-editor"`)
+	assert.NotContains(t, requestPane, `id="response-viewer"`)
+	assert.NotContains(t, requestPane, `id="zoom"`)
+
+	assert.Contains(t, responsePane, `id="zoom"`)
+	assert.Contains(t, responsePane, `id="fit-map"`)
+	assert.Contains(t, responsePane, `id="show-centerline"`)
+	assert.Contains(t, responsePane, `id="flee"`)
+	assert.Contains(t, responsePane, `class="legend"`)
+	assert.Contains(t, responsePane, `id="cell-inspector"`)
+	assert.Contains(t, responsePane, `id="response-viewer"`)
+	assert.NotContains(t, responsePane, `id="request-editor"`)
+	assert.NotContains(t, viewport, `id="cell-inspector"`)
+
+	assert.Contains(t, source, "openPanels")
+	assert.NotContains(t, source, "openDrawer")
+	assert.NotContains(t, source, "pane.hidden = !open")
+	assert.NotContains(t, source, `id="json-drawer"`)
+	assert.Contains(t, source, `event.key !== "Escape"`)
+	assert.Contains(t, source, "new ResizeObserver")
+	assert.Contains(t, source, "canvas.width = Math.max(1, Math.round(cssWidth * dpr))")
+	assert.Contains(t, source, "canvas.height = Math.max(1, Math.round(cssHeight * dpr))")
+	assert.Contains(t, source, "scheduleViewportSync")
+}
+
 func exampleRequestFromScript(t *testing.T, script string) string {
 	t.Helper()
 
@@ -285,6 +352,88 @@ func exampleRequestFromScript(t *testing.T, script string) string {
 	end := strings.Index(rest, "`;")
 	require.NotEqual(t, -1, end, "example request terminator")
 	return rest[:end]
+}
+
+func elementOuterHTML(t *testing.T, markup, id string) string {
+	t.Helper()
+
+	idAt := strings.Index(markup, `id="`+id+`"`)
+	require.NotEqual(t, -1, idAt, id)
+	tagStart := strings.LastIndex(markup[:idAt], "<")
+	require.NotEqual(t, -1, tagStart, id)
+	openLength, name := readTag(markup[tagStart:])
+	openTag := markup[tagStart : tagStart+openLength]
+	if strings.HasSuffix(strings.TrimSpace(openTag), "/>") {
+		return openTag
+	}
+
+	pos := tagStart + openLength
+	depth := 1
+	lower := strings.ToLower(markup)
+	name = strings.ToLower(name)
+	for depth > 0 && pos < len(markup) {
+		next := strings.Index(lower[pos:], "<")
+		require.NotEqual(t, -1, next, id)
+		pos += next
+		if strings.HasPrefix(lower[pos:], "</"+name) && tagBoundary(lower[pos+2+len(name):]) {
+			depth--
+			end := strings.Index(markup[pos:], ">")
+			require.NotEqual(t, -1, end, id)
+			if depth == 0 {
+				return markup[tagStart : pos+end+1]
+			}
+			pos += end + 1
+			continue
+		}
+		if strings.HasPrefix(lower[pos:], "<"+name) && tagBoundary(lower[pos+1+len(name):]) {
+			end := strings.Index(markup[pos:], ">")
+			require.NotEqual(t, -1, end, id)
+			tag := markup[pos : pos+end+1]
+			if !strings.HasSuffix(strings.TrimSpace(tag), "/>") {
+				depth++
+			}
+			pos += end + 1
+			continue
+		}
+		pos++
+	}
+	t.Fatalf("unclosed element %s", id)
+	return ""
+}
+
+func openingTag(t *testing.T, element string) string {
+	t.Helper()
+	end := strings.Index(element, ">")
+	require.NotEqual(t, -1, end)
+	return element[:end+1]
+}
+
+func readTag(from string) (int, string) {
+	index := 1
+	for index < len(from) && (from[index] == '/' || from[index] == ' ' || from[index] == '\n' || from[index] == '\t') {
+		index++
+	}
+	start := index
+	for index < len(from) && from[index] != ' ' && from[index] != '>' && from[index] != '/' && from[index] != '\n' && from[index] != '\t' {
+		index++
+	}
+	end := strings.Index(from, ">")
+	if end < 0 {
+		return len(from), from[start:index]
+	}
+	return end + 1, from[start:index]
+}
+
+func tagBoundary(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	switch rest[0] {
+	case ' ', '\n', '\t', '>', '/':
+		return true
+	default:
+		return false
+	}
 }
 
 // TestGenerateAcceptsProtoJSONSnakeCaseAndReturnsTheSameGeneratorLayout checks
