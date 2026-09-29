@@ -120,8 +120,8 @@ func ExampleGenerator_roomRoles() {
 	// Output:
 	// room 0 start at (19,19)
 	// room 1 boss at (11,26)
-	// room 2 treasure at (9,15)
 	// room 3 treasure at (17,7)
+	// room 4 treasure at (25,2)
 }
 
 // A PlantCatalog selects asset metadata. The Layout stores each PlantID and

@@ -100,11 +100,10 @@ func assignRoomRoles(
 		roles[startIndex] = roomRolePointer(RoomRoleStart)
 	}
 
-	// Treasure is the unassigned Room farthest from Start. Boss is the only role
-	// that requires a Start request; Treasure alone is accepted. The distance
-	// origin is then RoomID 0, the first accepted Room, the same Room Start would
-	// occupy. Without that origin, farthest-from-Start would have no reference
-	// and the assignment would be undefined.
+	// Boss is the only role that requires a Start request. Treasure alone is
+	// accepted. Weighted distances are rooted at RoomID 0, the first accepted
+	// Room, which is the Room Start occupies when it was requested. That root
+	// is also the fallback origin for the first Treasure when no anchor exists.
 	var distances []float64
 	if summary.needsDistances {
 		var err error
@@ -114,7 +113,7 @@ func assignRoomRoles(
 		}
 	}
 
-	if err := assignNonStartRoles(ctx, rooms, roles, distances, requests); err != nil {
+	if err := assignNonStartRoles(ctx, rooms, backbone, roles, distances, requests); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -153,6 +152,7 @@ func summarizeRoleRequests(requests []RoomRoleRequest) roleRequestSummary {
 func assignNonStartRoles(
 	ctx context.Context,
 	rooms []PlacedRoom,
+	backbone []Connection,
 	roles []*RoomRole,
 	distances []float64,
 	requests []RoomRoleRequest,
@@ -167,14 +167,99 @@ func assignNonStartRoles(
 		case RoomRoleBoss:
 			assignFarthestRole(rooms, roles, distances, RoomRoleBoss)
 		case RoomRoleTreasure:
-			for assigned := uint32(0); assigned < request.Count; assigned++ {
-				if !assignFarthestRole(rooms, roles, distances, RoomRoleTreasure) {
-					break
-				}
+			if err := assignSpreadTreasures(ctx, rooms, backbone, roles, distances, request.Count); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+// assignSpreadTreasures places Count Treasure Rooms by farthest-point sampling.
+// Anchors are the Rooms that already hold a role: Start and Boss when those
+// requests preceded this one, plus every Treasure already placed. Each pick is
+// the unassigned Room whose minimum weighted path distance to any anchor is
+// greatest, and that Room joins the anchors. An empty anchor set has no such
+// minimum, so the first Treasure uses the distances from RoomID 0, the same
+// farthest-from-Start rule. A Count past the free Rooms stops once every Room
+// is taken; the shortfall is not an error, and a taken Room is never reused.
+func assignSpreadTreasures(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	backbone []Connection,
+	roles []*RoomRole,
+	originDistances []float64,
+	count uint32,
+) error {
+	for assigned := uint32(0); assigned < count; assigned++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		distances, err := treasureReferenceDistances(ctx, rooms, backbone, roles, originDistances)
+		if err != nil {
+			return err
+		}
+		if !assignFarthestRole(rooms, roles, distances, RoomRoleTreasure) {
+			break
+		}
+	}
+	return nil
+}
+
+// treasureReferenceDistances is the distance of every Room to the nearest
+// assigned role. With nothing assigned yet, it returns the distances from
+// RoomID 0 so the first Treasure stays defined.
+func treasureReferenceDistances(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	backbone []Connection,
+	roles []*RoomRole,
+	originDistances []float64,
+) ([]float64, error) {
+	anchors := assignedRoleIndexes(roles)
+	if len(anchors) == 0 {
+		return originDistances, nil
+	}
+	return minimumWeightedTreeDistances(ctx, rooms, backbone, anchors)
+}
+
+func assignedRoleIndexes(roles []*RoomRole) []int {
+	indexes := make([]int, 0)
+	for roomIndex, role := range roles {
+		if role != nil {
+			indexes = append(indexes, roomIndex)
+		}
+	}
+	return indexes
+}
+
+// minimumWeightedTreeDistances is the minimum, over the anchors, of the
+// weighted backbone path from that anchor. Each anchor is measured with
+// weightedTreeDistances, so Treasure and Boss share one distance. Anchors are
+// visited in index order. The minimum itself does not depend on that order.
+func minimumWeightedTreeDistances(
+	ctx context.Context,
+	rooms []PlacedRoom,
+	backbone []Connection,
+	anchors []int,
+) ([]float64, error) {
+	var minimum []float64
+	for _, anchorIndex := range anchors {
+		distances, err := weightedTreeDistances(ctx, rooms, backbone, anchorIndex)
+		if err != nil {
+			return nil, err
+		}
+		if minimum == nil {
+			minimum = distances
+			continue
+		}
+		for roomIndex := range minimum {
+			if distances[roomIndex] < minimum[roomIndex] {
+				minimum[roomIndex] = distances[roomIndex]
+			}
+		}
+	}
+	return minimum, nil
 }
 
 func weightedTreeDistances(

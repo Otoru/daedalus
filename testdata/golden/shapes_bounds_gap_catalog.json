@@ -4103,7 +4103,7 @@
           "Y": 2
         }
       ],
-      "Role": 2,
+      "Role": null,
       "PlantID": "sala_b",
       "Tags": [
         "tematica"
@@ -4164,7 +4164,7 @@
           "Y": 17
         }
       ],
-      "Role": null,
+      "Role": 2,
       "PlantID": "sala_a",
       "Tags": [
         "tematica"

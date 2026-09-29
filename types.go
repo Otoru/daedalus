@@ -138,7 +138,10 @@ const (
 	// by weighted path distance in the tree. It requires a RoomRoleStart request
 	// in the same Config.
 	RoomRoleBoss
-	// RoomRoleTreasure marks treasure Rooms: the still-unassigned Rooms farthest
-	// from Start, in order, up to Count.
+	// RoomRoleTreasure marks treasure Rooms. Each one is the unassigned Room
+	// whose minimum weighted path distance to the anchors is greatest. The
+	// anchors are the Start and Boss Rooms already assigned, plus every
+	// Treasure already placed. Equal distances take the smaller RoomID. With
+	// no Start and no Boss, the first Treasure is farthest from RoomID 0.
 	RoomRoleTreasure
 )

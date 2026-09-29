@@ -159,6 +159,210 @@ func TestTreasureAndBossRespectRequestOrder(t *testing.T) {
 	assertRoleAt(t, roles, 2, RoomRoleTreasure)
 }
 
+// TestBossDoesNotReuseATreasureRoom checks that a Room already holding a role
+// stays taken. Treasure is requested first, so it claims the farthest Rooms
+// from Start. Boss then runs and must leave those Rooms alone. Dropping the
+// occupied-Room check would overwrite Room 9 with Boss.
+func TestBossDoesNotReuseATreasureRoom(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 1, 0),
+		placedRoomAt(2, 2, 0),
+		placedRoomAt(3, 3, 0),
+		placedRoomAt(4, 4, 0),
+		placedRoomAt(5, 5, 0),
+		placedRoomAt(6, 2, 1),
+		placedRoomAt(7, 2, 2),
+		placedRoomAt(8, 2, 3),
+		placedRoomAt(9, 2, 4),
+	}
+	backbone := []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 1, ToRoomID: 2},
+		{FromRoomID: 2, ToRoomID: 3},
+		{FromRoomID: 3, ToRoomID: 4},
+		{FromRoomID: 4, ToRoomID: 5},
+		{FromRoomID: 2, ToRoomID: 6},
+		{FromRoomID: 6, ToRoomID: 7},
+		{FromRoomID: 7, ToRoomID: 8},
+		{FromRoomID: 8, ToRoomID: 9},
+	}
+	requests := []RoomRoleRequest{
+		{Role: RoomRoleStart, Count: 1},
+		{Role: RoomRoleTreasure, Count: 3},
+		{Role: RoomRoleBoss, Count: 1},
+	}
+
+	roles, err := assignRoomRoles(context.Background(), rooms, backbone, requests)
+
+	require.NoError(t, err)
+	assertRoleAt(t, roles, 0, RoomRoleStart)
+	assertRoleAt(t, roles, 9, RoomRoleTreasure)
+	assertRoleAt(t, roles, 5, RoomRoleTreasure)
+	assertRoleAt(t, roles, 6, RoomRoleTreasure)
+	assertRoleAt(t, roles, 8, RoomRoleBoss)
+	assert.Equal(t, 3, countRole(roles, RoomRoleTreasure))
+	assert.Equal(t, 1, countRole(roles, RoomRoleBoss))
+}
+
+// TestTreasureSpreadMaximizesDistanceFromAnchors checks farthest-point
+// sampling. Start and Boss are the first anchors. Each Treasure is the
+// unassigned Room whose minimum weighted path to any anchor is greatest, and
+// that Room then becomes an anchor. On this tree the repeated farthest-from-Start
+// rule would sit a Treasure on Room 8, adjacent to the Boss; dispersion does not.
+func TestTreasureSpreadMaximizesDistanceFromAnchors(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 1, 0),
+		placedRoomAt(2, 2, 0),
+		placedRoomAt(3, 3, 0),
+		placedRoomAt(4, 4, 0),
+		placedRoomAt(5, 5, 0),
+		placedRoomAt(6, 2, 1),
+		placedRoomAt(7, 2, 2),
+		placedRoomAt(8, 2, 3),
+		placedRoomAt(9, 2, 4),
+	}
+	backbone := []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 1, ToRoomID: 2},
+		{FromRoomID: 2, ToRoomID: 3},
+		{FromRoomID: 3, ToRoomID: 4},
+		{FromRoomID: 4, ToRoomID: 5},
+		{FromRoomID: 2, ToRoomID: 6},
+		{FromRoomID: 6, ToRoomID: 7},
+		{FromRoomID: 7, ToRoomID: 8},
+		{FromRoomID: 8, ToRoomID: 9},
+	}
+	requests := []RoomRoleRequest{
+		{Role: RoomRoleStart, Count: 1},
+		{Role: RoomRoleBoss, Count: 1},
+		{Role: RoomRoleTreasure, Count: 3},
+	}
+
+	roles, err := assignRoomRoles(context.Background(), rooms, backbone, requests)
+
+	require.NoError(t, err)
+	assertRoleAt(t, roles, 0, RoomRoleStart)
+	assertRoleAt(t, roles, 9, RoomRoleBoss)
+	assertRoleAt(t, roles, 5, RoomRoleTreasure)
+	assertRoleAt(t, roles, 6, RoomRoleTreasure)
+	assertRoleAt(t, roles, 3, RoomRoleTreasure)
+	assertTreasureRoomsUnshared(t, roles)
+	assertTreasuresNotAdjacent(t, rooms, backbone, roles)
+}
+
+// TestTreasureMinDistanceTieBreaksBySmallerRoomID checks the tie-break on a
+// constructed tie. Rooms 2 and 3 have the same minimum weighted distance to
+// the anchors. The smaller RoomID wins. Reversing that comparison selects Room 3.
+func TestTreasureMinDistanceTieBreaksBySmallerRoomID(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 0, 5),
+		placedRoomAt(2, 5, 0),
+		placedRoomAt(3, -5, 0),
+	}
+	backbone := []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 0, ToRoomID: 2},
+		{FromRoomID: 0, ToRoomID: 3},
+	}
+	requests := []RoomRoleRequest{
+		{Role: RoomRoleStart, Count: 1},
+		{Role: RoomRoleBoss, Count: 1},
+		{Role: RoomRoleTreasure, Count: 1},
+	}
+
+	roles, err := assignRoomRoles(context.Background(), rooms, backbone, requests)
+
+	require.NoError(t, err)
+	assertRoleAt(t, roles, 0, RoomRoleStart)
+	assertRoleAt(t, roles, 1, RoomRoleBoss)
+	assertRoleAt(t, roles, 2, RoomRoleTreasure)
+	assert.Nil(t, roles[3])
+}
+
+// TestTreasureWithoutAnchorsUsesRoomZeroThenDisperses checks Treasure requested
+// alone. The anchor set starts empty, so the first Treasure is the unassigned
+// Room farthest from RoomID 0. The next Treasure is then farthest from that one.
+func TestTreasureWithoutAnchorsUsesRoomZeroThenDisperses(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 1, 0),
+		placedRoomAt(2, 3, 0),
+	}
+	backbone := []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 1, ToRoomID: 2},
+	}
+	requests := []RoomRoleRequest{{Role: RoomRoleTreasure, Count: 2}}
+
+	roles, err := assignRoomRoles(context.Background(), rooms, backbone, requests)
+
+	require.NoError(t, err)
+	assertRoleAt(t, roles, 2, RoomRoleTreasure)
+	assertRoleAt(t, roles, 0, RoomRoleTreasure)
+	assert.Nil(t, roles[1])
+}
+
+// TestExcessTreasureAssignsOnlyFreeRooms checks a Count past the number of
+// Rooms. Assignment stops when every Room already holds a role, returns no
+// error, and does not reuse a Room. The surplus is left unplaced.
+func TestExcessTreasureAssignsOnlyFreeRooms(t *testing.T) {
+	rooms := []PlacedRoom{
+		placedRoomAt(0, 0, 0),
+		placedRoomAt(1, 1, 0),
+		placedRoomAt(2, 3, 0),
+	}
+	requests := []RoomRoleRequest{{Role: RoomRoleTreasure, Count: 5}}
+
+	roles, err := assignRoomRoles(context.Background(), rooms, []Connection{
+		{FromRoomID: 0, ToRoomID: 1},
+		{FromRoomID: 1, ToRoomID: 2},
+	}, requests)
+
+	require.NoError(t, err)
+	assertRoleAt(t, roles, 0, RoomRoleTreasure)
+	assertRoleAt(t, roles, 1, RoomRoleTreasure)
+	assertRoleAt(t, roles, 2, RoomRoleTreasure)
+	assertTreasureRoomsUnshared(t, roles)
+}
+
+// TestTreasureRoomsStayApartOnAFloorWithRoom checks a generated floor whose
+// tree has enough Rooms to keep Treasures off one another. Seed 0 on 64×48
+// places two Treasures on the same backbone edge under farthest-from-Start.
+func TestTreasureRoomsStayApartOnAFloorWithRoom(t *testing.T) {
+	layout, err := (Generator{}).Generate(Config{
+		Width: 64, Height: 48, Seed: 0, MaxRooms: 16, ExtraEdgeCount: 0,
+		RoomRoleRequests: []RoomRoleRequest{
+			{Role: RoomRoleStart, Count: 1},
+			{Role: RoomRoleBoss, Count: 1},
+			{Role: RoomRoleTreasure, Count: 3},
+		},
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(layout.Rooms), 12, "this floor has to have room to separate Treasures")
+
+	roles := make([]*RoomRole, len(layout.Rooms))
+	rooms := make([]PlacedRoom, len(layout.Rooms))
+	backbone := make([]Connection, len(layout.Corridors))
+	for index, room := range layout.Rooms {
+		roles[index] = room.Role
+		rooms[index] = PlacedRoom{
+			ID: room.ID, At: room.At, Shape: room.Shape,
+			Origin: room.Origin, Width: room.Width, Height: room.Height,
+		}
+	}
+	for index, corridor := range layout.Corridors {
+		backbone[index] = Connection{FromRoomID: corridor.FromRoomID, ToRoomID: corridor.ToRoomID}
+	}
+	assertRoleAt(t, roles, 0, RoomRoleStart)
+	assertTreasureRoomsUnshared(t, roles)
+	assert.Equal(t, 3, countRole(roles, RoomRoleTreasure))
+	assert.Equal(t, 1, countRole(roles, RoomRoleBoss))
+	assertTreasuresNotAdjacent(t, rooms, backbone, roles)
+}
+
 func TestFewerRoomsThanRolesAssignsWhatFitsWithoutDuplicates(t *testing.T) {
 	rooms := []PlacedRoom{placedRoomAt(0, 0, 0), placedRoomAt(1, 1, 0)}
 	requests := []RoomRoleRequest{
@@ -288,6 +492,53 @@ func TestRoleAndShortcutPhasesRespectCanceledContext(t *testing.T) {
 	assert.Nil(t, roles)
 	assert.ErrorIs(t, edgeErr, context.Canceled)
 	assert.Nil(t, connections)
+}
+
+func assertTreasureRoomsUnshared(t *testing.T, roles []*RoomRole) {
+	t.Helper()
+	start, boss := 0, 0
+	for index, role := range roles {
+		if role == nil {
+			continue
+		}
+		switch *role {
+		case RoomRoleStart:
+			start++
+		case RoomRoleBoss:
+			boss++
+		case RoomRoleTreasure:
+		default:
+			t.Fatalf("Room %d holds an unknown role %d", index, *role)
+		}
+	}
+	assert.LessOrEqual(t, start, 1)
+	assert.LessOrEqual(t, boss, 1)
+}
+
+func assertTreasuresNotAdjacent(t *testing.T, rooms []PlacedRoom, backbone []Connection, roles []*RoomRole) {
+	t.Helper()
+	treasure := make([]bool, len(rooms))
+	for index, role := range roles {
+		if role != nil && *role == RoomRoleTreasure {
+			treasure[roomIndexByID(rooms, rooms[index].ID)] = true
+		}
+	}
+	for _, connection := range backbone {
+		from := roomIndexByID(rooms, connection.FromRoomID)
+		to := roomIndexByID(rooms, connection.ToRoomID)
+		assert.False(t, treasure[from] && treasure[to],
+			"Treasures %d and %d share an edge", connection.FromRoomID, connection.ToRoomID)
+	}
+}
+
+func countRole(roles []*RoomRole, want RoomRole) int {
+	count := 0
+	for _, role := range roles {
+		if role != nil && *role == want {
+			count++
+		}
+	}
+	return count
 }
 
 func assertRoleAt(t *testing.T, roles []*RoomRole, index int, want RoomRole) {

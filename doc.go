@@ -336,8 +336,19 @@
 // nearest the center. Boss, which requires a Start because distance without an
 // origin is undefined, is the unassigned Room with the greatest weighted path
 // distance from Start; equal distances take the smaller RoomID. Each Treasure
-// request, in request order, takes the next unassigned Rooms that are farthest
-// by the same rule, up to Count. RequiredTags restrict the Plant chosen later
+// request, in request order, places up to Count Rooms by farthest-point
+// sampling, so they sit far from Start, far from Boss, and far from each
+// other. The anchors begin as the Start and Boss Rooms already assigned —
+// request order is what decides which of those exist — and grow with every
+// Treasure just placed. The next Treasure is the unassigned Room whose minimum
+// weighted path distance to any anchor is greatest. That distance is the same
+// weighted backbone path Boss uses. Equal distances take the smaller RoomID.
+// When neither Start nor Boss has been assigned, the anchor set is empty and
+// the first Treasure is the unassigned Room farthest from RoomID 0, the first
+// accepted Room; each later Treasure then disperses from the Treasures already
+// placed. A Room that already holds a role is never chosen again. If Count
+// exceeds the Rooms still free, the request fills those Rooms and stops, and
+// the shortfall is not an error. RequiredTags restrict the Plant chosen later
 // and do not move the Room. Roles are assigned before shortcuts so that "far
 // from the start" still means the exploration tree the backbone planned.
 // Later cycles must not pull the Boss into an artificially short hop. An
