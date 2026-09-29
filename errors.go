@@ -64,4 +64,9 @@ var (
 	// a Transparent length that disagrees with (Width×Height+7)/8, or a nonzero
 	// padding bit in the final byte. A product above MaxCells is ErrLimitExceeded.
 	ErrInvalidVisibility = errors.New("daedalus: invalid visibility request")
+
+	// ErrInvalidTerrain marks a malformed standalone TerrainLayer: invalid
+	// dimensions, palette, index length, or palette index. A nil layer is valid
+	// and means that no terrain was requested.
+	ErrInvalidTerrain = errors.New("daedalus: invalid terrain layer")
 )

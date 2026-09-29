@@ -35,6 +35,9 @@ type Grid struct {
 	// Cells contains exactly Width × Height states in canonical order (Y then X):
 	// the state of (x, y) is at Cells[y*Width+x].
 	Cells []CellState
+	// Terrain is an optional palette-indexed overlay. It is nil when no terrain
+	// was requested, preserving the historical Layout representation.
+	Terrain *TerrainLayer `json:",omitempty"`
 }
 
 // Room is a topological Layout vertex and contains the Room mask's absolute
