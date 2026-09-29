@@ -51,6 +51,7 @@ func applyTopologyOptions(
 	gridWidth uint32,
 	gridHeight uint32,
 	corridorWidth uint32,
+	maxRoomEdges uint32,
 	tryRoute func(from, to RoomID) (bool, error),
 ) ([]*RoomRole, []Connection, error) {
 	roles, err := assignRoomRoles(ctx, rooms, backbone, requests)
@@ -58,7 +59,7 @@ func applyTopologyOptions(
 		return nil, nil, err
 	}
 	connections, err := addExtraConnections(
-		ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth, tryRoute,
+		ctx, rooms, backbone, extraEdgeCount, gridWidth, gridHeight, corridorWidth, maxRoomEdges, tryRoute,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -274,7 +275,9 @@ func roomRolePointer(role RoomRole) *RoomRole {
 
 // addExtraConnections adds the shortest complete-graph edges not belonging to
 // the backbone. With a zero count, it returns immediately without forming,
-// sorting, or traversing the discarded set.
+// sorting, or traversing the discarded set. maxRoomEdges is the caller ceiling:
+// zero leaves the geometric opening budget unchanged, and a positive value
+// skips a shortcut that would put either Room past that many Corridors.
 func addExtraConnections(
 	ctx context.Context,
 	rooms []PlacedRoom,
@@ -283,6 +286,7 @@ func addExtraConnections(
 	gridWidth uint32,
 	gridHeight uint32,
 	corridorWidth uint32,
+	maxRoomEdges uint32,
 	tryRoute func(from, to RoomID) (bool, error),
 ) ([]Connection, error) {
 	ctx = topologyContext(ctx)
@@ -317,7 +321,7 @@ func addExtraConnections(
 	capacity := make([]int, len(rooms))
 	used := make([]int, len(rooms))
 	for roomIndex, room := range rooms {
-		capacity[roomIndex] = roomOpeningCapacity(placedRoomFootprint(room), gridWidth, gridHeight, width)
+		capacity[roomIndex] = roomOpeningBudget(placedRoomFootprint(room), gridWidth, gridHeight, width, maxRoomEdges)
 	}
 	for _, connection := range backbone {
 		fromIndex := roomIndexByID(rooms, connection.FromRoomID)

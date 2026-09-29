@@ -349,7 +349,7 @@ func TestExtraEdgePhaseSkipsAnUnroutableShortcut(t *testing.T) {
 	}
 	var attempts []Connection
 	connections, err := addExtraConnections(
-		context.Background(), rooms, backbone, 1, 0, 0, 1,
+		context.Background(), rooms, backbone, 1, 0, 0, 1, 0,
 		func(from, to RoomID) (bool, error) {
 			attempts = append(attempts, Connection{FromRoomID: from, ToRoomID: to})
 			if from == 2 && to == 3 {
@@ -384,7 +384,7 @@ func TestExtraEdgePhaseSkipsAShortcutThatOverfillsARoom(t *testing.T) {
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 	}
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1, nil)
+	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1, 0, nil)
 
 	require.NoError(t, err)
 	assert.NotContains(t, connections, Connection{FromRoomID: 0, ToRoomID: 3})

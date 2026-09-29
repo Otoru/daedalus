@@ -53,6 +53,14 @@ type Config struct {
 	// after the backbone: range 0..MaxRooms×(MaxRooms-1)/2. Default 0, which
 	// disables cycles and guarantees that the graph is a tree.
 	ExtraEdgeCount uint32
+	// MaxRoomEdges is the largest number of Corridors that may reach one Room.
+	// Zero means unlimited, and the Room's geometry is then the only ceiling.
+	// It is a ceiling, never a target: the openings actually used are the
+	// smaller of this value and the number the perimeter can host. A non-zero
+	// value below 2 is ErrInvalidConfig, because one Corridor per Room spans
+	// exactly two Rooms and cannot connect a larger floor. Shortcuts requested
+	// by ExtraEdgeCount spend the same budget.
+	MaxRoomEdges uint32
 	// RoomRoleRequests lists declarative thematic-role requests, at most one per
 	// RoomRole. The empty default disables thematic Rooms and leaves Role absent
 	// from every Room.

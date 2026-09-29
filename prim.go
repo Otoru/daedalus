@@ -135,6 +135,17 @@ type primSearch struct {
 	infeasible []bool
 }
 
+// roomOpeningBudget is the smaller of the geometric opening count and a caller
+// ceiling. A zero ceiling means unlimited, so the perimeter stays the only
+// limit. The ceiling never raises a count the perimeter cannot host.
+func roomOpeningBudget(cells []Cell, gridWidth, gridHeight, corridorWidth, maxRoomEdges uint32) int {
+	geometric := roomOpeningCapacity(cells, gridWidth, gridHeight, corridorWidth)
+	if maxRoomEdges == 0 || uint64(geometric) <= uint64(maxRoomEdges) {
+		return geometric
+	}
+	return int(maxRoomEdges)
+}
+
 func newPrimSearch(req ConnectionRequest, ctx context.Context) *primSearch {
 	roomCount := len(req.Rooms)
 	centers := make([]roomCenter, roomCount)
@@ -149,7 +160,7 @@ func newPrimSearch(req ConnectionRequest, ctx context.Context) *primSearch {
 	}
 	capacity := make([]int, roomCount)
 	for index, room := range req.Rooms {
-		capacity[index] = roomOpeningCapacity(placedRoomFootprint(room), req.Width, req.Height, width)
+		capacity[index] = roomOpeningBudget(placedRoomFootprint(room), req.Width, req.Height, width, req.MaxRoomEdges)
 	}
 	return &primSearch{
 		req:       req,

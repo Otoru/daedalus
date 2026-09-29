@@ -304,7 +304,13 @@
 // straight side. Two openings on the
 // same side need at least two unused boundary Cells between them, and openings
 // on adjacent sides are incompatible when their outside Cells would lie within
-// Chebyshev distance 1, so corners count. Prim still takes the cheapest edge
+// Chebyshev distance 1, so corners count. Config.MaxRoomEdges, copied onto
+// the same request, lowers that budget when it is set: the number used is the
+// smaller of the geometric count and the caller's ceiling. The ceiling never
+// replaces the perimeter, so a Room that can host two openings still hosts two
+// when the caller asks for six. Zero means unlimited, and the geometric count
+// is then the only ceiling, which is why an omitted field and an explicit zero
+// produce the same Layout. Prim still takes the cheapest edge
 // under the tie-break above, but only among edges that would not exceed either
 // endpoint's remaining budget and that TryRoute accepts. A greedy choice can
 // fill every Room already in the tree and leave another Room unvisited. That
@@ -349,7 +355,13 @@
 // entirely. A width draw happens only for a shortcut that is actually reserved.
 // The graph stays connected either way; extra edges are the only way it gains
 // a cycle. Fewer shortcuts than requested is a successful Layout when the
-// budget runs out.
+// budget runs out. Shortcuts spend the same opening budget as the backbone,
+// including a MaxRoomEdges ceiling. A ceiling of exactly 2 is legal and
+// worth noticing: every Room holds at most two Corridors, so the backbone is
+// a single unbranched chain. That is a usable floor. The only shortcut that
+// can still fit joins the two ends of that chain; any further cycle does not
+// fit, and the call still succeeds with fewer cycles than ExtraEdgeCount
+// asked for.
 //
 // Routing then enumerates, for each edge, every opening (RoomID, At,
 // Direction) whose Cell belongs to the footprint, whose Direction is cardinal,
@@ -467,7 +479,9 @@
 // ErrInvalidConfig reports a request that violates a range, numeric
 // finiteness, catalog shape, density region, role request, RoomGeometry, or
 // CorridorGeometry. A Corridor width outside 1..64 is this error, not
-// ErrLimitExceeded.
+// ErrLimitExceeded. MaxRoomEdges of 1 is this error as well: one Corridor per
+// Room spans exactly two Rooms, so a larger floor cannot be connected. Zero
+// is unlimited and is not an error.
 // ErrLimitExceeded reports a request past a v1 product limit: a Grid dimension
 // above 256, a Width×Height above MaxCells, a MaxRooms above MaxRooms, or a
 // RoomGeometry.MaxFootprintCells above MaxFootprintCells. Both are detected
@@ -552,6 +566,10 @@
 // invent a narrower width.
 // ExtraEdgeCount defaults to 0, which keeps the backbone a tree. Raising it
 // adds the shortest discarded edges and the cycles those edges create.
+// MaxRoomEdges defaults to 0, which means unlimited: the perimeter is the only
+// ceiling. Setting it to 2 forces the unbranched chain described above.
+// Shortcuts draw on that same ceiling, so a low value with a large
+// ExtraEdgeCount simply leaves the cycles that do not fit unplaced.
 // RoomRoleRequests defaults to empty. A Treasure count of zero asks for no
 // treasure Rooms. DensityRegions defaults to empty, which is the uniform
 // Poisson path; a region with a smaller local distance packs that rectangle,

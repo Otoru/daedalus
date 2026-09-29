@@ -168,6 +168,12 @@ type ConnectionRequest struct {
 	// on a Room than that width can keep Chebyshev-separated, and a
 	// game-supplied Connector needs the same number to apply the same limit.
 	MaxCorridorWidth uint32
+	// MaxRoomEdges is the caller ceiling copied from Config. Zero means
+	// unlimited, and the geometric opening count is then the only limit. The
+	// built-in Connector takes the smaller of the two and never raises a count
+	// the perimeter cannot host. A game-supplied Connector that wants the same
+	// limit reads this field. Generator also applies it when adding shortcuts.
+	MaxRoomEdges uint32
 	// TryRoute, when non-nil, routes one pair against corridors already
 	// reserved for this request. Success reserves that band and its one-Cell
 	// Chebyshev halo. Failure reserves nothing. Generator installs it.

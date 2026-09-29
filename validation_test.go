@@ -114,6 +114,7 @@ func TestValidationDistinguishesInvalidConfigFromExceededLimit(t *testing.T) {
 		{"MaxAttempts exceeded", func(config *Config) { config.MaxAttempts = 1025 }},
 		{"invalid CorridorOrder", func(config *Config) { config.CorridorOrder = CorridorOrder(9) }},
 		{"ExtraEdgeCount exceeded", func(config *Config) { config.MaxRooms = 2; config.ExtraEdgeCount = 2 }},
+		{"MaxRoomEdges below 2", func(config *Config) { config.MaxRoomEdges = 1 }},
 	}
 	for _, tc := range invalidCases {
 		t.Run(tc.name, func(t *testing.T) {

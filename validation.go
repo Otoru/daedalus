@@ -67,6 +67,7 @@ type effectiveConfig struct {
 	maxRooms             uint32
 	corridorOrder        CorridorOrder
 	extraEdgeCount       uint32
+	maxRoomEdges         uint32
 	roomRoleRequests     []RoomRoleRequest
 	densityRegions       []DensityRegion
 	roomGeometry         RoomGeometry
@@ -104,6 +105,9 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 	if err := validateExtraEdgeCount(config.ExtraEdgeCount, maxRooms); err != nil {
 		return effectiveConfig{}, err
 	}
+	if err := validateMaxRoomEdges(config.MaxRoomEdges); err != nil {
+		return effectiveConfig{}, err
+	}
 
 	roleRequests, err := validateRoomRoleRequests(config.RoomRoleRequests, maxRooms)
 	if err != nil {
@@ -136,6 +140,7 @@ func normalizeConfig(config Config) (effectiveConfig, error) {
 		maxRooms:             maxRooms,
 		corridorOrder:        config.CorridorOrder,
 		extraEdgeCount:       config.ExtraEdgeCount,
+		maxRoomEdges:         config.MaxRoomEdges,
 		roomRoleRequests:     roleRequests,
 		densityRegions:       densityRegions,
 		roomGeometry:         geometry,
@@ -204,6 +209,21 @@ func validateExtraEdgeCount(count, maxRooms uint32) error {
 		return fmt.Errorf("%w: ExtraEdgeCount exceeds the possible edges", ErrInvalidConfig)
 	}
 	return nil
+}
+
+// validateMaxRoomEdges rejects a ceiling of 1. A spanning tree over n Rooms
+// needs n-1 edges, and one Corridor per Room spans exactly two Rooms, so any
+// floor of three or more Rooms would fail later as ErrUnconnectablePlacement.
+// Zero stays unlimited so an omitted field keeps today's Layout.
+func validateMaxRoomEdges(count uint32) error {
+	if count == 0 || count >= 2 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: MaxRoomEdges of 1 lets each Room hold one Corridor, which spans exactly two Rooms, "+
+			"so a floor of three or more Rooms cannot be connected; zero means unlimited",
+		ErrInvalidConfig,
+	)
 }
 
 // normalizeCorridorGeometry accepts a nil geometry as "every Corridor is one
