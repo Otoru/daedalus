@@ -1,0 +1,20 @@
+{
+  "name": "solid_wall_visible_and_blocks",
+  "width": 7,
+  "height": 3,
+  "origin": {
+    "x": 0,
+    "y": 1
+  },
+  "radius": 6,
+  "opacity": [
+    "..#....",
+    "..#....",
+    "..#...."
+  ],
+  "visible": [
+    "###....",
+    "###....",
+    "###...."
+  ]
+}

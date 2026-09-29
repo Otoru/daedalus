@@ -70,6 +70,8 @@ test:
 bench:
 	$(GO) test -run '^$$' -bench '^BenchmarkGenerate$$' -benchmem .
 	$(GO) test -run '^$$' -bench '^BenchmarkComputeSteps$$' -benchmem ./utils/pathfinding
+	$(GO) test -run '^$$' -bench '^BenchmarkComputeVisibility$$' -benchmem ./utils/vision
+	$(GO) test -run '^$$' -bench '^BenchmarkComputeVisibilityIntoWarm$$' -benchmem ./utils/vision
 
 build:
 ifeq ($(HAS_CMD),)
