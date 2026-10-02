@@ -3,6 +3,8 @@ package daedalus
 import (
 	"context"
 	"fmt"
+
+	"github.com/Otoru/daedalus/core"
 )
 
 // connectivitySpine is a compact row-major bitset. It is deliberately private:
@@ -182,7 +184,7 @@ func terrainCandidates(config *TerrainConfig, distribution *TerrainDistribution,
 	return candidates
 }
 
-func selectTerrainCandidate(candidates []terrainCandidate, stream *splitMix64) byte {
+func selectTerrainCandidate(candidates []terrainCandidate, stream *core.SplitMix64) byte {
 	var total uint64
 	for _, candidate := range candidates {
 		total += uint64(candidate.weight)
@@ -190,7 +192,7 @@ func selectTerrainCandidate(candidates []terrainCandidate, stream *splitMix64) b
 	if total == 0 {
 		return 0
 	}
-	draw := stream.uniformInt(weightedSelectionFirstTicket, total)
+	draw := stream.UniformInt(weightedSelectionFirstTicket, total)
 	for _, candidate := range candidates {
 		weight := uint64(candidate.weight)
 		if draw <= weight {
@@ -262,7 +264,7 @@ func placeTerrain(ctx context.Context, effective effectiveConfig, layout *Layout
 		if label == 0 {
 			continue
 		}
-		target := int(streams.terrain.uniformInt(uint64(distribution.MinPatchCells), uint64(distribution.MaxPatchCells)))
+		target := int(streams.terrain.UniformInt(uint64(distribution.MinPatchCells), uint64(distribution.MaxPatchCells)))
 		seeds = append(seeds, terrainSeed{index: index, label: label, target: target})
 	}
 	indices := make([]byte, cellCount)

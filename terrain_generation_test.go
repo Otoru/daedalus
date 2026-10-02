@@ -75,13 +75,13 @@ func TestTerrainPatchesAndStreamIsolation(t *testing.T) {
 
 func TestTerrainStreamIsDedicatedAndDoesNotConsumePlacement(t *testing.T) {
 	streams := newRNGStreams(Seed(0x1234))
-	placementState := streams.placement.state
-	terrainState := streams.terrain.state
-	streams.terrain.next()
-	if streams.placement.state != placementState {
+	placementState := streams.placement
+	terrainState := streams.terrain
+	streams.terrain.Next()
+	if streams.placement != placementState {
 		t.Fatal("terrain placement consumed the placement stream")
 	}
-	if streams.terrain.state == terrainState {
+	if streams.terrain == terrainState {
 		t.Fatal("terrain stream did not advance")
 	}
 	if terrainState == placementState {

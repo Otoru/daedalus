@@ -3,6 +3,8 @@ package daedalus
 import (
 	"context"
 	"fmt"
+
+	"github.com/Otoru/daedalus/core"
 )
 
 // reservedRoute is one corridor already placed on the session occupancy.
@@ -30,7 +32,7 @@ type routeSession struct {
 	occupancy      *placementOccupancy
 	search         *routingSearch
 	corridorWidths []CorridorWidthWeight
-	widthStream    *splitMix64
+	widthStream    *core.SplitMix64
 	useWidths      bool
 	reserved       []reservedRoute
 }
@@ -38,7 +40,7 @@ type routeSession struct {
 type routeSnapshot struct {
 	owners    []uint32
 	reserved  []reservedRoute
-	stream    uint64
+	stream    core.SplitMix64
 	hasStream bool
 }
 
@@ -49,7 +51,7 @@ func newRouteSession(
 	order CorridorOrder,
 	rooms []PlacedRoom,
 	corridorWidths []CorridorWidthWeight,
-	widthStream *splitMix64,
+	widthStream *core.SplitMix64,
 ) (*routeSession, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -81,7 +83,7 @@ func newRouteSession(
 }
 
 func openRouteSession(ctx context.Context, effective effectiveConfig, rooms []PlacedRoom) (*routeSession, error) {
-	var widthStream *splitMix64
+	var widthStream *core.SplitMix64
 	if len(effective.corridorWidths) > 0 {
 		streams := newRNGStreams(effective.seed)
 		widthStream = &streams.corridorWidth
@@ -281,18 +283,21 @@ func (session *routeSession) rebuildClearance() {
 	}
 }
 
-func (session *routeSession) streamState() (uint64, bool) {
+// streamState copies the width stream so a failed probe can be rewound. core
+// keeps the raw state unexported; copying the stream value is the whole
+// snapshot, because the stream is exactly its state.
+func (session *routeSession) streamState() (core.SplitMix64, bool) {
 	if session.widthStream == nil {
-		return 0, false
+		return core.SplitMix64{}, false
 	}
-	return session.widthStream.state, true
+	return *session.widthStream, true
 }
 
-func (session *routeSession) restoreStream(state uint64, saved bool) {
+func (session *routeSession) restoreStream(state core.SplitMix64, saved bool) {
 	if !saved {
 		return
 	}
-	session.widthStream.state = state
+	*session.widthStream = state
 }
 
 func (session *routeSession) snapshot() routeSnapshot {

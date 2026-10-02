@@ -1,6 +1,10 @@
 package daedalus
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/Otoru/daedalus/core"
+)
 
 const wideRouteIncomingSlots = routingDirectionCount
 
@@ -175,7 +179,7 @@ func routingCellFree(occupancy *placementOccupancy, x, y int) bool {
 // drawCorridorWidth picks one width. Candidates are sorted by Width ascending
 // before the draw, matching the Plant catalog's weighted selection, so the
 // order of Widths in the request cannot change the result.
-func drawCorridorWidth(widths []CorridorWidthWeight, stream *splitMix64) uint32 {
+func drawCorridorWidth(widths []CorridorWidthWeight, stream *core.SplitMix64) uint32 {
 	ordered := append([]CorridorWidthWeight(nil), widths...)
 	sort.Slice(ordered, func(first, second int) bool {
 		return ordered[first].Width < ordered[second].Width
@@ -184,7 +188,7 @@ func drawCorridorWidth(widths []CorridorWidthWeight, stream *splitMix64) uint32 
 	for _, candidate := range ordered {
 		total += uint64(candidate.Weight)
 	}
-	draw := stream.uniformInt(weightedSelectionFirstTicket, total)
+	draw := stream.UniformInt(weightedSelectionFirstTicket, total)
 	var cumulative uint64
 	for _, candidate := range ordered {
 		cumulative += uint64(candidate.Weight)
