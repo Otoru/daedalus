@@ -214,7 +214,7 @@ func (s *stepper) horizontal() float64 {
 	if s.mode == MotionModeDashing || s.plan.airHold == 0 || s.profile.AirAccel <= 0 {
 		return 0
 	}
-	target := float64(s.plan.airHold) * s.profile.MaxRunSpeed
+	target := float64(float64(s.plan.airHold) * s.profile.MaxRunSpeed)
 	if math.Abs(s.state.VX-target) <= contactEpsilon {
 		return 0
 	}
@@ -249,7 +249,8 @@ func (s *stepper) boundary(ax, ay float64) float64 {
 	}
 	// The horizontal speed clamp.
 	if ax != 0 {
-		consider((float64(s.plan.airHold)*s.profile.MaxRunSpeed - s.state.VX) / ax)
+		target := float64(float64(s.plan.airHold) * s.profile.MaxRunSpeed)
+		consider(float64(target-s.state.VX) / ax)
 	}
 	return best
 }

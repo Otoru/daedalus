@@ -614,9 +614,11 @@ func (g *geometry) launchVelocities(record nodeRecord, abilities AbilitySet, f f
 			if math.Abs(slope) <= contactEpsilon {
 				continue
 			}
+			leftReach := float64(left * slope)
+			rightReach := float64(right * slope)
 			window := Span{
-				Lo: base.x0 + offset - left*slope,
-				Hi: base.x0 + offset + right*slope,
+				Lo: float64(base.x0 + offset - leftReach),
+				Hi: float64(base.x0 + offset + rightReach),
 			}
 			if window.Lo > window.Hi {
 				window.Lo, window.Hi = window.Hi, window.Lo
@@ -626,7 +628,10 @@ func (g *geometry) launchVelocities(record nodeRecord, abilities AbilitySet, f f
 					continue
 				}
 				for point := 0; point < aimPoints; point++ {
-					target := site.footing.Lo + site.footing.Length()*float64(point)/float64(aimPoints-1)
+					length := float64(site.footing.Length())
+					weighted := float64(length * float64(point))
+					fraction := float64(weighted / float64(aimPoints-1))
+					target := float64(site.footing.Lo + fraction)
 					add((target - base.x0 - offset) / slope)
 				}
 			}
@@ -635,7 +640,10 @@ func (g *geometry) launchVelocities(record nodeRecord, abilities AbilitySet, f f
 
 	limit := math.Max(right, left)
 	for i := 0; i < sweepSamples; i++ {
-		u := -limit + 2*limit*float64(i)/float64(sweepSamples-1)
+		scaledLimit := float64(2 * limit)
+		weighted := float64(scaledLimit * float64(i))
+		fraction := float64(weighted / float64(sweepSamples-1))
+		u := float64(-limit + fraction)
 		add(u)
 	}
 	return out

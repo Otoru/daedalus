@@ -350,12 +350,14 @@ func (g *geometry) splitRun(row, from, to int32) []SurfaceInterval {
 		if hi-lo <= contactEpsilon {
 			continue
 		}
-		middle := (lo + hi) / 2
+		middle := float64((lo + hi) / 2)
+		leftEdge := float64(middle - inset)
+		rightEdge := float64(middle + inset)
 		headroom := math.Inf(1)
 		hazard := false
 		touched := false
 		for column := from; column <= to; column++ {
-			if float64(column) >= middle+inset || float64(column)+1 <= middle-inset {
+			if float64(column) >= rightEdge || float64(float64(column)+1) <= leftEdge {
 				continue
 			}
 			touched = true
@@ -565,19 +567,34 @@ type arc struct {
 	span   float64 // the segment's duration
 }
 
-func (a arc) xAt(t float64) float64  { return a.x0 + a.vx*t + 0.5*a.ax*t*t }
-func (a arc) yAt(t float64) float64  { return a.y0 + a.vy*t + 0.5*a.ay*t*t }
-func (a arc) vxAt(t float64) float64 { return a.vx + a.ax*t }
-func (a arc) vyAt(t float64) float64 { return a.vy + a.ay*t }
+func (a arc) xAt(t float64) float64 {
+	linear := float64(a.vx * t)
+	quad := float64(float64(0.5*a.ax) * float64(t*t))
+	return a.x0 + linear + quad
+}
+
+func (a arc) yAt(t float64) float64 {
+	linear := float64(a.vy * t)
+	quad := float64(float64(0.5*a.ay) * float64(t*t))
+	return a.y0 + linear + quad
+}
+
+func (a arc) vxAt(t float64) float64 { return a.vx + float64(a.ax*t) }
+func (a arc) vyAt(t float64) float64 { return a.vy + float64(a.ay*t) }
 
 // bounds returns the closed range an axis covers over [0, span], including the
 // vertex of the parabola when it falls inside.
 func axisBounds(p0, v, acc, span float64) Span {
-	lo := math.Min(p0, p0+v*span+0.5*acc*span*span)
-	hi := math.Max(p0, p0+v*span+0.5*acc*span*span)
+	linear := float64(v * span)
+	quad := float64(float64(0.5*acc) * float64(span*span))
+	endpoint := float64(p0 + linear + quad)
+	lo := math.Min(p0, endpoint)
+	hi := math.Max(p0, endpoint)
 	if acc != 0 {
 		if vertex := -v / acc; vertex > 0 && vertex < span {
-			at := p0 + v*vertex + 0.5*acc*vertex*vertex
+			linear := float64(v * vertex)
+			quad := float64(float64(0.5*acc) * float64(vertex*vertex))
+			at := float64(p0 + linear + quad)
 			lo = math.Min(lo, at)
 			hi = math.Max(hi, at)
 		}
@@ -642,7 +659,10 @@ func roots(c, v, a, span float64) rootSet {
 		}
 		return out
 	}
-	discriminant := v*v - 2*a*c
+	squaredVelocity := float64(v * v)
+	coefficient := float64(2 * a)
+	constant := float64(coefficient * c)
+	discriminant := float64(squaredVelocity - constant)
 	if discriminant < 0 {
 		return out
 	}
@@ -681,7 +701,9 @@ func insideTimes(p0, v, a, lo, hi, span float64) timeSet {
 			continue
 		}
 		middle := (from + to) / 2
-		value := p0 + v*middle + 0.5*a*middle*middle
+		linear := float64(v * middle)
+		quad := float64(float64(0.5*a) * float64(middle*middle))
+		value := float64(p0 + linear + quad)
 		if !(value > lo && value < hi) {
 			continue
 		}

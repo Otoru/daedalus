@@ -321,7 +321,8 @@ func (f *FakeOracle) envelope(kind MotionEdgeKind, profile MovementProfile, quer
 		if !ok || reach < 0 {
 			return reach, airtime, ok
 		}
-		return reach + profile.MaxRunSpeed*profile.TimeToApex(), airtime + profile.TimeToApex(), true
+		extraReach := float64(profile.MaxRunSpeed * profile.TimeToApex())
+		return float64(reach + extraReach), airtime + profile.TimeToApex(), true
 	case MotionEdgeKindDash:
 		if profile.Dash == nil {
 			return -1, 0, false
@@ -329,11 +330,12 @@ func (f *FakeOracle) envelope(kind MotionEdgeKind, profile MovementProfile, quer
 		if rise > 0 {
 			return -1, 0, true
 		}
-		reach := profile.Dash.Speed * profile.Dash.Duration
+		reach := float64(profile.Dash.Speed * profile.Dash.Duration)
 		airtime := profile.Dash.Duration
 		if rise < 0 {
 			fall := math.Sqrt(2 * -rise / profile.GravityDown)
-			reach += profile.MaxRunSpeed * fall
+			extraReach := float64(profile.MaxRunSpeed * fall)
+			reach = float64(reach + extraReach)
 			airtime += fall
 		}
 		return reach, airtime, true
@@ -346,7 +348,10 @@ func (f *FakeOracle) envelope(kind MotionEdgeKind, profile MovementProfile, quer
 // model uses GravityUp for the rise and GravityDown for the fall; the fake
 // does not, which is one more reason its answers do not transfer.
 func (f *FakeOracle) ballistic(profile MovementProfile, launch, rise float64) (float64, float64, bool) {
-	discriminant := launch*launch - 2*profile.GravityUp*rise
+	squaredLaunch := float64(launch * launch)
+	coefficient := float64(2 * profile.GravityUp)
+	constant := float64(coefficient * rise)
+	discriminant := float64(squaredLaunch - constant)
 	if discriminant <= 0 {
 		return -1, 0, true
 	}
@@ -369,7 +374,8 @@ func (f *FakeOracle) witness(profile MovementProfile, query EdgeQuery, kind Moti
 		accelY = 0
 	}
 	start := MotionState{X: query.From.Footing.Lo, Y: query.From.Height, VX: 0, VY: launch}
-	end := MotionState{X: query.To.Footing.Lo, Y: query.To.Height, VX: 0, VY: launch + accelY*airtime}
+	endVelocity := float64(accelY * airtime)
+	end := MotionState{X: query.To.Footing.Lo, Y: query.To.Height, VX: 0, VY: float64(launch + endVelocity)}
 	hold := InputRight
 	if end.X < start.X {
 		hold = InputLeft

@@ -144,15 +144,19 @@ func layoutRun(room Room, rhythm Rhythm, run []int, pad, reserve int32) ([]BeatP
 		}
 
 		span := departureSpan(grid.Width)
+		halfSpan := float64(float64(span) / 2)
+		departureX := float64(float64(cursorX) + halfSpan)
+		arrivalBase := float64(cursorX + int32(span) + int32(platformGap))
+		arrivalX := float64(arrivalBase + halfSpan)
 		placements = append(placements, BeatPlacement{
 			Beat:            index,
 			Kind:            beat.Kind,
 			Origin:          Cell{X: cursorX, Y: offsetY},
 			Width:           grid.Width,
 			Height:          grid.Height,
-			DepartureX:      float64(cursorX) + float64(span)/2,
+			DepartureX:      departureX,
 			DepartureHeight: float64(feet[position]),
-			ArrivalX:        float64(cursorX+int32(span)+int32(platformGap)) + float64(span)/2,
+			ArrivalX:        arrivalX,
 			ArrivalHeight:   float64(feet[position+1]),
 		})
 		cursorX += int32(grid.Width)
