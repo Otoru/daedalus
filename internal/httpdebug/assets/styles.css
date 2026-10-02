@@ -204,6 +204,23 @@ h3 {
   background: var(--door-cell);
 }
 
+.swatch.solid { background: #697586; }
+.swatch.semi-solid { background: repeating-linear-gradient(135deg, #d8a657 0 3px, #5d4526 3px 6px); }
+.swatch.climbable { background: repeating-linear-gradient(90deg, #9a7b4f 0 2px, #2c251d 2px 5px); }
+.swatch.hazard { background: repeating-linear-gradient(135deg, #dc5f5f 0 3px, #481d24 3px 6px); }
+
+.platform-verdict {
+  display: block;
+  padding: 6px 8px;
+  border: 2px solid var(--text);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.platform-verdict.rejected { border-color: #e06c75; color: #ff9ba3; }
+.platform-verdict.unknown { border-color: #e5c07b; color: #f5d08b; }
+.platform-verdict.certified { border-color: #98c379; color: #b8e28e; }
+
 .role-mark {
   display: inline-block;
   width: 12px;

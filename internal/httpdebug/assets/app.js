@@ -76,6 +76,12 @@ const elements = {
   zoom: document.querySelector("#zoom"),
   zoomValue: document.querySelector("#zoom-value"),
   fitMap: document.querySelector("#fit-map"),
+  loadPlatformFixture: document.querySelector("#load-platform-fixture"),
+  showJumpGraph: document.querySelector("#show-jump-graph"),
+  abilityDash: document.querySelector("#ability-dash"),
+  abilityDoubleJump: document.querySelector("#ability-double-jump"),
+  abilityWallJump: document.querySelector("#ability-wall-jump"),
+  platformVerdict: document.querySelector("#platform-verdict"),
   showCenterline: document.querySelector("#show-centerline"),
   clickMode: document.querySelector("#click-mode"),
   flee: document.querySelector("#flee"),
@@ -177,6 +183,10 @@ elements.clearVisibility.addEventListener("click", clearVisibility);
 elements.buildGating.addEventListener("click", buildGatingPlan);
 elements.clearGating.addEventListener("click", clearGatingPlan);
 elements.canvas.addEventListener("click", selectCellFromPointer);
+elements.loadPlatformFixture.addEventListener("click", () => void loadPlatformFixture());
+[elements.showJumpGraph, elements.abilityDash, elements.abilityDoubleJump, elements.abilityWallJump].forEach((control) => {
+  control.addEventListener("change", renderLayout);
+});
 elements.canvas.addEventListener("keydown", moveSelectionWithKeyboard);
 elements.requestTrigger.addEventListener("click", () => togglePanel("request"));
 elements.responseTrigger.addEventListener("click", () => togglePanel("response"));
@@ -221,7 +231,7 @@ async function generateLayout() {
     }
 
     const layout = JSON.parse(responseText);
-    state.layout = layout;
+    setLayoutForRendering(layout);
     state.selectedCell = null;
     clearFieldState();
     clearVisibilityState();
@@ -237,6 +247,55 @@ async function generateLayout() {
   } finally {
     setGenerating(false);
   }
+}
+
+// This is the single integration seam for GeneratePlatform: the future RPC
+// response only needs to be passed to setLayoutForRendering(response.layout).
+function setLayoutForRendering(layout) {
+  state.layout = normalizePlatformLayout(layout);
+  updatePlatformVerdict();
+}
+
+async function loadPlatformFixture() {
+  try {
+    const response = await fetch("/debug/platform-layout.fixture.json");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const layout = await response.json();
+    state.responseText = JSON.stringify(layout, null, 2);
+    elements.responseViewer.textContent = state.responseText;
+    elements.copyResponse.disabled = false;
+    setLayoutForRendering(layout);
+    state.selectedCell = null;
+    clearInspector();
+    fitMap();
+    setStatus("Platform fixture · directed jump graph", "success");
+  } catch (error) {
+    showLocalError(`Could not load platform fixture: ${error.message}`);
+    setStatus("Fixture load failed", "failure");
+  }
+}
+
+function normalizePlatformLayout(layout) {
+  if (!layout?.plane || !Array.isArray(layout.plane.rooms)) return layout;
+  const plane = layout.plane;
+  const width = Number(plane.width) || 1;
+  const height = Number(plane.height) || 1;
+  const cells = Array.from({length: width * height}, (_, index) => ({
+    at: {x: index % width, y: Math.floor(index / width)}, kind: "empty",
+  }));
+  (plane.rooms || []).forEach((room) => {
+    const grid = room.grid || {};
+    const origin = room.origin || {};
+    const roomCells = grid.cells || [];
+    for (let y = 0; y < Number(grid.height || 0); y += 1) for (let x = 0; x < Number(grid.width || 0); x += 1) {
+      const px = Number(origin.x || 0) + x;
+      const py = Number(origin.y || 0) + y;
+      if (px >= 0 && py >= 0 && px < width && py < height) cells[py * width + px] = {
+        at: {x: px, y: py}, kind: String(roomCells[y * grid.width + x] ?? "empty").toLowerCase(), room_id: room.id,
+      };
+    }
+  });
+  return {...layout, platform: true, grid: {width, height, cells}};
 }
 
 function showServerError(statusCode, responseText) {
@@ -439,6 +498,16 @@ function renderLayout() {
     context.fillRect(at.x * scale, at.y * scale, scale, scale);
   });
 
+  if (state.layout.platform) {
+    drawPlatformTerrain(context, scale);
+    drawPlatformTransitions(context, scale);
+    drawPlatformAnchors(context, scale);
+    drawJumpGraph(context, scale);
+    drawSelection(context, scale);
+    context.restore();
+    return;
+  }
+
   drawRoomBoundaries(context, scale);
   drawGrid(context, grid.width, grid.height, scale);
   drawCorridorBands(context, scale);
@@ -469,6 +538,7 @@ const cellColors = {
 };
 
 function colorForCell(cell) {
+  if (state.layout?.platform) return platformCellColor(cell.kind);
   if (cell.kind === "CELL_KIND_ROOM") {
     return roomColor(cell.room_id || 0);
   }
@@ -476,6 +546,106 @@ function colorForCell(cell) {
     return cellColors.corridor;
   }
   return cellColors.empty;
+}
+
+function platformCellColor(kind) {
+  switch (String(kind).toLowerCase()) {
+    case "solid": return "#697586";
+    case "semi-solid": return "#7a5a2b";
+    case "climbable": return "#5a4630";
+    case "hazard": return "#5d2630";
+    default: return cellColors.empty;
+  }
+}
+
+function drawPlatformTerrain(context, scale) {
+  const cells = state.layout.grid.cells || [];
+  context.save();
+  cells.forEach((cell) => {
+    const x = cell.at.x * scale;
+    const y = cell.at.y * scale;
+    if (cell.kind === "semi-solid") {
+      context.strokeStyle = "#f2c879";
+      context.lineWidth = Math.max(1, scale * 0.16);
+      context.beginPath(); context.moveTo(x, y + scale * 0.23); context.lineTo(x + scale, y + scale * 0.23); context.stroke();
+    } else if (cell.kind === "climbable") {
+      context.strokeStyle = "#d0aa74"; context.lineWidth = Math.max(1, scale * 0.12);
+      context.beginPath(); context.moveTo(x + scale * .32, y); context.lineTo(x + scale * .32, y + scale); context.moveTo(x + scale * .68, y); context.lineTo(x + scale * .68, y + scale); context.stroke();
+    } else if (cell.kind === "hazard") {
+      context.fillStyle = "#ff8a8a";
+      context.beginPath(); context.moveTo(x, y + scale); context.lineTo(x + scale * .5, y + scale * .22); context.lineTo(x + scale, y + scale); context.fill();
+    }
+  });
+  context.restore();
+}
+
+function platformPoint(anchor) {
+  const room = (state.layout.plane.rooms || []).find((candidate) => String(candidate.id) === String(anchor?.room));
+  if (!room) return null;
+  return {x: Number(room.origin?.x || 0) + Number(anchor.at?.x || 0) + .5, y: Number(room.origin?.y || 0) + Number(anchor.at?.y || 0) + .5};
+}
+
+function drawPlatformAnchors(context, scale) {
+  const marks = [[state.layout.plane.spawn, "S", "#8ee6a2"], [state.layout.plane.goal, "G", "#ffd166"]];
+  context.save(); context.font = `${Math.max(10, scale)}px ui-monospace`; context.textAlign = "center"; context.textBaseline = "middle";
+  marks.forEach(([anchor, label, color]) => { const point = platformPoint(anchor); if (!point) return; context.fillStyle = color; context.beginPath(); context.arc(point.x * scale, point.y * scale, Math.max(4, scale * .32), 0, Math.PI * 2); context.fill(); context.fillStyle = "#111"; context.fillText(label, point.x * scale, point.y * scale + 1); });
+  context.restore();
+}
+
+function drawPlatformTransitions(context, scale) {
+  context.save();
+  (state.layout.plane.rooms || []).forEach((room) => (room.transitions || []).forEach((transition) => {
+    const origin = room.origin || {}; const grid = room.grid || {}; const offset = Number(transition.offset || 0); const extent = Math.max(1, Number(transition.extent || 1));
+    let x = Number(origin.x || 0), y = Number(origin.y || 0), horizontal = false;
+    if (transition.side === "right") { x += Number(grid.width || 0); y += Number(grid.height || 0) - offset - extent; }
+    else if (transition.side === "left") { y += Number(grid.height || 0) - offset - extent; }
+    else if (transition.side === "top") { x += offset; horizontal = true; }
+    else { x += offset; y += Number(grid.height || 0); horizontal = true; }
+    context.strokeStyle = transition.outbound && !transition.inbound ? "#ff8a8a" : "#a7d8ff"; context.lineWidth = Math.max(2, scale * .18);
+    context.beginPath(); if (horizontal) { context.moveTo(x * scale, y * scale); context.lineTo((x + extent) * scale, y * scale); } else { context.moveTo(x * scale, y * scale); context.lineTo(x * scale, (y + extent) * scale); } context.stroke();
+    context.fillStyle = "#f2f2f2"; context.font = `${Math.max(8, scale * .62)}px ui-monospace`; context.fillText(`h${offset}`, (x + .5) * scale, (y + .5) * scale);
+  }));
+  context.restore();
+}
+
+function selectedAbilities() {
+  return new Set([elements.abilityDash.checked && "dash", elements.abilityDoubleJump.checked && "double-jump", elements.abilityWallJump.checked && "wall-jump"].filter(Boolean));
+}
+
+function edgeRequirements(edge) {
+  if (Array.isArray(edge.requires)) return edge.requires;
+  if (typeof edge.requires === "string") return edge.requires === "base" ? [] : edge.requires.split(",");
+  return [];
+}
+
+function graphNodePoint(node) {
+  // Height is in the world frame (upward); Canvas y grows downward.
+  const span = node.footing || {}; const x = (Number(span.lo) + Number(span.hi)) / 2;
+  return {x, y: Number(state.layout.grid.height) - Number(node.height)};
+}
+
+function drawArrow(context, from, to, scale, color, dashed) {
+  const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy); if (length < .01) return;
+  const ux = dx / length, uy = dy / length, endX = to.x * scale - ux * scale * .28, endY = to.y * scale - uy * scale * .28;
+  context.save(); context.strokeStyle = color; context.fillStyle = color; context.lineWidth = Math.max(1.5, scale * .1); if (dashed) context.setLineDash([scale * .24, scale * .18]);
+  context.beginPath(); context.moveTo(from.x * scale, from.y * scale); context.lineTo(endX, endY); context.stroke(); context.setLineDash([]);
+  const wing = scale * .22; context.beginPath(); context.moveTo(endX, endY); context.lineTo(endX - ux * wing - uy * wing, endY - uy * wing + ux * wing); context.lineTo(endX - ux * wing + uy * wing, endY - uy * wing - ux * wing); context.closePath(); context.fill(); context.restore();
+}
+
+function drawJumpGraph(context, scale) {
+  if (!state.layout?.platform || !elements.showJumpGraph.checked) return;
+  const graph = state.layout.jump_graph || {}; const nodes = new Map((graph.nodes || []).map((node) => [String(node.id), node])); const abilities = selectedAbilities();
+  (graph.edges || []).forEach((edge) => { const requirements = edgeRequirements(edge); if (!requirements.every((ability) => abilities.has(ability))) return; const from = nodes.get(String(edge.from)), to = nodes.get(String(edge.to)); if (!from || !to) return; const colors = {walk: "#eef0f4", jump: "#7dd3fc", fall: "#c4b5fd", dash: "#fb7185", "wall-jump": "#fbbf24", "drop-through": "#a3e635"}; drawArrow(context, graphNodePoint(from), graphNodePoint(to), scale, colors[edge.kind] || "#d1d5db", edge.kind === "fall" || edge.kind === "drop-through"); });
+  context.save(); (graph.nodes || []).forEach((node) => { const point = graphNodePoint(node); context.fillStyle = "#111827"; context.strokeStyle = "#f8fafc"; context.lineWidth = Math.max(1, scale * .09); context.beginPath(); context.arc(point.x * scale, point.y * scale, Math.max(2.5, scale * .18), 0, Math.PI * 2); context.fill(); context.stroke(); }); context.restore();
+}
+
+function updatePlatformVerdict() {
+  const judgement = state.layout?.platform && state.layout.judgement;
+  if (!judgement) { elements.platformVerdict.hidden = true; return; }
+  const verdict = String(judgement.verdict || "unknown").toLowerCase();
+  elements.platformVerdict.hidden = false;
+  elements.platformVerdict.className = `platform-verdict ${verdict}`;
+  elements.platformVerdict.textContent = `${verdict.toUpperCase()} — ${judgement.reason || "unspecified"}${judgement.detail ? `: ${judgement.detail}` : ""}`;
 }
 
 function roomColor(roomID) {
@@ -911,6 +1081,11 @@ function selectCell(x, y) {
     return;
   }
   state.selectedCell = {x, y};
+  if (state.layout.platform) {
+    updateInspector(x, y);
+    renderLayout();
+    return;
+  }
   if (elements.visibilityMode.checked) {
     if (!isTransparentCell(x, y)) {
       updateInspector(x, y);
@@ -957,6 +1132,21 @@ function updateInspector(x, y) {
   const grid = state.layout.grid;
   const index = y * grid.width + x;
   const cell = (grid.cells || [])[index] || {at: {x, y}, kind: "CELL_KIND_EMPTY"};
+  if (state.layout.platform) {
+    const graph = state.layout.jump_graph || {};
+    const surfaceIDs = (graph.surfaces || []).filter((surface) => {
+      const extent = surface.extent || {}; const at = Number(surface.at); const worldY = Number(grid.height) - y;
+      return (surface.kind === "wall-left" || surface.kind === "wall-right" || surface.kind === "climbable")
+        ? Math.floor(at) === x && worldY >= Number(extent.lo) && worldY <= Number(extent.hi)
+        : Math.floor(at) === worldY && x >= Number(extent.lo) && x <= Number(extent.hi);
+    }).map((surface) => surface.id);
+    const nodeIDs = (graph.nodes || []).filter((node) => surfaceIDs.map(String).includes(String(node.surface))).map((node) => node.id);
+    const room = (state.layout.plane.rooms || []).find((candidate) => String(candidate.id) === String(cell.room_id));
+    const details = {coordinates: {x, y}, kind: cell.kind, room_id: cell.room_id ?? null, surface_ids: surfaceIDs, motion_node_ids: nodeIDs, transitions: (room?.transitions || []).filter((transition) => transitionCoversPlatformCell(room, transition, x, y)).map((transition) => ({id: transition.id, side: transition.side, height: transition.offset, extent: transition.extent, one_way: Boolean(transition.outbound) !== Boolean(transition.inbound)}))};
+    elements.cellDetails.textContent = `Platform cell\n${JSON.stringify(details, null, 2)}`;
+    elements.inspector.hidden = false;
+    return;
+  }
   const rooms = (state.layout.rooms || []).filter((room) => room.id === cell.room_id);
   const doors = (state.layout.doors || []).filter((door) => doorCoversCell(door, x, y));
   const corridorIDs = [...(cell.corridor_ids || [])];
@@ -1017,6 +1207,12 @@ function updateInspector(x, y) {
       : "No field on this cell yet.";
   elements.cellDetails.textContent = `${headline}\n${JSON.stringify(details, null, 2)}`;
   elements.inspector.hidden = false;
+}
+
+function transitionCoversPlatformCell(room, transition, x, y) {
+  const origin = room.origin || {}; const grid = room.grid || {}; const offset = Number(transition.offset || 0); const extent = Math.max(1, Number(transition.extent || 1));
+  if (transition.side === "left" || transition.side === "right") return y >= Number(origin.y || 0) + Number(grid.height || 0) - offset - extent && y < Number(origin.y || 0) + Number(grid.height || 0) - offset;
+  return x >= Number(origin.x || 0) + offset && x < Number(origin.x || 0) + offset + extent;
 }
 
 function readableEnum(value, prefix) {
