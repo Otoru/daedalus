@@ -670,10 +670,8 @@ func mergeRoomGraphs(graphs []JumpGraph, model string, config Config) (JumpGraph
 // macroConfigFor maps a platform Config onto the macro front's input.
 //
 // The room-size bounds are DERIVED FROM THE BEAT VOCABULARY, not fixed. The
-// macro front's own defaults of 8..14 were chosen for a plane of empty
-// shells, and a beat is two platforms around a gap: with the canonical spans
-// a single beat is up to 26 cells wide, so an 8..14 room cannot hold one and
-// every run would be dropped. Sizing the room to the vocabulary instead means
+// macro front's own defaults fit one canonical beat (26 cells, plus the
+// opening and its landing). Sizing the room to the vocabulary instead means
 // the caller's declared MinCells and MaxCells really do decide how big a room
 // is, which is the direction that keeps the caller's declaration honoured.
 // The alternative — quietly shrinking the caller's beat bounds so they fit a

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/Otoru/daedalus/core"
@@ -179,6 +180,49 @@ func average(values []float64) float64 {
 	}
 	return sum / float64(len(values))
 }
+
+// TestACanonicalBeatFitsInTheDefaultRoom is the composition check that used to
+// pass without ever placing a beat. The widest canonical beat is two platforms
+// of the traverse span around the gap, and the default room has to hold it
+// even at the largest leading pad the placer draws.
+func TestACanonicalBeatFitsInTheDefaultRoom(t *testing.T) {
+	cfg := (MacroConfig{Seed: 1, Width: 512, Height: 512, Rooms: 4}).Normalize()
+	_, span := canonicalCells(BeatKindTraverse)
+	beat := stampBeat(BeatKindTraverse, span, 0)
+	wantWidth := span + platformGap + span
+	if beat.Width != wantWidth {
+		t.Fatalf("canonical beat width = %d, want %d", beat.Width, wantWidth)
+	}
+	room := Room{Grid: shellGrid(cfg.MinWidth, cfg.MinHeight)}
+	rhythm := Rhythm{Beats: []RealizedBeat{{Kind: BeatKindTraverse, Grid: beat}}}
+	_, fits, err := layoutRun(room, rhythm, []int{0}, int32(synthMaxLeadingPad), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fits {
+		t.Fatalf("a canonical beat %d cells wide does not fit in the default room %dx%d with leading pad %d", beat.Width, cfg.MinWidth, cfg.MinHeight, synthMaxLeadingPad)
+	}
+}
+
+// TestValidateRejectsAPlaneTooSmallForADecentMap is the 70×44 plane that used
+// to come back as two or three rooms. The floor has to name the arithmetic.
+func TestValidateRejectsAPlaneTooSmallForADecentMap(t *testing.T) {
+	cfg := MacroConfig{Seed: 1, Width: 70, Height: 44, Rooms: 4}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("a 70×44 plane was accepted")
+	}
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("error = %v, want invalid configuration", err)
+	}
+	msg := err.Error()
+	for _, piece := range []string{"70", "44", "26", "4"} {
+		if !strings.Contains(msg, piece) {
+			t.Fatalf("error %q does not document the floor arithmetic (missing %q)", msg, piece)
+		}
+	}
+}
+
 func TestGenerateMacroRejectsACanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

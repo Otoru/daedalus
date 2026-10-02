@@ -34,6 +34,15 @@ const OpeningExtent = 3
 // gate and a high gate in different bands: one landing plus two bands.
 const minOverlapCells = GateBandCells * 2
 
+// openingLandingCells is the solid cell a generated opening keeps under its
+// air. floorSpan starts that air at one cell above the bottom of the overlap.
+const openingLandingCells uint32 = 1
+
+// decentMapRooms is the shortest spine this generator will fold. placeRooms
+// raises a shorter chain to this, and a map of two rooms is what a plane too
+// small for that fold used to return without saying why.
+const decentMapRooms = 4
+
 // MacroConfig is the input to the macro generator. Zero-value sizes request
 // the defaults applied by Normalize. Seed, Width, Height and Rooms are required.
 type MacroConfig struct {
@@ -69,20 +78,48 @@ type Macro struct {
 	Profile MovementProfile
 }
 
+// canonicalBeatCells is the width of the widest canonical beat: two platforms
+// of the widest canonical span with the gap between them. Traverse is that
+// span today (12), so the beat is 12+2+12 = 26.
+func canonicalBeatCells() uint32 {
+	var widest uint32
+	for kind := BeatKindRest; kind <= BeatKindCheckpoint; kind++ {
+		_, span := canonicalCells(kind)
+		if span > widest {
+			widest = span
+		}
+	}
+	return widest + platformGap + widest
+}
+
+// defaultMinRoomSide fits one canonical beat plus the opening's clearance and
+// the landing under it: 26 + OpeningExtent + openingLandingCells = 30.
+func defaultMinRoomSide() uint32 {
+	return canonicalBeatCells() + OpeningExtent + openingLandingCells
+}
+
+// defaultMaxRoomSide is the same beat plus the overlap that hosts both a
+// floor opening and a high opening: 26 + minOverlapCells = 34. The four cells
+// between 30 and 34 are one gate band, so rooms stay unequal without a second
+// guess at the mean degree.
+func defaultMaxRoomSide() uint32 {
+	return canonicalBeatCells() + minOverlapCells
+}
+
 // Normalize fills the size defaults. It does not validate.
 func (c MacroConfig) Normalize() MacroConfig {
 	out := c
 	if out.MinWidth == 0 {
-		out.MinWidth = minOverlapCells
+		out.MinWidth = defaultMinRoomSide()
 	}
 	if out.MaxWidth == 0 {
-		out.MaxWidth = 14
+		out.MaxWidth = defaultMaxRoomSide()
 	}
 	if out.MinHeight == 0 {
-		out.MinHeight = minOverlapCells
+		out.MinHeight = defaultMinRoomSide()
 	}
 	if out.MaxHeight == 0 {
-		out.MaxHeight = 14
+		out.MaxHeight = defaultMaxRoomSide()
 	}
 	return out
 }
@@ -117,11 +154,35 @@ func (c MacroConfig) Validate() error {
 	if cfg.Width < cfg.MaxWidth || cfg.Height < cfg.MaxHeight {
 		return configError("plane %dx%d cannot hold a room of %dx%d", cfg.Width, cfg.Height, cfg.MaxWidth, cfg.MaxHeight)
 	}
+	if err := decentPlane(cfg); err != nil {
+		return err
+	}
 	plan := ProgressionPlan{Steps: cfg.Steps}
 	if err := plan.Validate(DefaultProfile()); err != nil {
 		return err
 	}
 	return nil
+}
+
+// decentPlane rejects a plane that cannot tile a folded map. The count is how
+// many rooms of the maximum side fit on a grid: width/max by height/max.
+// Fewer than decentMapRooms is the two-or-three-room map a small plane used
+// to return. The minimum side in the message is the beat arithmetic, so the
+// rejection names both numbers that set the floor.
+func decentPlane(cfg MacroConfig) error {
+	cols := uint64(cfg.Width) / uint64(cfg.MaxWidth)
+	rows := uint64(cfg.Height) / uint64(cfg.MaxHeight)
+	slots := cols * rows
+	if slots >= uint64(decentMapRooms) {
+		return nil
+	}
+	beat := canonicalBeatCells()
+	return configError(
+		"plane %dx%d tiles %d rooms of %dx%d (%d/%d × %d/%d), below %d; a decent map folds %d rooms and the minimum side %d is a canonical beat of %d plus an opening of %d and a landing of %d",
+		cfg.Width, cfg.Height, slots, cfg.MaxWidth, cfg.MaxHeight,
+		cfg.Width, cfg.MaxWidth, cfg.Height, cfg.MaxHeight,
+		decentMapRooms, decentMapRooms, cfg.MinWidth, beat, OpeningExtent, openingLandingCells,
+	)
 }
 
 // GenerateMacro places unequal rooms, wires cardinal transitions and binds

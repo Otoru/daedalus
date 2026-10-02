@@ -16,8 +16,8 @@ import (
 func synthConfig(seed Seed) Config {
 	return Config{
 		Seed:    seed,
-		Width:   70,
-		Height:  44,
+		Width:   160,
+		Height:  100,
 		Profile: DefaultProfile(),
 		Beats: BeatConfig{
 			Definitions: []BeatDefinition{
