@@ -316,9 +316,7 @@ func fillPlatform(cells []CellKind, width, height, x0, span uint32, feet int32) 
 		return
 	}
 	for x := x0; x < x0+span && x < width; x++ {
-		for y := uint32(row); y < height; y++ {
-			cells[y*width+x] = CellKindSolid
-		}
+		cells[uint32(row)*width+x] = CellKindSolid
 	}
 }
 
