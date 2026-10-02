@@ -211,6 +211,71 @@ func readImportPaths(t *testing.T, directory, fileName string) []string {
 	return paths
 }
 
+// TestEveryGenerationPackageIsPoliced fails when a new package of production
+// Go files appears outside cmd/ and internal/ without an entry in
+// purePackages. The import scan is not recursive and does not discover
+// directories by itself, so a package that was never listed is checked by
+// nothing and the suite stays green.
+func TestEveryGenerationPackageIsPoliced(t *testing.T) {
+	root, ok := repositoryRoot()
+	if !ok {
+		t.Fatal("locate this test file")
+	}
+	listed := make(map[string]bool, len(purePackages))
+	for _, pure := range purePackages {
+		listed[pure.directory] = true
+	}
+	var missing []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		name := entry.Name()
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel != "." && (strings.HasPrefix(name, ".") || name == "testdata" || name == "vendor" || name == "bin") {
+			return filepath.SkipDir
+		}
+		if rel == "cmd" || rel == "internal" || strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) || strings.HasPrefix(rel, "internal"+string(filepath.Separator)) {
+			return filepath.SkipDir
+		}
+		if !directoryHasProductionGo(path) {
+			return nil
+		}
+		key := rel
+		if !listed[key] {
+			missing = append(missing, key)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk generation packages: %v", err)
+	}
+	if len(missing) > 0 {
+		t.Fatalf("production packages with no purePackages entry (the purity test checks nothing there): %s", strings.Join(missing, ", "))
+	}
+}
+
+func directoryHasProductionGo(directory string) bool {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // assertPermittedImport fails when an import is neither on the package
 // allowlist nor resolved inside GOROOT.
 func assertPermittedImport(t *testing.T, fileName, importPath string, allowed []string) {

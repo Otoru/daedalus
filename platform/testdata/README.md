@@ -1,11 +1,22 @@
 # `platform/testdata`
 
-Empty on purpose. No golden and no portrait of a platform map exists yet:
-those belong to front I, which also owns running the old suites without
-re-recording a fixture (`CONTRIBUTING.md:63`). Front H wrote the thing a
-golden would be taken of, not the golden.
+`golden/` freezes `PlatformLayout` for named seeds. The file is gzip of a JSON
+document because every certified edge carries a witness; gzip is the envelope,
+and `TestFrozenPlatformGoldens` compares the decoded struct field by field.
+One arch does not prove another. Regenerating is explicit:
 
-What a golden here would freeze is **the order in which synthesis consumes
+```
+go test ./platform -run '^TestFrozenPlatformGoldens$' -update-platform -count=1
+```
+
+`portrait/portrait.json` freezes a SHA-256 per configuration. The digest does
+not cover the layout. `qualityPortraitBytes` omits Grid.Terrain (the same gap
+as the root `portraitBytes`, which never writes Terrain, PlantID or Tags),
+witnesses, `Judgement.Detail`, `Judgement.Budget`, `MacroAudit`, synthesis
+provenance, `MotionNode.Resources`, and surface headroom and hazard. A stable
+hash does not prove those fields. The golden does.
+
+What these goldens freeze is **the order in which synthesis consumes
 randomness**, because that order — not the arithmetic, which is `core`'s — is
 what decides which map a seed names. Changing any line of the list below
 changes every map, with no compile error and no test failure outside a
