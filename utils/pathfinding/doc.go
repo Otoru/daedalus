@@ -4,8 +4,8 @@
 // the first of them; later siblings sit beside this package, not inside it.
 // This package imports the root and nothing else outside the standard
 // library. It uses Cell, CellKind, CellState, Layout, Room, Direction, and
-// MaxCells. The root imports nothing at all, including this package. That
-// dependency runs one way.
+// MaxCells. The root imports only the standard library, never this package.
+// That dependency runs one way.
 //
 // Arithmetic is integer-only. Cost is a uint8 and every index is an int64.
 // There is no floating-point value and no call into math. That removes the

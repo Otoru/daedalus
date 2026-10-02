@@ -227,8 +227,8 @@ func assignNonStartRoles(
 }
 
 // assignSpreadTreasures places Count Treasure Rooms by farthest-point sampling.
-// Anchors are the Rooms that already hold a role: Start and Boss when those
-// requests preceded this one, plus every Treasure already placed. Each pick is
+// Anchors are the Rooms that already hold a role: Start whenever requested,
+// Boss when its request preceded this one, and every Treasure already placed. Each pick is
 // the unassigned Room whose minimum weighted path distance to any anchor is
 // greatest, and that Room joins the anchors. An empty anchor set has no such
 // minimum, so the first Treasure uses the distances from RoomID 0, the same

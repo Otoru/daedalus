@@ -203,8 +203,10 @@ func selectTerrainCandidate(candidates []terrainCandidate, stream *splitMix64) b
 
 // placeTerrain chooses sparse row-major seed slots, draws one terrain and one
 // integer target size per non-empty seed, then grows each patch by FIFO BFS.
-// Every eligible neighbour is enqueued in canonical N/E/S/W order until the
-// target is reached. Patches are processed in seed order, so earlier patches
+// Protected Cells reset their base kind's seed ordinal and are skipped before
+// any draw. Each expansion enqueues all eligible neighbours in N/E/S/W order;
+// the target is checked between expansions, so a batch may overshoot it by
+// up to three Cells. Patches are processed in seed order, so earlier patches
 // claim cells before later patches can use them.
 func placeTerrain(ctx context.Context, effective effectiveConfig, layout *Layout) error {
 	if effective.terrain == nil {

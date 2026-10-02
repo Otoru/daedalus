@@ -14,8 +14,8 @@ import (
 
 // purePackages lists every package whose imports are policed, with the
 // non-GOROOT import paths each one is permitted. The root permits none.
-// utils/pathfinding and utils/vision each permit the root and nothing else:
-// grpc, protobuf, fx, and zap stay outside them.
+// utils/pathfinding, utils/vision, and utils/gating each permit only the root
+// outside GOROOT: grpc, protobuf, fx, and zap stay outside them.
 var purePackages = []struct {
 	directory string   // relative to the repository root
 	allowed   []string // import paths permitted outside GOROOT
@@ -29,8 +29,8 @@ var purePackages = []struct {
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core
 // independently importable. Each entry in purePackages is checked as a
 // subtest: the root permits only the standard library, and utils/pathfinding
-// and utils/vision may also import the root module. grpc, protobuf, fx, zap,
-// and generated bindings stay outside all three. Analysis uses the AST
+// and utils/vision and utils/gating may also import the root module. grpc,
+// protobuf, fx, zap, and generated bindings stay outside all four. Analysis uses the AST
 // (go/parser). An import is accepted when it is on that package's allowlist
 // or when go/build resolves it inside GOROOT.
 func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {

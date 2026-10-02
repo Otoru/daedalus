@@ -52,8 +52,9 @@ func (poissonDiskRoomsPlacer) Place(req PlacementRequest) ([]RoomPlacement, erro
 		if err := run.ctx.Err(); err != nil {
 			return nil, err
 		}
-		// One placement-stream draw per outer iteration. Attempts below must
-		// not draw another active index.
+		// One logical active-index selection per outer iteration. uniformInt
+		// consumes no RNG for a single active entry and may reject samples
+		// otherwise. Attempts below must not select another active index.
 		activeIndex := int(run.streams.placement.uniformInt(0, uint64(len(run.active)-1)))
 		if err := run.attemptFromActive(activeIndex); err != nil {
 			return nil, err

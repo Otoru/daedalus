@@ -3,7 +3,7 @@
 // A game requests a floor by passing a Config and a Seed to Generator.Generate,
 // or to GenerateContext when it already holds a deadline. The zero Generator is
 // ready to use: a nil Placer selects poisson_disk_rooms_v1 and a nil Connector
-// selects prim_rooms_v1. The call returns one immutable Layout, or an error and
+// selects prim_rooms_v1. The call returns one caller-owned Layout, or an error and
 // the zero Layout. No Seed, stream, or Layout is kept for a later request.
 //
 // The package owns validation, placement, connection, thematic roles, optional
@@ -186,7 +186,8 @@
 // remaining declared width fails, 1 included, is the error ErrUnroutableEdge.
 // Degradation consumes no further randomness.
 //
-// The centerline is the route as computed for a one-Cell Corridor. The band is
+// The centerline is the route computed with clearance for the routed width.
+// It can differ from the route chosen for a one-Cell Corridor. The band is
 // the centerline dilated perpendicular to the direction of travel. Odd W:
 // symmetric, (W-1)/2 Cells each side; even W: the extra Cell goes to the +X
 // side for vertical travel and the +Y side for horizontal travel. At every
@@ -201,7 +202,9 @@
 // included. The clearance map and the breadth-first fallback both treat that
 // set as obstacles.
 //
-// Cells is that band in row-major order. Centerline is the ordered
+// With explicit CorridorGeometry, Cells is that band in row-major order,
+// including width 1; nil geometry preserves Centerline order in Cells.
+// Centerline is the ordered
 // 4-connected route from the From side to the To side. A W-wide Corridor
 // meeting a Room opens a W-wide doorway. Door.Span is the number of boundary
 // Cells, and Door.At is the Cell with the smallest (Y, X) of the span. If the
@@ -221,8 +224,9 @@
 // shortcuts are reintroduced
 // from the short edges the backbone discarded. Each edge is traced as an
 // orthogonal Corridor. Doors are derived from the ends of those routes. Only
-// then are optional plant metadata resolved and an immutable Layout
-// materialized. A failure in any phase discards the private work and returns
+// then is the private Layout materialized, its optional plant metadata
+// resolved, and its optional terrain placed before publication. A failure
+// in any phase discards the private work and returns
 // the zero Layout.
 // A non-zero RoomRoleRequest.MaxRoomEdges is a per-role ceiling on the number
 // of Corridors reaching an assigned Room; zero leaves the geometric opening
@@ -236,8 +240,8 @@
 // dropped every shape and size that cannot sit on the Grid, so that draw has
 // a legal placement. Among anchors where the mask lies inside the Grid, it
 // keeps the one whose squared distance to the geometric center is smallest,
-// breaking ties by Y then X. That center is the discrete point (Width-1)/2,
-// (Height-1)/2, compared in doubled integer coordinates so the choice does not
+// breaking ties by Y then X. That center is ((Width-1)/2, (Height-1)/2),
+// possibly half-integral, compared in doubled integer coordinates so the choice does not
 // depend on floating-point rounding. Later Rooms grow from active anchors. One
 // draw picks the active index once per outer iteration. Each of up to
 // MaxAttempts attempts then draws offsetX and offsetY in the annulus around
@@ -284,12 +288,13 @@
 //
 // The built-in Connector builds a spanning tree with Prim, starting at
 // RoomID 0. The candidate graph is complete. Edge weight is Euclidean distance
-// between bounding-box centers, even though routes are orthogonal. The center
-// is the centroid of the box's Cells, Origin + (dimension-1)/2, not the area
-// center Origin + dimension/2. A 1×1 Room weighs the same as the distance
-// between anchors only with that offset, which is zero when the dimension is
-// 1. The two formulas disagree as soon as a dimension is greater than 1, and
-// they produce different trees. Equal weights break ties by
+// between bounding-box centers, even though routes are orthogonal. Thematic
+// path distances use these same centers; placement MinDistance instead uses
+// Room.At anchors. The center is the centroid of the box's Cells,
+// Origin + (dimension-1)/2, which equals the anchor for a 1×1 Room. The area
+// center Origin + dimension/2 shifts every center by (0.5, 0.5), so it would
+// preserve pairwise distances and the resulting tree. The implemented
+// coordinate convention remains frozen. Equal weights break ties by
 // FromRoomID, then ToRoomID, then the destination Room's anchor in canonical
 // Cell order. Comparing squared distances preserves that order, because the
 // square root is strictly increasing on non-negative values, and it avoids
@@ -357,8 +362,9 @@
 // distance from Start; equal distances take the smaller RoomID. Each Treasure
 // request, in request order, places up to Count Rooms by farthest-point
 // sampling, so they sit far from Start, far from Boss, and far from each
-// other. The anchors begin as the Start and Boss Rooms already assigned —
-// request order is what decides which of those exist — and grow with every
+// other. Start, when requested, is reserved before processing other roles,
+// regardless of request order. The anchors begin with Start and any Boss
+// already assigned in request order, and grow with every
 // Treasure just placed. The next Treasure is the unassigned Room whose minimum
 // weighted path distance to any anchor is greatest. That distance is the same
 // weighted backbone path Boss uses. Equal distances take the smaller RoomID.
@@ -383,8 +389,8 @@
 // shrink because an earlier candidate did not fit, and that miss is not
 // ErrUnroutableEdge. The choice is ordered, not random. Zero skips the phase
 // entirely. A width draw happens only for a shortcut that is actually reserved.
-// The graph stays connected either way; extra edges are the only way it gains
-// a cycle. Fewer shortcuts than requested is a successful Layout when the
+// The graph stays connected either way. With prim_rooms_v1, extra edges are
+// the only way it gains a cycle; NewLoopConnector can supply a ring backbone. Fewer shortcuts than requested is a successful Layout when the
 // budget runs out. Shortcuts spend the same opening budget as the backbone,
 // including a MaxRoomEdges ceiling. A role ceiling of exactly 1 is legal and
 // selects a leaf when one is available; the global Config.MaxRoomEdges still
@@ -470,9 +476,10 @@
 // promise. CellSize is frozen only as the value copied into the Layout; it
 // does not move a Room.
 //
-// Six independent SplitMix64 streams are derived from the Seed, each as
+// Seven independent SplitMix64 streams are derived from the Seed, each as
 // Mix64 of the Seed xor a frozen salt: PlacementSeed, ConnectorSeed,
-// RoomPlantSeed, RoomGeometrySeed, CorridorPlantSeed, and CorridorWidthSeed.
+// RoomPlantSeed, RoomGeometrySeed, CorridorPlantSeed, CorridorWidthSeed, and
+// TerrainSeed. Terrain generation consumes only TerrainSeed.
 // Consuming one does not advance the others. A nil CorridorGeometry consumes
 // no draw from CorridorWidthSeed, so a Config without that field reproduces
 // the Layout of the one-Cell routes. Placement draws the active index once per outer
@@ -481,9 +488,13 @@
 // positive integer weights in canonical shape order, and then a dimension pair
 // from that shape's combinations sorted by width then height. Plant draws run only when a catalog is present. Prim,
 // role assignment, and shortcut selection consume nothing, so enabling roles
-// or shortcuts does not shift the placement sequence. uniformInt is
-// inclusive and rejects samples to avoid modulo bias. uniform01 lies in
-// [0, 1).
+// or shortcuts does not shift the placement sequence. A "draw" above is a
+// logical selection, not necessarily one physical call to next. uniformInt
+// includes both bounds: equal bounds consume no RNG, and rejection sampling
+// may consume multiple next values to avoid modulo bias. uniform01 lies in
+// [0, 1) and consumes exactly one next value. A geometry selection makes two
+// uniformInt calls (shape and dimension pair); annulus sampling may reject
+// multiple offset pairs within one placement attempt.
 //
 // The generation path does not call sine, cosine, or any other libm
 // trigonometry. Products and sums that affect a candidate, a distance, a
@@ -504,7 +515,10 @@
 //
 // # Errors
 //
-// Five sentinels name the SDK failure categories. They are wrapped with
+// Seven sentinels name generation failures: ErrInvalidConfig, ErrLimitExceeded,
+// ErrNoCompatiblePlant, ErrUnroutableEdge, ErrUnconnectablePlacement,
+// ErrUnsatisfiedRoleConstraint, and ErrInvalidPlugin. Companion utilities and
+// standalone terrain validation have additional sentinels. They are wrapped with
 // context, and callers distinguish them with errors.Is. None of them is
 // accompanied by a partial Layout.
 //
@@ -526,7 +540,9 @@
 // left. ErrUnroutableEdge reports an edge the Connector returned without a
 // reservation and for which both L-routes are blocked and the breadth-first
 // search finds no orthogonal path. A candidate the built-in skipped is not
-// this error.
+// this error. ErrUnsatisfiedRoleConstraint reports a valid role request whose
+// edge ceiling cannot be met by an eligible Room. ErrInvalidPlugin reports
+// Placer or Connector output that fails Generator validation.
 //
 // Cancellation and deadlines are not sentinels. GenerateContext returns
 // context.Canceled or context.DeadlineExceeded, still with the zero Layout.
@@ -625,19 +641,23 @@ package daedalus
 
 // Terrain patch algorithm (normative v1 contract)
 //
-// When TerrainConfig is non-nil, Daedalus visits eligible Room and Corridor
-// Cells in row-major order and makes a seed slot every MaxPatchCells Cells of
-// that base kind. A seed slot draws one weighted terrain label; a zero label
-// makes no patch. A non-zero label draws an integer target in the inclusive
-// MinPatchCells..MaxPatchCells range and grows by FIFO breadth-first search
-// until that target is reached. Expansion enqueues every eligible neighbour
-// in strict North, East, South, West order; ties are therefore deterministic.
-// It stops at the Grid boundary, a claimed Cell, a different base kind, or a
-// protected connectivity-spine Cell. A protected seed may receive passable
-// terrain but cannot expand. The seed schedule, target draw, queue order, and
-// clipping rule fully determine each patch from Config and the terrain stream.
-// All weights, totals, and decisions use integer arithmetic. A protected Cell
-// never draws an impassable candidate. There is one terrain byte per Cell and
+// When TerrainConfig is non-nil, Daedalus scans Room and Corridor Cells in
+// row-major order, with a separate ordinal for each configured base kind. A
+// protected connectivity-spine Cell resets that kind's ordinal to zero and
+// is skipped before any draw; it receives no terrain, even passable terrain.
+// Each unprotected Cell advances its kind's ordinal, with a seed slot at
+// ordinal 0 and every MaxPatchCells thereafter. Slots are selected before
+// any patch grows. A slot draws a weighted label; zero creates no patch. A
+// non-zero label draws a target in inclusive MinPatchCells..MaxPatchCells.
+// Seeds are processed in scan order; an already claimed seed is skipped.
+// Each remaining seed grows by FIFO breadth-first search. The target is
+// checked before expanding a queued Cell, not within its North, East, South,
+// West neighbour batch, so a patch can exceed its target by up to three Cells.
+// Expansion skips the Grid boundary, claimed Cells, other base kinds, and
+// protected Cells; exhaustion can also leave a patch smaller than its target.
+// The seed schedule, target draw, queue order, and clipping rule determine
+// each patch from Config and the terrain stream. All weights, totals, and
+// decisions use integer arithmetic. There is one terrain byte per Cell and
 // no stacking; callers wanting combined effects must declare one composite ID.
 // The wire representation mirrors this exactly: Config.terrain is field 16,
 // Grid.terrain is field 5, and palette plus dense indices are omitted when

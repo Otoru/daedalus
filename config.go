@@ -17,8 +17,9 @@ const (
 )
 
 // Config is the complete input to a dungeon-generation request. It exists only
-// as a Go value passed to the SDK or as a protobuf message in a gRPC request;
-// there is no configuration file, human-authored JSON/YAML, or preset.
+// as a Go value passed to the SDK or as a protobuf message in a gRPC request.
+// The root package loads no configuration file or preset; the debug HTTP
+// interface also accepts ProtoJSON representations of generation requests.
 //
 // Width, Height, and Seed are required and have no safe defaults. The other
 // fields have defaults documented per field; the zero Config is not valid. An
@@ -38,7 +39,9 @@ type Config struct {
 	// value is accepted, and zero does not mean random.
 	Seed Seed
 	// MinDistance is the minimum Euclidean distance, in Cells, between Room
-	// centers: finite and ≥ 1.0. Default 6.0.
+	// anchors (Room.At): finite and ≥ 1.0. Default 6.0. DensityRegions may
+	// replace it locally. Prim and thematic path distances instead use
+	// bounding-box centers, Origin + (dimension-1)/2.
 	MinDistance float64
 	// MaxAttempts is the maximum number of Poisson candidates per active point:
 	// range 1..1024. Default 30.

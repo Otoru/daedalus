@@ -1,6 +1,6 @@
 package daedalus
 
-// Layout is the complete, immutable, successfully generated result of a dungeon
+// Layout is the complete, caller-owned, successfully generated result of a dungeon
 // request. It describes geometry, not process input: it does not repeat Config
 // tuning, only the Seed and resulting Grid.
 //
@@ -72,9 +72,9 @@ type Room struct {
 	DoorIDs []DoorID
 }
 
-// Corridor is a topological edge between two Rooms and its ordered internal
-// orthogonal Cells. Corridors are logical edges over the physical Grid.Cells
-// space; Corridor Cells may be shared between Corridors.
+// Corridor is a topological edge between two Rooms, with an ordered
+// orthogonal Centerline and an occupied Cells band. Generated Corridors never
+// share Cells and keep a one-Cell Chebyshev gap between their bands.
 type Corridor struct {
 	// ID is the stable Corridor identifier, in creation order.
 	ID CorridorID
@@ -91,9 +91,11 @@ type Corridor struct {
 	// Rooms are adjacent. It is always present, whatever the routed width; at
 	// width 1 it holds the same Cells as the band.
 	Centerline []Cell
-	// Cells is the full occupied band in row-major order (Y then X). At width 1
-	// the band is the route itself, so Cells equals Centerline. Above that,
-	// every bend includes its W×W block, so the region stays 4-connected.
+	// Cells is the full occupied band. With nil CorridorGeometry it equals
+	// Centerline in walk order. With explicit geometry it is in row-major
+	// order (Y then X), even at width 1, where only the set of Cells is equal
+	// to Centerline. Every wider bend includes its W×W block, keeping the
+	// region 4-connected.
 	Cells []Cell
 	// PlantID is the asset metadata selected from the catalog, or the empty
 	// string when Config.PlantCatalog is absent. It never changes topology.

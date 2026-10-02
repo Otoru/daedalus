@@ -27,7 +27,7 @@ const (
 	// corridorPlantStreamSalt separates the Corridor Plant stream from the other streams.
 	corridorPlantStreamSalt uint64 = 0xD1B54A32D192ED03
 	// corridorWidthStreamSalt separates the Corridor width stream from the other streams.
-	// The six salts above are frozen; adding this seventh salt must not change them.
+	// The five salts above are frozen; adding this sixth salt must not change them.
 	corridorWidthStreamSalt uint64 = 0xC3D4E5F60718293A
 	// terrainStreamSalt is the seventh independent stream. Its value is frozen;
 	// terrain placement must never consume one of the six existing streams.
@@ -102,7 +102,9 @@ func (stream *splitMix64) uniform01() float64 {
 }
 
 // uniformInt returns an integer uniformly distributed between lower and upper,
-// inclusive. Rejecting the incomplete prefix eliminates modulo bias.
+// inclusive. Equal bounds return that value without advancing the stream.
+// Otherwise rejection sampling may call next more than once to eliminate
+// modulo bias; the full uint64 range calls next exactly once.
 func (stream *splitMix64) uniformInt(lower, upper uint64) uint64 {
 	if lower > upper {
 		panic("uniformInt lower bound exceeds upper bound")

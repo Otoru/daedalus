@@ -553,10 +553,9 @@ func connectionJoins(edge Connection, left, right RoomID) bool {
 
 // boundingBoxCenter returns the bounding-box center as the centroid of its
 // Cells, that is, Origin + (dimension-1)/2. The alternative would be the area
-// center, Origin + dimension/2, and the two produce different trees because the
-// offset depends on each Room's dimension. A 1×1 Room weighs the same as the
-// distance between anchors only with (dimension-1)/2, which makes the offset
-// zero when the dimension is 1.
+// center, Origin + dimension/2, which shifts every center by (0.5, 0.5)
+// without changing pairwise distances or the tree. The implemented convention
+// makes a 1×1 Room's center equal its anchor and is frozen.
 func boundingBoxCenter(room PlacedRoom) roomCenter {
 	width := float64(room.Width)
 	widthSpan := width - boundingBoxCellAdjustment

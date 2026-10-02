@@ -94,7 +94,7 @@ const (
 	CellKindEmpty CellKind = iota
 	// CellKindRoom marks a Cell occupied by exactly one Room.
 	CellKindRoom
-	// CellKindCorridor marks an internal Cell of one or more Corridors.
+	// CellKindCorridor marks an internal Cell of exactly one generated Corridor.
 	CellKindCorridor
 )
 
@@ -107,9 +107,9 @@ type CellState struct {
 	// RoomID references the Room occupying the Cell. It is non-nil if and only
 	// if Kind == CellKindRoom; otherwise it is nil and must not be read.
 	RoomID *RoomID
-	// CorridorIDs lists, in ascending order, all Corridors containing this Cell.
-	// It is non-empty if and only if Kind == CellKindCorridor; a Corridor Cell
-	// may be shared by more than one Corridor.
+	// CorridorIDs contains exactly one ID when Kind == CellKindCorridor in
+	// a generated Layout, and is empty otherwise. Generated Corridors never
+	// share a Cell.
 	CorridorIDs []CorridorID
 }
 
@@ -134,11 +134,11 @@ const (
 	// RoomRoleStart marks the starting Room. It always receives RoomID 0, the
 	// first Room accepted by placement.
 	RoomRoleStart RoomRole = iota
-	// RoomRoleBoss marks the boss Room: the unassigned Room farthest from Start
+	// RoomRoleBoss marks the boss Room: the eligible unassigned Room farthest from Start
 	// by weighted path distance in the tree. It requires a RoomRoleStart request
 	// in the same Config.
 	RoomRoleBoss
-	// RoomRoleTreasure marks treasure Rooms. Each one is the unassigned Room
+	// RoomRoleTreasure marks treasure Rooms. Each one is the eligible unassigned Room
 	// whose minimum weighted path distance to the anchors is greatest. The
 	// anchors are the Start and Boss Rooms already assigned, plus every
 	// Treasure already placed. Equal distances take the smaller RoomID. With
