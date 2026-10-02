@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+
+	"github.com/Otoru/daedalus/core"
 )
 
 const (
@@ -97,7 +99,7 @@ func routeCorridorsWithWidths(
 	rooms []PlacedRoom,
 	connections []Connection,
 	corridorWidths []CorridorWidthWeight,
-	widthStream *splitMix64,
+	widthStream *core.SplitMix64,
 ) ([]Corridor, []Door, error) {
 	if ctx == nil {
 		ctx = context.Background()

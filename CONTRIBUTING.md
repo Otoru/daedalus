@@ -72,9 +72,19 @@ Two traps the code guards against, worth knowing before touching the hot path:
 
 ## Import purity
 
-The root package imports **only** the standard library, and `TestRootPackageImportsOnlyStandardLibrary` parses its AST to enforce it. gRPC, protobuf, fx, zap and the generated bindings belong in `cmd/daedalus` and `internal/`. A dependency added to the root package fails the suite, by design.
+`core` imports **only** the standard library. The root package imports **only** the standard library and `core`. `TestRootPackageImportsOnlyStandardLibrary` parses the AST of every policed package to enforce it. gRPC, protobuf, fx, zap and the generated bindings belong in `cmd/daedalus` and `internal/`. A dependency added to `core` or to the root package fails the suite, by design.
 
-`utils/gating` is likewise limited to the root SDK and the standard library. Its
+`core` is the bottom of the dependency order: it holds what is agnostic to
+perspective — the SplitMix64 streams and their seven frozen salts, `Seed`,
+`Cell` and `Direction` — so a sibling generator can share the frozen
+primitives without importing the dungeon vocabulary. `Room`, `Corridor`,
+`Door`, `Grid`, `CellKind`, `CellState` and `RoomRole` stay in the root.
+
+The scan is not recursive and skips `_test.go` files, so a new policed
+directory is only covered once it has its own entry in `purePackages`. Adding
+the directory without the entry makes the test pass while checking nothing.
+
+`utils/gating` is likewise limited to the root SDK, `core` and the standard library. Its
 `BenchmarkBuildGatingPlan` loads are small (32 Rooms), typical (128 Rooms), and
 maximum v1 (256 Rooms); benchmark output is evidence to record with the CPU and
 Go version before treating the proposed budgets as a release gate.

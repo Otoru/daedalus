@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"math"
+
+	"github.com/Otoru/daedalus/core"
 )
 
 var errPlacementRequestNotNormalized = errors.New("placement request is not normalized")
@@ -54,7 +56,7 @@ func (poissonDiskRoomsPlacer) Place(req PlacementRequest) ([]RoomPlacement, erro
 		}
 		// One placement-stream draw per outer iteration. Attempts below must
 		// not draw another active index.
-		activeIndex := int(run.streams.placement.uniformInt(0, uint64(len(run.active)-1)))
+		activeIndex := int(run.streams.placement.UniformInt(0, uint64(len(run.active)-1)))
 		if err := run.attemptFromActive(activeIndex); err != nil {
 			return nil, err
 		}
@@ -261,7 +263,7 @@ func newRoomGeometrySampler(geometry RoomGeometry, combinations []roomGeometryCo
 	return sampler
 }
 
-func (sampler roomGeometrySampler) sample(stream *splitMix64) (roomGeometryCombination, bool) {
+func (sampler roomGeometrySampler) sample(stream *core.SplitMix64) (roomGeometryCombination, bool) {
 	var weightSum uint64
 	for _, shapeWeight := range sampler.geometry.Shapes {
 		weightSum += uint64(shapeWeight.Weight)
@@ -270,7 +272,7 @@ func (sampler roomGeometrySampler) sample(stream *splitMix64) (roomGeometryCombi
 		return roomGeometryCombination{}, false
 	}
 
-	draw := stream.uniformInt(1, weightSum)
+	draw := stream.UniformInt(1, weightSum)
 	var cumulative uint64
 	selectedShape := RoomShapeRectangle
 	foundShape := false
@@ -292,7 +294,7 @@ func (sampler roomGeometrySampler) sample(stream *splitMix64) (roomGeometryCombi
 	if count == 0 {
 		return roomGeometryCombination{}, false
 	}
-	selected := stream.uniformInt(0, uint64(count-1))
+	selected := stream.UniformInt(0, uint64(count-1))
 	return sampler.combinations[first+int(selected)], true
 }
 
@@ -306,16 +308,16 @@ func (sampler roomGeometrySampler) sample(stream *splitMix64) (roomGeometryCombi
 // resampled here and does not consume one of MaxAttempts. The multiply and the
 // subtract stay in separate statements: Go may contract a*b+c into a fused
 // multiply-add on arm64 and must not on amd64.
-func sampleUniformAnnulusByRejection(stream *splitMix64, radius float64) (float64, float64) {
+func sampleUniformAnnulusByRejection(stream *core.SplitMix64, radius float64) (float64, float64) {
 	squareWidth := float64(radius) * annulusSquareWidthFactor
 	squareHalf := float64(radius) * annulusSquareHalfFactor
 	radiusSquared := float64(radius) * float64(radius)
 	outerRadius := float64(radius) * annulusSquareHalfFactor
 	outerSquared := float64(outerRadius) * float64(outerRadius)
 	for {
-		offsetX := stream.uniform01() * squareWidth
+		offsetX := stream.Uniform01() * squareWidth
 		offsetX = offsetX - squareHalf
-		offsetY := stream.uniform01() * squareWidth
+		offsetY := stream.Uniform01() * squareWidth
 		offsetY = offsetY - squareHalf
 		offsetXSquared := float64(offsetX) * float64(offsetX)
 		offsetYSquared := float64(offsetY) * float64(offsetY)

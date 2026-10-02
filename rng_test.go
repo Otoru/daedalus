@@ -5,43 +5,35 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Otoru/daedalus/core"
 )
 
-func TestMix64PreservesFrozenVectors(t *testing.T) {
-	tests := []struct {
-		name string
-		seed uint64
-		want uint64
-	}{
-		{name: "zero", seed: 0x0000000000000000, want: 0xe220a8397b1dcdaf},
-		{name: "one", seed: 0x0000000000000001, want: 0x910a2dec89025cc1},
-		{name: "large value", seed: 0xfedcba9876543210, want: 0x7ae893b5e32fee86},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, mix64(tc.seed))
-		})
-	}
+// firstDraw reports the first value a stream would produce. core keeps the raw
+// state unexported, so the way to observe a stream is to make it speak: the
+// argument is a copy, so the caller's stream is left untouched. mix64 is a
+// bijection, so two streams agree on this value exactly when their states agree.
+func firstDraw(stream core.SplitMix64) uint64 {
+	return stream.Next()
 }
 
 func TestDerivedStreamsAreDistinct(t *testing.T) {
 	streams := newRNGStreams(Seed(0x0123456789abcdef))
 	states := []uint64{
-		streams.placement.state,
-		streams.connector.state,
-		streams.roomPlant.state,
-		streams.roomGeometry.state,
-		streams.corridorPlant.state,
-		streams.corridorWidth.state,
+		firstDraw(streams.placement),
+		firstDraw(streams.connector),
+		firstDraw(streams.roomPlant),
+		firstDraw(streams.roomGeometry),
+		firstDraw(streams.corridorPlant),
+		firstDraw(streams.corridorWidth),
 	}
 	want := []uint64{
-		0xc28d5fdbc9ad2973,
-		0x72719cb576c22598,
-		0x1f733cd593b32ebe,
-		0x094e8a43ce39fbe0,
-		0x7a76321e37168f90,
-		0xc5b661f1f596eb97,
+		mix64Reference(0xc28d5fdbc9ad2973),
+		mix64Reference(0x72719cb576c22598),
+		mix64Reference(0x1f733cd593b32ebe),
+		mix64Reference(0x094e8a43ce39fbe0),
+		mix64Reference(0x7a76321e37168f90),
+		mix64Reference(0xc5b661f1f596eb97),
 	}
 	assert.Equal(t, want, states, "frozen derivation of the six streams")
 
@@ -52,101 +44,39 @@ func TestDerivedStreamsAreDistinct(t *testing.T) {
 	}
 }
 
+// mix64Reference repeats the SplitMix64 finalization with literal constants, so
+// the frozen derived states above stay asserted against an independent copy of
+// the arithmetic rather than against core's own mix64.
+func mix64Reference(value uint64) uint64 {
+	value += 0x9E3779B97F4A7C15
+	value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9
+	value = (value ^ (value >> 27)) * 0x94D049BB133111EB
+	return value ^ (value >> 31)
+}
+
 func TestSameSeedReproducesSequence(t *testing.T) {
 	first := newRNGStreams(Seed(42))
 	second := newRNGStreams(Seed(42))
 
 	for draw := 0; draw < 128; draw++ {
-		assert.Equal(t, first.placement.next(), second.placement.next(), "draw %d", draw)
+		assert.Equal(t, first.placement.Next(), second.placement.Next(), "draw %d", draw)
 	}
-}
-
-func TestUniform01RespectsHalfOpenInterval(t *testing.T) {
-	const stateWhoseNextValueIsZero = uint64(0x61c8864680b583eb)
-	zeroStream := splitMix64{state: stateWhoseNextValueIsZero}
-	assert.Equal(t, 0.0, zeroStream.uniform01())
-
-	stream := newSplitMix64(0)
-	for draw := 0; draw < 100_000; draw++ {
-		got := stream.uniform01()
-		assert.GreaterOrEqual(t, got, 0.0, "draw %d", draw)
-		assert.Less(t, got, 1.0, "draw %d", draw)
-	}
-}
-
-func TestUniformIntRespectsInclusiveBounds(t *testing.T) {
-	stream := newSplitMix64(1234)
-	seenLower := false
-	seenUpper := false
-	for draw := 0; draw < 10_000; draw++ {
-		got := stream.uniformInt(3, 7)
-		assert.GreaterOrEqual(t, got, uint64(3), "draw %d", draw)
-		assert.LessOrEqual(t, got, uint64(7), "draw %d", draw)
-		seenLower = seenLower || got == 3
-		seenUpper = seenUpper || got == 7
-	}
-	assert.True(t, seenLower, "lower bound was not observed")
-	assert.True(t, seenUpper, "upper bound was not observed")
-}
-
-func TestUniformIntWithEqualBoundsConsumesNoDraw(t *testing.T) {
-	stream := newSplitMix64(5678)
-	stateBefore := stream.state
-
-	got := stream.uniformInt(9, 9)
-
-	assert.Equal(t, uint64(9), got)
-	assert.Equal(t, stateBefore, stream.state)
-}
-
-func TestUniformIntDoesNotFavorFirstValues(t *testing.T) {
-	const (
-		sampleCount = 200_000
-		bucketCount = 10
-		tolerance   = 0.03
-	)
-	stream := newSplitMix64(0xdecafbad12345678)
-	counts := make([]int, bucketCount)
-	for range sampleCount {
-		counts[stream.uniformInt(0, bucketCount-1)]++
-	}
-
-	expected := float64(sampleCount) / float64(bucketCount)
-	for value, count := range counts {
-		assert.InDelta(t, expected, float64(count), expected*tolerance, "value %d", value)
-	}
-}
-
-func TestUniformIntRejectsIncompletePrefix(t *testing.T) {
-	const (
-		initialState      = uint64(3)
-		upper             = uint64(1 << 63)
-		wantAfterRejected = uint64(0x33466f8a7b81a988)
-		wantFinalState    = uint64(0x3c6ef372fe94f82d)
-	)
-	stream := newSplitMix64(initialState)
-
-	got := stream.uniformInt(0, upper)
-
-	assert.Equal(t, wantAfterRejected, got)
-	assert.Equal(t, wantFinalState, stream.state,
-		"a value in the incomplete prefix must be rejected before the result")
 }
 
 func TestConsumingOneStreamDoesNotChangeOthers(t *testing.T) {
 	consumed := newRNGStreams(Seed(987654321))
 	baseline := newRNGStreams(Seed(987654321))
-	connectorState := consumed.connector.state
+	connectorStream := consumed.connector
 
 	for range 1_000 {
-		consumed.placement.next()
+		consumed.placement.Next()
 	}
 
-	require.Equal(t, connectorState, consumed.connector.state,
+	require.Equal(t, connectorStream, consumed.connector,
 		"the Connector stream must be receivable without consuming a draw")
-	assert.Equal(t, baseline.connector.next(), consumed.connector.next())
-	assert.Equal(t, baseline.roomPlant.next(), consumed.roomPlant.next())
-	assert.Equal(t, baseline.roomGeometry.next(), consumed.roomGeometry.next())
-	assert.Equal(t, baseline.corridorPlant.next(), consumed.corridorPlant.next())
-	assert.Equal(t, baseline.corridorWidth.next(), consumed.corridorWidth.next())
+	assert.Equal(t, baseline.connector.Next(), consumed.connector.Next())
+	assert.Equal(t, baseline.roomPlant.Next(), consumed.roomPlant.Next())
+	assert.Equal(t, baseline.roomGeometry.Next(), consumed.roomGeometry.Next())
+	assert.Equal(t, baseline.corridorPlant.Next(), consumed.corridorPlant.Next())
+	assert.Equal(t, baseline.corridorWidth.Next(), consumed.corridorWidth.Next())
 }

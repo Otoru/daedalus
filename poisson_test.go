@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Otoru/daedalus/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -227,15 +228,18 @@ func TestAccelerationGridReusesNeighbourBuffer(t *testing.T) {
 // moving a draw.
 func TestAnnulusSamplingRepeatsRejectionInternally(t *testing.T) {
 	const radius = 4.0
-	stream := newSplitMix64(123)
-	reference := newSplitMix64(123)
+	// The placement stream is the one the sampler is fed in production
+	// (poisson.go), and Seed(123) on it rejects exactly one pair before
+	// accepting, which is the case this test exists to pin.
+	stream := core.NewSplitMix64(Seed(123), placementStreamSalt)
+	reference := core.NewSplitMix64(Seed(123), placementStreamSalt)
 
 	offsetX, offsetY := sampleUniformAnnulusByRejection(&stream, radius)
 	wantX, wantY := sampleUniformAnnulusReference(&reference, radius)
 
 	assert.Equal(t, wantX, offsetX, "the frozen transform is uniform01*4r-2r")
 	assert.Equal(t, wantY, offsetY, "the frozen transform is uniform01*4r-2r")
-	assert.Equal(t, reference.state, stream.state, "rejected pairs are repeated inside the sampler")
+	assert.Equal(t, reference, stream, "rejected pairs are repeated inside the sampler")
 	xSquared := offsetX * offsetX
 	ySquared := offsetY * offsetY
 	distanceSquared := xSquared + ySquared
@@ -246,11 +250,11 @@ func TestAnnulusSamplingRepeatsRejectionInternally(t *testing.T) {
 	assert.Less(t, distanceSquared, outerSquared, "the outer bound is exclusive")
 }
 
-func sampleUniformAnnulusReference(stream *splitMix64, radius float64) (float64, float64) {
+func sampleUniformAnnulusReference(stream *core.SplitMix64, radius float64) (float64, float64) {
 	for {
-		offsetX := stream.uniform01() * (4 * radius)
+		offsetX := stream.Uniform01() * (4 * radius)
 		offsetX -= 2 * radius
-		offsetY := stream.uniform01() * (4 * radius)
+		offsetY := stream.Uniform01() * (4 * radius)
 		offsetY -= 2 * radius
 		distanceSquared := offsetX*offsetX + offsetY*offsetY
 		if distanceSquared >= radius*radius && distanceSquared < 4*radius*radius {

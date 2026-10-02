@@ -16,7 +16,11 @@
 // this package may carry the same request as a protobuf message. Each phase
 // builds local values and publishes a Layout only after every phase succeeds,
 // so there is no partial public result for a caller to patch. The root package
-// imports only the Go standard library.
+// imports the Go standard library and the daedalus/core package, and nothing
+// else. core holds the perspective-agnostic primitives — the SplitMix64
+// streams and their frozen salts, Seed, Cell, and Direction — and itself
+// imports only the standard library, so a sibling generator can share them
+// without taking on the dungeon vocabulary.
 //
 // The names Layout, Room, Corridor, Door, Grid, Cell, Config, Seed, Placer,
 // and Connector are normative public vocabulary. Renaming any of them is a

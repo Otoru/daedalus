@@ -12,25 +12,46 @@ import (
 	"testing"
 )
 
+const (
+	// rootPackage is the import path of the root SDK package.
+	rootPackage = "github.com/Otoru/daedalus"
+	// corePackage is the import path of the perspective-agnostic core.
+	corePackage = "github.com/Otoru/daedalus/core"
+)
+
 // purePackages lists every package whose imports are policed, with the
-// non-GOROOT import paths each one is permitted. The root permits none.
-// utils/pathfinding and utils/vision each permit the root and nothing else:
-// grpc, protobuf, fx, and zap stay outside them.
+// non-GOROOT import paths each one is permitted. core permits none: it is the
+// bottom of the dependency order and may import only the standard library. The
+// root permits core and nothing else, so the generation core stays
+// independently importable and a sibling generator can share the frozen
+// primitives without depending on the dungeon vocabulary. platform permits
+// core alone: the policy admits the root there as well, but the package does
+// not need it, and the narrower allowlist is the one that actually bites — a
+// later front that genuinely needs the dungeon vocabulary widens this entry
+// deliberately instead of inheriting the permission. utils/pathfinding,
+// utils/vision and utils/gating each permit the root and core: grpc, protobuf,
+// fx, and zap stay outside them.
+//
+// A package absent from this list is not checked at all, and the scan is not
+// recursive, so every new policed directory needs an explicit entry here.
 var purePackages = []struct {
 	directory string   // relative to the repository root
 	allowed   []string // import paths permitted outside GOROOT
 }{
-	{directory: ".", allowed: nil},
-	{directory: "utils/pathfinding", allowed: []string{"github.com/Otoru/daedalus"}},
-	{directory: "utils/vision", allowed: []string{"github.com/Otoru/daedalus"}},
-	{directory: "utils/gating", allowed: []string{"github.com/Otoru/daedalus"}},
+	{directory: "core", allowed: nil},
+	{directory: ".", allowed: []string{corePackage}},
+	{directory: "platform", allowed: []string{corePackage}},
+	{directory: "utils/pathfinding", allowed: []string{rootPackage, corePackage}},
+	{directory: "utils/vision", allowed: []string{rootPackage, corePackage}},
+	{directory: "utils/gating", allowed: []string{rootPackage, corePackage}},
 }
 
 // TestRootPackageImportsOnlyStandardLibrary keeps the generation core
 // independently importable. Each entry in purePackages is checked as a
-// subtest: the root permits only the standard library, and utils/pathfinding
-// and utils/vision may also import the root module. grpc, protobuf, fx, zap,
-// and generated bindings stay outside all three. Analysis uses the AST
+// subtest: core permits only the standard library, the root and platform
+// permit the standard library and core, and utils/pathfinding, utils/vision
+// and utils/gating may also import the root. grpc, protobuf, fx, zap, and
+// generated bindings stay outside all of them. Analysis uses the AST
 // (go/parser). An import is accepted when it is on that package's allowlist
 // or when go/build resolves it inside GOROOT.
 func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
@@ -53,27 +74,46 @@ func TestRootPackageImportsOnlyStandardLibrary(t *testing.T) {
 // can stay green while the assertion is a tautology, because every import
 // that exists today is legitimate. These cases are the ones the tree does
 // not contain: grpc is refused by every policed package, the root module is
-// refused at the root and accepted by utils/pathfinding and utils/vision,
-// and a standard-library path is accepted by all three.
+// refused at core and at the root and accepted by the utils packages, core is
+// accepted by the root and by the utils packages and refused by core itself,
+// and a standard-library path is accepted everywhere.
 func TestAllowedImport(t *testing.T) {
+	coreList := allowlist(t, "core")
 	root := allowlist(t, ".")
+	platform := allowlist(t, "platform")
 	pathfinding := allowlist(t, "utils/pathfinding")
 	vision := allowlist(t, "utils/vision")
+	gating := allowlist(t, "utils/gating")
 	cases := []struct {
 		name       string
 		importPath string
 		allowed    []string
 		want       bool
 	}{
+		{name: "grpc rejected by core", importPath: "google.golang.org/grpc", allowed: coreList, want: false},
 		{name: "grpc rejected by root", importPath: "google.golang.org/grpc", allowed: root, want: false},
+		{name: "grpc rejected by platform", importPath: "google.golang.org/grpc", allowed: platform, want: false},
 		{name: "grpc rejected by pathfinding", importPath: "google.golang.org/grpc", allowed: pathfinding, want: false},
 		{name: "grpc rejected by vision", importPath: "google.golang.org/grpc", allowed: vision, want: false},
-		{name: "root module rejected by root", importPath: "github.com/Otoru/daedalus", allowed: root, want: false},
-		{name: "root module accepted by pathfinding", importPath: "github.com/Otoru/daedalus", allowed: pathfinding, want: true},
-		{name: "root module accepted by vision", importPath: "github.com/Otoru/daedalus", allowed: vision, want: true},
+		{name: "grpc rejected by gating", importPath: "google.golang.org/grpc", allowed: gating, want: false},
+		{name: "root module rejected by core", importPath: rootPackage, allowed: coreList, want: false},
+		{name: "root module rejected by root", importPath: rootPackage, allowed: root, want: false},
+		{name: "root module rejected by platform", importPath: rootPackage, allowed: platform, want: false},
+		{name: "root module accepted by pathfinding", importPath: rootPackage, allowed: pathfinding, want: true},
+		{name: "root module accepted by vision", importPath: rootPackage, allowed: vision, want: true},
+		{name: "root module accepted by gating", importPath: rootPackage, allowed: gating, want: true},
+		{name: "core rejected by core", importPath: corePackage, allowed: coreList, want: false},
+		{name: "core accepted by root", importPath: corePackage, allowed: root, want: true},
+		{name: "core accepted by platform", importPath: corePackage, allowed: platform, want: true},
+		{name: "core accepted by pathfinding", importPath: corePackage, allowed: pathfinding, want: true},
+		{name: "core accepted by vision", importPath: corePackage, allowed: vision, want: true},
+		{name: "core accepted by gating", importPath: corePackage, allowed: gating, want: true},
+		{name: "stdlib accepted by core", importPath: "fmt", allowed: coreList, want: true},
 		{name: "stdlib accepted by root", importPath: "fmt", allowed: root, want: true},
+		{name: "stdlib accepted by platform", importPath: "fmt", allowed: platform, want: true},
 		{name: "stdlib accepted by pathfinding", importPath: "fmt", allowed: pathfinding, want: true},
 		{name: "stdlib accepted by vision", importPath: "fmt", allowed: vision, want: true},
+		{name: "stdlib accepted by gating", importPath: "fmt", allowed: gating, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

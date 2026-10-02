@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/Otoru/daedalus/core"
 )
 
 var (
@@ -481,12 +483,12 @@ func roomPlantCompatible(
 	return true
 }
 
-func selectWeightedRoomPlant(candidates []RoomPlant, stream *splitMix64) RoomPlant {
+func selectWeightedRoomPlant(candidates []RoomPlant, stream *core.SplitMix64) RoomPlant {
 	var total uint64
 	for _, candidate := range candidates {
 		total += uint64(candidate.Weight)
 	}
-	draw := stream.uniformInt(weightedSelectionFirstTicket, total)
+	draw := stream.UniformInt(weightedSelectionFirstTicket, total)
 	var cumulative uint64
 	for _, candidate := range candidates {
 		cumulative += uint64(candidate.Weight)
@@ -497,12 +499,12 @@ func selectWeightedRoomPlant(candidates []RoomPlant, stream *splitMix64) RoomPla
 	return candidates[len(candidates)-1]
 }
 
-func selectWeightedCorridorPlant(candidates []CorridorPlant, stream *splitMix64) CorridorPlant {
+func selectWeightedCorridorPlant(candidates []CorridorPlant, stream *core.SplitMix64) CorridorPlant {
 	var total uint64
 	for _, candidate := range candidates {
 		total += uint64(candidate.Weight)
 	}
-	draw := stream.uniformInt(weightedSelectionFirstTicket, total)
+	draw := stream.UniformInt(weightedSelectionFirstTicket, total)
 	var cumulative uint64
 	for _, candidate := range candidates {
 		cumulative += uint64(candidate.Weight)

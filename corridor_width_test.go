@@ -105,7 +105,7 @@ func TestDegradationWalksDeclaredWidthsOnly(t *testing.T) {
 	t.Run("the widest declared width that fits wins and draws once", func(t *testing.T) {
 		widths := []CorridorWidthWeight{{Width: 2, Weight: 1}, {Width: 4, Weight: 2}}
 		streams := newRNGStreams(Seed(11))
-		before := streams.corridorWidth.state
+		before := streams.corridorWidth
 		corridors, doors, err := routeCorridorsWithWidths(
 			context.Background(), 8, 6, CorridorOrderXThenY, rooms,
 			[]Connection{{FromRoomID: 0, ToRoomID: 1}},
@@ -115,10 +115,10 @@ func TestDegradationWalksDeclaredWidthsOnly(t *testing.T) {
 		require.Len(t, corridors, 1)
 		assert.Equal(t, uint32(2), doors[corridors[0].FromDoorID].Span)
 		assert.Equal(t, uint32(2), doors[corridors[0].ToDoorID].Span)
-		assert.NotEqual(t, before, streams.corridorWidth.state)
+		assert.NotEqual(t, before, streams.corridorWidth)
 		once := newRNGStreams(Seed(11))
 		_ = drawCorridorWidth(widths, &once.corridorWidth)
-		assert.Equal(t, once.corridorWidth.state, streams.corridorWidth.state,
+		assert.Equal(t, once.corridorWidth, streams.corridorWidth,
 			"walking the declared list must not draw again")
 	})
 }
@@ -129,9 +129,9 @@ func TestNilCorridorGeometryConsumesNoWidthDraw(t *testing.T) {
 		placedRectangle(t, 1, Cell{X: 5, Y: 2}, 1, 1),
 	}
 	streams := newRNGStreams(Seed(99))
-	widthBefore := streams.corridorWidth.state
-	plantBefore := streams.corridorPlant.state
-	placementBefore := streams.placement.state
+	widthBefore := streams.corridorWidth
+	plantBefore := streams.corridorPlant
+	placementBefore := streams.placement
 
 	corridors, doors, err := routeCorridorsWithWidths(
 		context.Background(), 7, 5, CorridorOrderXThenY, rooms,
@@ -143,9 +143,9 @@ func TestNilCorridorGeometryConsumesNoWidthDraw(t *testing.T) {
 	require.Len(t, corridors, 1)
 	assert.Equal(t, corridors[0].Cells, corridors[0].Centerline)
 	assert.Equal(t, uint32(1), doors[0].Span)
-	assert.Equal(t, widthBefore, streams.corridorWidth.state)
-	assert.Equal(t, plantBefore, streams.corridorPlant.state)
-	assert.Equal(t, placementBefore, streams.placement.state)
+	assert.Equal(t, widthBefore, streams.corridorWidth)
+	assert.Equal(t, plantBefore, streams.corridorPlant)
+	assert.Equal(t, placementBefore, streams.placement)
 
 	legacy, _, legacyErr := routeCorridors(
 		context.Background(), 7, 5, CorridorOrderXThenY, rooms,
