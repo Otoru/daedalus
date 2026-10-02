@@ -66,6 +66,127 @@ message PlatformConfig {
   repeated PlatformBeatDefinition beat_definitions = 5;
   PlatformBeatDistribution spine = 6;
   optional PlatformBeatDistribution branches = 7;
+  // progression declares which abilities exist and the order they are granted
+  // in. Without it the oracle certifies only the base moveset, so a Shaft beat
+  // produces no wall jump and a climbable cell is stamped and never used.
+  optional PlatformProgression progression = 8;
+  // profile is the complete movement declaration the generated graph is
+  // relative to. Its absence preserves the established M1 DefaultProfile.
+  optional MovementProfile profile = 9;
+}
+
+// MovementProfile declares the character in cells and seconds. Optional
+// sub-profiles are absent when the corresponding mechanic is unavailable.
+message MovementProfile {
+  string version = 1;
+  double cell_size = 2;
+  double control_rate = 3;
+  double gravity_up = 4;
+  double gravity_down = 5;
+  double jump_velocity = 6;
+  double max_run_speed = 7;
+  double ground_accel = 8;
+  double air_accel = 9;
+  double braking = 10;
+  double body_half_width = 11;
+  double body_height = 12;
+  double margin = 13;
+  double max_fall_speed = 14;
+  double max_safe_fall_height = 15;
+  optional DoubleJumpProfile double_jump = 16;
+  optional DashProfile dash = 17;
+  optional WallJumpProfile wall_jump = 18;
+  optional CoyoteProfile coyote = 19;
+  optional VariableJumpProfile variable_jump = 20;
+  optional ClimbProfile climb = 21;
+
+  enum DoubleJumpMode {
+    DOUBLE_JUMP_MODE_UNSPECIFIED = 0;
+    DOUBLE_JUMP_MODE_RESET = 1;
+    DOUBLE_JUMP_MODE_IMPULSE = 2;
+  }
+
+  message DoubleJumpProfile {
+    DoubleJumpMode mode = 1;
+    double velocity = 2;
+    uint32 charges = 3;
+    uint32 refill_on = 4;
+    double min_delay = 5;
+  }
+
+  enum DashExitMode {
+    DASH_EXIT_MODE_UNSPECIFIED = 0;
+    DASH_EXIT_MODE_KEEP = 1;
+    DASH_EXIT_MODE_ZERO = 2;
+    DASH_EXIT_MODE_CLAMP_TO_RUN = 3;
+  }
+
+  message DashProfile {
+    double speed = 1;
+    double shadow_speed = 2;
+    bool shadow_passes_hazard = 3;
+    double duration = 4;
+    bool suspends_gravity = 5;
+    DashExitMode exit = 6;
+    uint32 charges = 7;
+    double cooldown = 8;
+    uint32 refill_on = 9;
+    uint32 directions = 10;
+    uint32 cancel = 11;
+  }
+
+  message WallJumpProfile {
+    double impulse_x = 1;
+    double impulse_y = 2;
+    bool same_wall_reuse = 3;
+    uint32 max_consecutive = 4;
+    double stamina = 5;
+    double slide_speed = 6;
+    double input_lock = 7;
+    double min_wall_height = 8;
+  }
+
+  message CoyoteProfile {
+    double window = 1;
+    uint32 applies_to = 2;
+  }
+
+  enum VariableJumpMode {
+    VARIABLE_JUMP_MODE_UNSPECIFIED = 0;
+    VARIABLE_JUMP_MODE_NONE = 1;
+    VARIABLE_JUMP_MODE_CUT_VELOCITY = 2;
+    VARIABLE_JUMP_MODE_SWAP_GRAVITY = 3;
+  }
+
+  message VariableJumpProfile {
+    VariableJumpMode mode = 1;
+    double cut_factor = 2;
+    double release_gravity = 3;
+    double min_hold_time = 4;
+  }
+
+  message ClimbProfile {
+    double speed = 1;
+    double capture_half_width = 2;
+    bool can_jump_off = 3;
+    double exit_impulse_x = 4;
+  }
+}
+
+// PlatformProgressionStep grants abilities at one point of the progression.
+message PlatformProgressionStep {
+  string name = 1;
+  // grants is an AbilitySet bitset: dash=1, double jump=2, wall jump=4,
+  // climb=8, shadow dash=16.
+  uint32 grants = 2;
+}
+
+// PlatformProgression is the plan the map is built around. It only grants.
+message PlatformProgression {
+  // base is what the character starts with; zero is the base moveset, which is
+  // walking, the ground jump, falling and drop-through.
+  uint32 base = 1;
+  repeated PlatformProgressionStep steps = 2;
 }
 
 message PlatformBeatDefinition {
@@ -145,10 +266,45 @@ message PlatformGrid {
   repeated PlatformCellKind cells = 3;
 }
 
+// PlatformAnchor is a cell inside one room: the coordinates are that room's,
+// so a reader adds the room's origin to place it on the plane.
+message PlatformAnchor {
+  uint32 room = 1;
+  int32 x = 2;
+  int32 y = 3;
+}
+
+// PlatformTransition is one opening on a room's edge. Offset is a height for
+// left and right and a horizontal position for top and bottom; extent is how
+// many cells the opening spans. A sense is nil when that direction does not
+// exist, which is the rare irreversible one-way; two senses with different
+// requires is the common conditional shortcut.
+message PlatformTransition {
+  uint32 id = 1;
+  // side: 1 left, 2 right, 3 top, 4 bottom, 5 door.
+  uint32 side = 2;
+  uint32 index = 3;
+  uint32 offset = 4;
+  uint32 extent = 5;
+  // to is the transition this one pairs with, on the other room.
+  uint32 to = 6;
+  // outbound_requires and inbound_requires are AbilitySet bitsets; the
+  // *_exists flags separate "no ability needed" from "this sense does not
+  // exist at all".
+  bool outbound_exists = 7;
+  uint32 outbound_requires = 8;
+  bool inbound_exists = 9;
+  uint32 inbound_requires = 10;
+}
+
 message PlatformRoom {
   uint32 id = 1;
   Cell origin = 2;
   PlatformGrid grid = 3;
+  // transitions are this room's openings. Without them a reader sees a plane
+  // of rooms with nothing joining them, and a generated map looks like a pile
+  // of disconnected boxes.
+  repeated PlatformTransition transitions = 4;
 }
 
 // PlatformJumpGraph is directed. Edges are navigation facts, not cardinal
@@ -171,6 +327,13 @@ message PlatformMotionNode {
   double velocity_lo = 7;
   double velocity_hi = 8;
   uint32 mode = 9;
+  // room is which room of the plane this node sits in. The merged jump graph
+  // is a disjoint union of per-room graphs and its coordinates stay in each
+  // room's own frame, so footing_lo, footing_hi and height mean nothing until
+  // the reader adds that room's origin. Without this field a consumer has no
+  // way to know which origin to add, and every room's graph lands on top of
+  // the first one.
+  uint32 room = 10;
 }
 
 message PlatformMotionEdge {
@@ -194,6 +357,12 @@ message PlatformLayout {
   repeated PlatformRoom rooms = 4;
   PlatformJudgement judgement = 5;
   PlatformJumpGraph jump_graph = 6;
+  // spawn and goal are where the map starts and ends. Without them a generated
+  // level has no marked entrance, and the debug UI has nothing to draw its S
+  // and G on; the generator produces both, so leaving them off the wire threw
+  // them away.
+  PlatformAnchor spawn = 7;
+  PlatformAnchor goal = 8;
 }
 
 // CostGrid is one entry cost per Cell, row-major. costs is bytes rather than

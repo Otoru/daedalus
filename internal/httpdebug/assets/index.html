@@ -20,14 +20,20 @@
       <h2 id="request-title">Request</h2>
       <output id="status" class="status" aria-live="polite">Ready to generate</output>
     </div>
-    <div class="actions">
+    <div id="request-actions" class="actions" data-request-mode="dungeon">
+      <label class="mode-select" for="generate-mode">Mode
+        <select id="generate-mode">
+          <option value="dungeon" selected>Dungeon</option>
+          <option value="platform">Platform</option>
+        </select>
+      </label>
       <button id="generate" class="button primary" type="button">
         <span>Generate map</span>
       </button>
       <button id="load-example" class="button secondary" type="button">Load example</button>
       <button id="copy-request" class="button secondary" type="button">Copy request</button>
     </div>
-    <label class="visually-hidden" for="request-editor">GenerateRequest in ProtoJSON</label>
+    <label id="request-label" class="visually-hidden" for="request-editor">GenerateRequest in ProtoJSON</label>
     <textarea id="request-editor" class="code-editor" spellcheck="false" autocomplete="off"></textarea>
   </aside>
 
@@ -44,26 +50,43 @@
   <aside id="response-pane" class="side-panel side-panel-right" aria-labelledby="view-title" tabindex="-1" hidden>
     <div class="panel-header">
       <h2 id="view-title">View</h2>
+      <output id="map-mode" class="map-mode" aria-live="polite">No map</output>
     </div>
-    <div class="view-controls">
-      <div class="zoom-controls">
+    <div id="view-controls" class="view-controls" data-map-mode="empty">
+      <p class="view-empty">Generate or load a map. Its tools will appear here.</p>
+      <section class="map-tools camera-tools" data-tool-group="camera" aria-label="Camera">
+        <div class="tool-heading">Camera</div>
+        <div class="zoom-controls">
         <label for="zoom">Scale</label>
         <input id="zoom" type="range" min="2" max="24" value="8">
         <output id="zoom-value" for="zoom">8 px</output>
         <button id="fit-map" class="button secondary compact" type="button">Fit</button>
-        <button id="load-platform-fixture" class="button secondary compact" type="button">Load platform fixture</button>
-      </div>
-      <div class="field-controls" aria-label="Platform jump graph">
-        <div class="toggle-row">
+        </div>
+      </section>
+      <section class="map-tools platform-summary-tools" data-tool-group="platform-summary" aria-label="Platform result">
+        <output id="platform-verdict" class="platform-verdict"></output>
+      </section>
+      <section class="map-tools platform-navigation-tools" data-tool-group="platform-navigation" aria-label="Platform navigation">
+        <div class="tool-heading">Traversal graph</div>
+        <div class="field-controls">
+        <div class="toggle-row graph-controls">
           <label class="centerline-toggle" for="show-jump-graph"><input id="show-jump-graph" type="checkbox" checked> Jump graph</label>
           <label class="centerline-toggle" for="ability-dash"><input id="ability-dash" type="checkbox"> Dash</label>
           <label class="centerline-toggle" for="ability-double-jump"><input id="ability-double-jump" type="checkbox"> Double jump</label>
           <label class="centerline-toggle" for="ability-wall-jump"><input id="ability-wall-jump" type="checkbox"> Wall-cling</label>
         </div>
-        <output id="platform-verdict" class="platform-verdict" hidden></output>
-        <p class="click-hint">The graph only shows directed edges whose required abilities are selected.</p>
-      </div>
-      <div class="field-controls" aria-label="Distance field">
+        <p id="jump-graph-hint" class="click-hint">Select a platform surface to inspect its jumps.</p>
+        <div class="legend platform-legend" aria-label="Platform map legend">
+          <span><i class="swatch solid"></i>Solid</span>
+          <span><i class="swatch semi-solid"></i>Semi-solid</span>
+          <span><i class="swatch climbable"></i>Rope / ladder</span>
+          <span><i class="swatch hazard"></i>Hazard</span>
+        </div>
+        </div>
+      </section>
+      <section class="map-tools dungeon-field-tools" data-tool-group="dungeon-field" aria-label="Distance field">
+        <div class="tool-heading">Distance field</div>
+        <div class="field-controls">
         <div class="toggle-row">
           <label class="centerline-toggle" for="show-centerline">
             <input id="show-centerline" type="checkbox" checked>
@@ -77,8 +100,11 @@
         </div>
         <p id="click-hint" class="click-hint">First click sets the goal. The next click sets the position.</p>
         <output id="click-mode" class="click-mode">Next click sets the goal</output>
-      </div>
-      <div class="field-controls" aria-label="Field of vision">
+        </div>
+      </section>
+      <section class="map-tools dungeon-vision-tools" data-tool-group="dungeon-vision" aria-label="Field of vision">
+        <div class="tool-heading">Field of vision</div>
+        <div class="field-controls">
         <div class="toggle-row">
           <label class="centerline-toggle" for="visibility-mode">
             <input id="visibility-mode" type="checkbox" checked>
@@ -91,15 +117,19 @@
           <button id="clear-visibility" class="button secondary compact" type="button">Clear vision</button>
         </div>
         <p id="visibility-hint" class="click-hint">Click a cell to set the observer and show its field of vision.</p>
-      </div>
-      <div class="field-controls" aria-label="Gating plan">
+        </div>
+      </section>
+      <section class="map-tools dungeon-gating-tools" data-tool-group="dungeon-gating" aria-label="Gating plan">
+        <div class="tool-heading">Gating plan</div>
+        <div class="field-controls">
         <div class="toggle-row">
           <button id="build-gating" class="button secondary compact" type="button">Show gates</button>
           <button id="clear-gating" class="button secondary compact" type="button">Clear gates</button>
         </div>
         <p id="gating-hint" class="click-hint">Builds one main gate and marks its reachable key room.</p>
-      </div>
-      <div class="legend" aria-label="Map legend">
+        </div>
+      </section>
+      <div class="legend" data-map-legend="dungeon" aria-label="Dungeon map legend">
         <span><i class="swatch empty"></i>Empty</span>
         <span><i class="swatch room"></i>Room</span>
         <span><i class="swatch corridor"></i>Corridor</span>
@@ -114,10 +144,6 @@
         <span><i class="swatch terrain"></i>Terrain</span>
         <span><i class="swatch gate-main"></i>Main gate</span>
         <span><i class="swatch gate-key"></i>Key room</span>
-        <span><i class="swatch solid"></i>Solid</span>
-        <span><i class="swatch semi-solid"></i>Semi-solid</span>
-        <span><i class="swatch climbable"></i>Rope / ladder</span>
-        <span><i class="swatch hazard"></i>Hazard</span>
       </div>
       <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
         <h3 id="inspector-title">Selected cell</h3>
@@ -125,13 +151,13 @@
       </aside>
       <div id="error-box" class="error-box" role="alert" hidden></div>
     </div>
-    <div class="panel-header">
-      <h2 id="response-title">Returned ProtoJSON</h2>
-      <button id="copy-response" class="button secondary" type="button" disabled>Copy response</button>
-    </div>
-    <pre id="response-viewer" class="response-viewer">The response will appear here.</pre>
+    <details class="json-reference">
+      <summary><span id="response-title">Returned ProtoJSON</span><button id="copy-response" class="button secondary" type="button" disabled>Copy</button></summary>
+      <pre id="response-viewer" class="response-viewer">The response will appear here.</pre>
+    </details>
   </aside>
 
+  <script src="ui-logic.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

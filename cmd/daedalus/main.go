@@ -17,6 +17,7 @@ import (
 	"github.com/Otoru/daedalus/internal/logging"
 	"github.com/Otoru/daedalus/internal/service"
 	"github.com/Otoru/daedalus/internal/transport"
+	"github.com/Otoru/daedalus/platform"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
@@ -121,7 +122,29 @@ func newApp(processConfig config.Config, stdout, stderr io.Writer) *fx.App {
 				return service.NewAdmission(processConfig.MaxConcurrentGenerations)
 			},
 			func(admission *service.Admission) *service.Server {
-				return service.New(nil, admission)
+				// The dungeon generator stays nil: service.New installs the
+				// zero daedalus.Generator itself. The platform generator has
+				// no zero value to fall back on, because it needs an oracle,
+				// so the process installs it here. Without this the RPC
+				// answers Unimplemented and the debug UI gets a 500.
+				generatePlatform := func(ctx context.Context, config platform.Config) (service.PlatformLayout, error) {
+					layout, err := platform.Generate(ctx, &platform.M1Oracle{}, config)
+					if err != nil {
+						return service.PlatformLayout{}, err
+					}
+					// service.PlatformLayout is narrower than the generator's:
+					// it carries the plane, the certified graph and the
+					// verdict. RoomGraph, Plan and Grants have no wire fields
+					// yet, so they stop here rather than being silently
+					// flattened into the certified graph.
+					return service.PlatformLayout{
+						Config:    layout.Config,
+						Plane:     layout.Plane,
+						JumpGraph: layout.JumpGraph,
+						Judgement: layout.Judgement,
+					}, nil
+				}
+				return service.NewWithPlatform(nil, generatePlatform, admission)
 			},
 			func(server *service.Server, logger *zap.Logger) *httpdebug.Server {
 				return httpdebug.New(server, Version, logger)

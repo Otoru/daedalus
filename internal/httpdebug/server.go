@@ -41,11 +41,11 @@ const (
 	// the body is read into memory; a larger body is rejected with 413.
 	MaxHTTPDebugBodyBytes = 32 << 20
 
-	requestIDBytes           = 16
-	debugIndexPath           = "assets/index.html"
-	debugCSSPath             = "assets/styles.css"
-	debugJSPath              = "assets/app.js"
-	debugPlatformFixturePath = "assets/platform-layout.fixture.json"
+	requestIDBytes   = 16
+	debugIndexPath   = "assets/index.html"
+	debugCSSPath     = "assets/styles.css"
+	debugJSPath      = "assets/app.js"
+	debugUILogicPath = "assets/ui-logic.js"
 	// Debug JSON requests and responses use Content-Type application/json.
 	// A successful generate response is 200 with the full Layout. Errors
 	// are JSON with code, an English message, and an opaque request_id,
@@ -89,6 +89,7 @@ func New(serviceServer *service.Server, version string, logger *zap.Logger) *Ser
 	mux.HandleFunc("GET /", server.root)
 	mux.HandleFunc("GET /debug/", server.debug)
 	mux.HandleFunc("POST /api/v1/generate", server.generate)
+	mux.HandleFunc("POST /api/v1/generate-platform", server.generatePlatform)
 	mux.HandleFunc("POST /api/v1/compute-steps", server.computeSteps)
 	mux.HandleFunc("POST /api/v1/compute-visibility", server.computeVisibility)
 	mux.HandleFunc("POST /api/v1/build-gating-plan", server.buildGatingPlan)
@@ -171,9 +172,9 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 	case "/debug/app.js":
 		assetPath = debugJSPath
 		contentType = "text/javascript; charset=utf-8"
-	case "/debug/platform-layout.fixture.json":
-		assetPath = debugPlatformFixturePath
-		contentType = "application/json"
+	case "/debug/ui-logic.js":
+		assetPath = debugUILogicPath
+		contentType = "text/javascript; charset=utf-8"
 	default:
 		// /debug/ serves only the embedded page, stylesheet, and script,
 		// with no CDN and no external resource. An unknown path has no
@@ -214,6 +215,45 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 	}
 
 	response, err := server.service.Generate(request.Context(), &protoRequest)
+	if err != nil {
+		httpStatus, code, message := mapServiceError(err)
+		writeError(writer, request, httpStatus, code, message)
+		return
+	}
+	encoded, err := (protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}).Marshal(response.Layout)
+	if err != nil {
+		writeError(writer, request, http.StatusInternalServerError, "internal_failure", "internal failure while serializing layout")
+		return
+	}
+	writer.Header().Set(contentTypeHeader, jsonMediaType)
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(encoded)
+}
+
+func (server *Server) generatePlatform(writer http.ResponseWriter, request *http.Request) {
+	// Same admission, body ceiling, canonical ProtoJSON and error object as
+	// generate. A Rejected or Unknown judgement is the layout's verdict, so it
+	// is returned with the map on 200. Only a failure to draw the map is an
+	// HTTP error.
+	body, ok := readDebugJSON(writer, request)
+	if !ok {
+		return
+	}
+
+	var protoRequest daedalusv1.GeneratePlatformRequest
+	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		return
+	}
+
+	response, err := server.service.GeneratePlatform(request.Context(), &protoRequest)
 	if err != nil {
 		httpStatus, code, message := mapServiceError(err)
 		writeError(writer, request, httpStatus, code, message)
@@ -381,6 +421,8 @@ func validateCanonicalRequest(body []byte, descriptor protoreflect.MessageDescri
 	required := map[protoreflect.FullName][]protoreflect.Name{
 		"daedalus.v1.GenerateRequest":          {"config"},
 		"daedalus.v1.Config":                   {"width", "height", "seed"},
+		"daedalus.v1.GeneratePlatformRequest":  {"config"},
+		"daedalus.v1.PlatformConfig":           {"width", "height", "seed"},
 		"daedalus.v1.ComputeStepsRequest":      {"cost_grid"},
 		"daedalus.v1.CostGrid":                 {"width", "height", "costs"},
 		"daedalus.v1.ComputeVisibilityRequest": {"opacity_grid"},
@@ -543,7 +585,7 @@ func validateLocalRequest(request *http.Request) error {
 func mapServiceError(err error) (int, string, string) {
 	switch status.Code(err) {
 	case codes.InvalidArgument:
-		return http.StatusBadRequest, "invalid_config", "invalid configuration"
+		return http.StatusBadRequest, "invalid_config", status.Convert(err).Message()
 	case codes.ResourceExhausted:
 		return http.StatusRequestEntityTooLarge, "limit_exceeded", "resource limit exceeded"
 	case codes.FailedPrecondition:

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path"
 	"strings"
 	"sync/atomic"
@@ -20,11 +21,14 @@ import (
 	"github.com/Otoru/daedalus"
 	daedalusv1 "github.com/Otoru/daedalus/internal/gen/go/daedalus/v1"
 	"github.com/Otoru/daedalus/internal/service"
+	"github.com/Otoru/daedalus/platform"
 	"github.com/Otoru/daedalus/utils/vision"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -80,7 +84,7 @@ func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 		{path: "/debug/", contentType: "text/html; charset=utf-8", snippet: `id="request-editor"`},
 		{path: "/debug/styles.css", contentType: "text/css; charset=utf-8", snippet: ".map-canvas"},
 		{path: "/debug/app.js", contentType: "text/javascript; charset=utf-8", snippet: "/api/v1/generate"},
-		{path: "/debug/platform-layout.fixture.json", contentType: "application/json", snippet: `"jump_graph"`},
+		{path: "/debug/ui-logic.js", contentType: "text/javascript; charset=utf-8", snippet: "scrollForAnchoredZoom"},
 	}
 
 	for _, expected := range expectedAssets {
@@ -99,8 +103,22 @@ func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 	}
 }
 
-// TestPlatformDebugAssetsExposeDirectedGraphControls locks the local fixture
-// seam until GeneratePlatform is wired. The renderer must make direction,
+// TestDebugUIInteractionRules runs the DOM-free interaction contract in Node.
+// These cases prove anchored wheel zoom, the editor guard for WASD, and the
+// distinct tool decks without claiming browser visual inspection.
+func TestDebugUIInteractionRules(t *testing.T) {
+	t.Parallel()
+
+	command := exec.Command("node", "ui_logic_test.js")
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
+	assert.Contains(t, string(output), "PASS anchored zoom")
+	assert.Contains(t, string(output), "PASS WASD pans")
+	assert.Contains(t, string(output), "PASS each layout")
+}
+
+// TestPlatformDebugAssetsExposeDirectedGraphControls locks the generated-map
+// UI contract. The renderer must make direction,
 // ability filtering, the three-valued judgement, and cell-to-node inspection
 // visible without depending on a remote asset or endpoint.
 func TestPlatformDebugAssetsExposeDirectedGraphControls(t *testing.T) {
@@ -110,8 +128,6 @@ func TestPlatformDebugAssetsExposeDirectedGraphControls(t *testing.T) {
 	require.NoError(t, err)
 	page, err := assets.ReadFile(debugIndexPath)
 	require.NoError(t, err)
-	fixture, err := assets.ReadFile(debugPlatformFixturePath)
-	require.NoError(t, err)
 
 	assert.Contains(t, string(app), "function drawJumpGraph(context, scale)")
 	assert.Contains(t, string(app), "function setLayoutForRendering(layout)")
@@ -120,9 +136,31 @@ func TestPlatformDebugAssetsExposeDirectedGraphControls(t *testing.T) {
 	assert.Contains(t, string(page), `id="ability-dash"`)
 	assert.Contains(t, string(page), `id="ability-double-jump"`)
 	assert.Contains(t, string(page), `id="ability-wall-jump"`)
-	assert.Contains(t, string(fixture), `"semi-solid"`)
-	assert.Contains(t, string(fixture), `"hazard"`)
-	assert.Contains(t, string(fixture), `"verdict":"unknown"`)
+}
+
+func TestPlatformInvalidProfileHTTPErrorPreservesTheReason(t *testing.T) {
+	t.Parallel()
+
+	httpStatus, code, message := mapServiceError(status.Error(codes.InvalidArgument, "invalid platform request: platform: invalid movement profile: GravityUp must be finite and positive, got 0"))
+
+	assert.Equal(t, http.StatusBadRequest, httpStatus)
+	assert.Equal(t, "invalid_config", code)
+	assert.Contains(t, message, "GravityUp")
+}
+
+func TestPlatformExampleDeclaresProgression(t *testing.T) {
+	t.Parallel()
+
+	script, err := assets.ReadFile(debugJSPath)
+	require.NoError(t, err)
+	var request daedalusv1.GeneratePlatformRequest
+	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal([]byte(examplePlatformRequestFromScript(t, string(script))), &request))
+
+	progression := request.GetConfig().GetProgression()
+	require.NotNil(t, progression)
+	require.Len(t, progression.GetSteps(), 3)
+	assert.Equal(t, "Mothwing Cloak", progression.GetSteps()[0].GetName())
+	assert.NotZero(t, progression.GetSteps()[0].GetGrants())
 }
 
 // TestAllEmbeddedAssetsDoNotReferenceAnExternalHost checks that every embedded
@@ -388,6 +426,18 @@ func exampleRequestFromScript(t *testing.T, script string) string {
 	rest := script[start+len(marker):]
 	end := strings.Index(rest, "`;")
 	require.NotEqual(t, -1, end, "example request terminator")
+	return rest[:end]
+}
+
+func examplePlatformRequestFromScript(t *testing.T, script string) string {
+	t.Helper()
+
+	const marker = "const examplePlatformRequest = `"
+	start := strings.Index(script, marker)
+	require.NotEqual(t, -1, start, "platform example request template")
+	rest := script[start+len(marker):]
+	end := strings.Index(rest, "`;")
+	require.NotEqual(t, -1, end, "platform example request terminator")
 	return rest[:end]
 }
 
@@ -1070,6 +1120,162 @@ func TestComputeStepsRejectsAnOversizedBody(t *testing.T) {
 	assert.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
 	assertStructuredError(t, response)
 	assert.Zero(t, generations.Load())
+}
+
+// examplePlatformRequest is a GeneratePlatformRequest in canonical ProtoJSON.
+// Seed, width and height are required. The beat vocabulary leaves cell spans
+// at zero so the generator keeps its current defaults, including the 30-cell
+// room floor. 160×100 is large enough for that floor; a smaller plane is
+// rejected before a map is drawn.
+const examplePlatformRequest = `{
+  "config": {
+    "seed": "4242",
+    "width": 160,
+    "height": 100,
+    "beat_definitions": [
+      {"kind": 1},
+      {"kind": 2},
+      {"kind": 3},
+      {"kind": 4},
+      {"kind": 5}
+    ],
+    "spine": {
+      "beats": [
+        {"kind": 1, "weight": 1},
+        {"kind": 2, "weight": 1},
+        {"kind": 3, "weight": 1},
+        {"kind": 4, "weight": 1},
+        {"kind": 5, "weight": 1}
+      ]
+    }
+  }
+}`
+
+// TestGeneratePlatformHTTP covers the debug route that dungeon Generate
+// already has: a real map on the happy path, an unknown field rejected before
+// generation, and a product-limit failure mapped to 413. A Rejected judgement
+// is a successful response, not an HTTP error.
+func TestGeneratePlatformHTTP(t *testing.T) {
+	t.Parallel()
+
+	t.Run("happy path", func(t *testing.T) {
+		t.Parallel()
+
+		server := newPlatformTestServer(t, realPlatformGenerator)
+		response := executeRequest(
+			server.Handler(), http.MethodPost, "/api/v1/generate-platform",
+			strings.NewReader(examplePlatformRequest),
+		)
+
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+		assert.Empty(t, response.Header().Get("Access-Control-Allow-Origin"))
+
+		var layout daedalusv1.PlatformLayout
+		require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(response.Body.Bytes(), &layout))
+		assert.Equal(t, uint64(4242), layout.GetSeed())
+		assert.Equal(t, uint32(160), layout.GetWidth())
+		assert.Equal(t, uint32(100), layout.GetHeight())
+		assert.NotEmpty(t, layout.GetRooms())
+		require.NotNil(t, layout.GetJudgement())
+		switch layout.GetJudgement().GetVerdict() {
+		case daedalusv1.PlatformVerdict_PLATFORM_VERDICT_CERTIFIED,
+			daedalusv1.PlatformVerdict_PLATFORM_VERDICT_REJECTED,
+			daedalusv1.PlatformVerdict_PLATFORM_VERDICT_UNKNOWN:
+		default:
+			t.Fatalf("verdict %s is not one of the three platform results", layout.GetJudgement().GetVerdict())
+		}
+		assert.Contains(t, response.Body.String(), `"jump_graph"`)
+		assert.NotContains(t, response.Body.String(), `"jumpGraph"`)
+		assert.NotContains(t, response.Body.String(), `"request_id"`)
+	})
+
+	t.Run("unknown field", func(t *testing.T) {
+		t.Parallel()
+
+		var generations atomic.Int32
+		server := newPlatformTestServer(t, func(ctx context.Context, config platform.Config) (service.PlatformLayout, error) {
+			generations.Add(1)
+			return realPlatformGenerator(ctx, config)
+		})
+		response := executeRequest(
+			server.Handler(), http.MethodPost, "/api/v1/generate-platform",
+			strings.NewReader(`{"config":{"width":80,"height":80,"seed":"0","beat_definitions":[{"kind":1}],"spine":{"beats":[{"kind":1,"weight":1}]},"unknown":1}}`),
+		)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assertStructuredError(t, response)
+		assert.NotContains(t, response.Body.String(), "rooms")
+		assert.Zero(t, generations.Load())
+	})
+
+	t.Run("limit", func(t *testing.T) {
+		t.Parallel()
+
+		var generations atomic.Int32
+		server := newPlatformTestServer(t, func(ctx context.Context, config platform.Config) (service.PlatformLayout, error) {
+			generations.Add(1)
+			return realPlatformGenerator(ctx, config)
+		})
+		response := executeRequest(
+			server.Handler(), http.MethodPost, "/api/v1/generate-platform",
+			strings.NewReader(`{"config":{"width":1025,"height":1,"seed":"0"}}`),
+		)
+
+		assert.Equal(t, http.StatusRequestEntityTooLarge, response.Code)
+		assertStructuredError(t, response)
+		assert.NotContains(t, response.Body.String(), "rooms")
+		assert.NotContains(t, response.Body.String(), "platform side exceeds")
+		assert.Zero(t, generations.Load())
+	})
+
+	t.Run("rejected verdict is a response", func(t *testing.T) {
+		t.Parallel()
+
+		server := newPlatformTestServer(t, func(_ context.Context, config platform.Config) (service.PlatformLayout, error) {
+			return service.PlatformLayout{
+				Config: config,
+				Plane:  platform.Plane{Width: config.Width, Height: config.Height},
+				Judgement: platform.Judgement{
+					Verdict:        platform.VerdictRejected,
+					Reason:         platform.ReasonDisconnected,
+					Detail:         "the stamped run has no route",
+					Model:          platform.ModelM1,
+					ProfileVersion: platform.ProfileVersionM1,
+				},
+			}, nil
+		})
+		response := executeRequest(
+			server.Handler(), http.MethodPost, "/api/v1/generate-platform",
+			strings.NewReader(examplePlatformRequest),
+		)
+
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var layout daedalusv1.PlatformLayout
+		require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(response.Body.Bytes(), &layout))
+		require.NotNil(t, layout.GetJudgement())
+		assert.Equal(t, daedalusv1.PlatformVerdict_PLATFORM_VERDICT_REJECTED, layout.GetJudgement().GetVerdict())
+		assert.Equal(t, daedalusv1.PlatformVerdictReason_PLATFORM_VERDICT_REASON_DISCONNECTED, layout.GetJudgement().GetReason())
+		assert.NotContains(t, response.Body.String(), `"code"`)
+	})
+}
+
+func realPlatformGenerator(ctx context.Context, config platform.Config) (service.PlatformLayout, error) {
+	layout, err := platform.Generate(ctx, platform.NewM1Oracle(), config)
+	if err != nil {
+		return service.PlatformLayout{}, err
+	}
+	return service.PlatformLayout{
+		Config:    layout.Config,
+		Plane:     layout.Plane,
+		JumpGraph: layout.JumpGraph,
+		Judgement: layout.Judgement,
+	}, nil
+}
+
+func newPlatformTestServer(t *testing.T, generate service.GeneratePlatformFunc) *Server {
+	t.Helper()
+	return New(service.NewWithPlatform(nil, generate, service.NewAdmission(1)), testVersion, zap.NewNop())
 }
 
 func newTestServer(

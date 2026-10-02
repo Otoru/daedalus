@@ -13,7 +13,7 @@
   --corridor-cell: hsl(40 14% 30%);
   --room-cell: hsl(211 16% 56%);
   --door-cell: hsl(16 14% 78%);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
 }
 
@@ -135,6 +135,18 @@ h3 {
 .status.failure {
   border-color: var(--text);
   color: var(--text);
+  font-weight: 700;
+}
+
+.status.rejected {
+  border-color: #e06c75;
+  color: #ff9ba3;
+  font-weight: 700;
+}
+
+.status.unknown {
+  border-color: #e5c07b;
+  color: #f5d08b;
   font-weight: 700;
 }
 
@@ -265,7 +277,7 @@ h3 {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  padding: 8px;
+  padding: 0;
 }
 
 .toggle-row {
@@ -315,7 +327,7 @@ h3 {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 8px 8px 0;
+  padding: 0;
   color: var(--muted);
   font-size: 0.72rem;
 }
@@ -481,6 +493,60 @@ input:focus-visible {
   overflow: auto;
 }
 
+/* A stable, mode-specific workspace avoids both dead controls and a panel
+   that jumps when the loaded map changes family. */
+.view-controls { min-height: 200px; }
+
+.map-tools,
+.view-empty,
+.view-controls .legend { display: none; }
+
+.view-controls[data-map-mode="empty"] .view-empty,
+.view-controls[data-map-mode="platform"] [data-tool-group="camera"],
+.view-controls[data-map-mode="platform"] [data-tool-group="platform-summary"],
+.view-controls[data-map-mode="platform"] [data-tool-group="platform-navigation"],
+.view-controls[data-map-mode="dungeon"] [data-tool-group="camera"],
+.view-controls[data-map-mode="dungeon"] [data-tool-group="dungeon-field"],
+.view-controls[data-map-mode="dungeon"] [data-tool-group="dungeon-vision"],
+.view-controls[data-map-mode="dungeon"] [data-tool-group="dungeon-gating"],
+.view-controls[data-map-mode="platform"] [data-map-legend="platform"],
+.view-controls[data-map-mode="dungeon"] [data-map-legend="dungeon"] { display: flex; }
+
+.view-empty {
+  margin: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.map-tools {
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 12px 0;
+  padding: 0;
+}
+
+.tool-heading {
+  color: var(--muted);
+  font-family: system-ui, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.map-mode {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.map-mode.platform { border-color: #98c379; color: #b8e28e; }
+.map-mode.dungeon { border-color: #a7d8ff; color: #c8e8ff; }
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -496,11 +562,27 @@ input:focus-visible {
 }
 
 .actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   padding: 8px;
+}
+
+.mode-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.mode-select select {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--background);
+  color: var(--text);
+  padding: 4px 6px;
 }
 
 .code-editor,
@@ -515,6 +597,7 @@ input:focus-visible {
   background: #121212;
   color: var(--code);
   line-height: 1.4;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
 }
 
 .code-editor {
@@ -528,6 +611,39 @@ input:focus-visible {
   font-size: 0.75rem;
   white-space: pre-wrap;
 }
+
+.platform-summary-tools { margin-top: 14px; }
+.platform-verdict {
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.platform-verdict::first-line { font-weight: 750; }
+.platform-verdict.certified { color: #b8e28e; }
+.platform-verdict.rejected { color: #ff9ba3; }
+.platform-verdict.unknown { color: #f5d08b; }
+.graph-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.platform-legend { margin: 2px 0 0; padding: 0; }
+
+.json-reference {
+  flex: 0 0 auto;
+  max-height: 180px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+.json-reference summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .75rem;
+}
+.json-reference .response-viewer { max-height: 140px; overflow: auto; }
 
 .error-box {
   margin: 8px 8px 0;

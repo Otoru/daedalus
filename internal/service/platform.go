@@ -33,7 +33,7 @@ func (server *Server) GeneratePlatform(ctx context.Context, request *daedalusv1.
 		return nil, platformStatusError(err)
 	}
 	if err := config.Validate(); err != nil {
-		return nil, StatusError(err)
+		return nil, platformStatusError(err)
 	}
 	if server.generatePlatform == nil {
 		return nil, status.Error(codes.Unimplemented, "platform generator is not installed")
@@ -75,7 +75,10 @@ func platformStatusError(err error) error {
 	if errors.Is(err, platform.ErrLimitExceeded) {
 		return status.Error(codes.ResourceExhausted, "platform resource limit exceeded")
 	}
-	if errors.Is(err, platform.ErrInvalidConfig) || errors.Is(err, platform.ErrInvalidProfile) || errors.Is(err, platform.ErrInvalidBeats) || errors.Is(err, platform.ErrInvalidGeometry) {
+	if errors.Is(err, platform.ErrInvalidProfile) {
+		return status.Errorf(codes.InvalidArgument, "invalid platform request: %v", err)
+	}
+	if errors.Is(err, platform.ErrInvalidConfig) || errors.Is(err, platform.ErrInvalidBeats) || errors.Is(err, platform.ErrInvalidGeometry) {
 		return status.Error(codes.InvalidArgument, "invalid platform request")
 	}
 	return StatusError(err)
