@@ -331,10 +331,16 @@ func synthesizeOnce(ctx context.Context, oracle Oracle, config Config, seed Seed
 		}
 	}
 
-	// The stamp only ever writes a room's interior, so the openings the macro
-	// front punched and paired are untouched. Re-validating says so rather
-	// than assuming it: a plane that stopped describing space after the stamp
-	// would otherwise reach the oracle and be judged as if it were a map.
+	// Openings and anchors were chosen on the empty shell. The stamp writes
+	// the interior afterwards and can seal a mouth or bury an anchor. Seating
+	// re-decides both against the stamped geometry. A seating rejection is a
+	// verdict about the draw, applied after the oracle: a search that ran out
+	// of budget is still Unknown, and is not overwritten by the seating.
+	seatReason, seatDetail, seatRejected := seatShell(&macro.Plane, config.Profile, stages)
+
+	// The stamp only ever writes a room's interior. Seating may slide an
+	// opening along the border or cut a footing up to a mouth. Re-validating
+	// says the plane still describes space.
 	if err := ValidatePlane(macro.Plane); err != nil {
 		return zero, err
 	}
@@ -406,6 +412,17 @@ func synthesizeOnce(ctx context.Context, oracle Oracle, config Config, seed Seed
 		Rooms:     rooms,
 	}
 	layout.Judgement = judgeLayout(oracle.Model(), rooms, audit)
+	if seatRejected && layout.Judgement.Verdict != VerdictUnknown {
+		version := config.Profile.Version
+		if version == "" {
+			version = ProfileVersionM1
+		}
+		layout.Judgement.Verdict = VerdictRejected
+		layout.Judgement.Reason = seatReason
+		layout.Judgement.Model = oracle.Model()
+		layout.Judgement.ProfileVersion = version
+		layout.Judgement.Detail = seatDetail
+	}
 	if err := layout.Judgement.Validate(); err != nil {
 		return zero, err
 	}

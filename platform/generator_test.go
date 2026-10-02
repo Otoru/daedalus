@@ -362,9 +362,9 @@ func TestARetryThatDoesNotConvergeIsHonest(t *testing.T) {
 }
 
 // TestTheStampNeverTouchesARoomBorder is the placement invariant that keeps
-// the macro front's work intact. The border ring carries the openings the
-// macro front punched and ValidatePlane paired; a stamp that wrote there
-// could wall a transition shut and the map would still look valid.
+// the macro front's border a ring. The stamp writes the interior. Seating may
+// slide an opening along that ring afterwards; the border that remains is a
+// solid ring with the layout's final openings punched, and nothing else.
 func TestTheStampNeverTouchesARoomBorder(t *testing.T) {
 	config := synthConfig(11).Normalize()
 	layout, err := Generate(context.Background(), NewM1Oracle(), config)
@@ -372,23 +372,20 @@ func TestTheStampNeverTouchesARoomBorder(t *testing.T) {
 		t.Fatalf("generate: %v", err)
 	}
 
-	// The macro front is deterministic in its own seed, so drawing it again
-	// from the attempt that produced this layout gives the unstamped shells
-	// the stamp started from.
-	streams := newSynthStreams(layout.AttemptSeeds[layout.Attempts-1])
-	shells, err := GenerateMacro(context.Background(), macroConfigFor(config, streams.macro))
-	if err != nil {
-		t.Fatalf("redrawing the shells: %v", err)
-	}
-	if len(shells.Plane.Rooms) != len(layout.Plane.Rooms) {
-		t.Fatalf("the redrawn plane has %d rooms against %d", len(shells.Plane.Rooms), len(layout.Plane.Rooms))
-	}
-
 	var checked int
-	for index, room := range layout.Plane.Rooms {
-		shell := shells.Plane.Rooms[index]
-		if shell.Grid.Width != room.Grid.Width || shell.Grid.Height != room.Grid.Height {
-			t.Fatalf("room %d is %dx%d against the shell's %dx%d", room.ID, room.Grid.Width, room.Grid.Height, shell.Grid.Width, shell.Grid.Height)
+	for _, room := range layout.Plane.Rooms {
+		ring := room
+		ring.Grid.Cells = append([]CellKind(nil), room.Grid.Cells...)
+		for y := uint32(0); y < ring.Grid.Height; y++ {
+			for x := uint32(0); x < ring.Grid.Width; x++ {
+				if x != 0 && y != 0 && x+1 != ring.Grid.Width && y+1 != ring.Grid.Height {
+					continue
+				}
+				setCell(&ring.Grid, int32(x), int32(y), CellKindSolid)
+			}
+		}
+		for _, transition := range room.Transitions {
+			punchOpening(&ring, transition)
 		}
 		for y := uint32(0); y < room.Grid.Height; y++ {
 			for x := uint32(0); x < room.Grid.Width; x++ {
@@ -397,8 +394,8 @@ func TestTheStampNeverTouchesARoomBorder(t *testing.T) {
 				}
 				checked++
 				at := y*room.Grid.Width + x
-				if room.Grid.Cells[at] != shell.Grid.Cells[at] {
-					t.Fatalf("room %d border cell (%d,%d) is %s after the stamp and was %s before it", room.ID, x, y, room.Grid.Cells[at], shell.Grid.Cells[at])
+				if room.Grid.Cells[at] != ring.Grid.Cells[at] {
+					t.Fatalf("room %d border cell (%d,%d) is %s, want the solid ring with the final openings punched (%s)", room.ID, x, y, room.Grid.Cells[at], ring.Grid.Cells[at])
 				}
 			}
 		}

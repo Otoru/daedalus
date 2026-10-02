@@ -2,8 +2,13 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -751,6 +756,585 @@ func qualityRoots(c, v, a, span float64) []float64 {
 	root := math.Sqrt(discriminant)
 	add((-v + root) / a)
 	add((-v - root) / a)
+	return out
+}
+
+// TestExampleAnchorsAreStandingCells is the anchor invariant. Spawn and goal
+// are chosen on the empty shell, then the rhythm stamps over them. A certified
+// example whose anchor is solid fails here, naming the file and the anchor.
+func TestExampleAnchorsAreStandingCells(t *testing.T) {
+	for _, name := range []string{"01-minimo", "02-travessia"} {
+		t.Run(name, func(t *testing.T) {
+			layout := exampleLayout(t, name)
+			if msg := exampleAnchorError(layout); msg != "" {
+				t.Fatalf("%s is %s/%s and %s", name, layout.Judgement.Verdict, layout.Judgement.Reason, msg)
+			}
+		})
+	}
+}
+
+// TestExampleOpeningsAreReachable is the opening invariant. A transition the
+// stamp sealed off from the playable area fails here, naming the room and the
+// opening. Both ends of a pair are checked: an edge whose far mouth is sealed
+// is the same lie.
+func TestExampleOpeningsAreReachable(t *testing.T) {
+	layout := exampleLayout(t, "01-minimo")
+	if msg := exampleOpeningError(layout); msg != "" {
+		t.Fatalf("01-minimo is %s/%s and %s", layout.Judgement.Verdict, layout.Judgement.Reason, msg)
+	}
+}
+
+// TestExampleSideOpeningsAreDistinctDoorways is the doorway invariant. Two
+// openings on the same side of a room are one ragged hole when the solid run
+// between them is narrower than the doorway, and they are a parallel edge
+// when both lead to the same room. Either one fails the map. The solid run
+// has to be at least OpeningExtent cells: that is the width already chosen
+// for a doorway, so a thinner tooth is not a second gate.
+func TestExampleSideOpeningsAreDistinctDoorways(t *testing.T) {
+	layout := exampleLayout(t, "01-minimo")
+	if msg := exampleSideOpeningError(layout.Plane); msg != "" {
+		t.Fatalf("01-minimo is %s/%s and %s", layout.Judgement.Verdict, layout.Judgement.Reason, msg)
+	}
+}
+
+type exampleHeld struct {
+	layout PlatformLayout
+	err    error
+}
+
+var (
+	exampleMu    sync.Mutex
+	exampleCache = map[string]exampleHeld{}
+)
+
+func exampleLayout(t *testing.T, name string) PlatformLayout {
+	t.Helper()
+	exampleMu.Lock()
+	defer exampleMu.Unlock()
+	if held, ok := exampleCache[name]; ok {
+		if held.err != nil {
+			t.Fatalf("generate %s: %v", name, held.err)
+		}
+		return held.layout
+	}
+	layout, err := Generate(context.Background(), NewM1Oracle(), exampleConfig(t, name))
+	exampleCache[name] = exampleHeld{layout: layout, err: err}
+	if err != nil {
+		t.Fatalf("generate %s: %v", name, err)
+	}
+	return layout
+}
+
+func exampleConfig(t *testing.T, name string) Config {
+	t.Helper()
+	path := filepath.Join("..", ".research", "exemplos-plataforma", name+".json")
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var file struct {
+		Config struct {
+			Seed            string `json:"seed"`
+			Width           uint32 `json:"width"`
+			Height          uint32 `json:"height"`
+			MaxRooms        uint32 `json:"max_rooms"`
+			BeatDefinitions []struct {
+				Kind       int    `json:"kind"`
+				MinCells   uint32 `json:"min_cells"`
+				MaxCells   uint32 `json:"max_cells"`
+				Difficulty uint8  `json:"difficulty"`
+				Requires   uint32 `json:"requires"`
+			} `json:"beat_definitions"`
+			Spine    *exampleDistribution `json:"spine"`
+			Branches *exampleDistribution `json:"branches"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(payload, &file); err != nil {
+		t.Fatalf("decode %s: %v", name, err)
+	}
+	seed, err := strconv.ParseUint(file.Config.Seed, 10, 64)
+	if err != nil {
+		t.Fatalf("seed %q: %v", file.Config.Seed, err)
+	}
+	config := Config{
+		Seed:     Seed(seed),
+		Width:    file.Config.Width,
+		Height:   file.Config.Height,
+		MaxRooms: file.Config.MaxRooms,
+		Profile:  DefaultProfile(),
+	}
+	for _, definition := range file.Config.BeatDefinitions {
+		config.Beats.Definitions = append(config.Beats.Definitions, BeatDefinition{
+			Kind:       BeatKind(definition.Kind),
+			MinCells:   definition.MinCells,
+			MaxCells:   definition.MaxCells,
+			Difficulty: definition.Difficulty,
+			Requires:   AbilitySet(definition.Requires),
+		})
+	}
+	config.Beats.Spine = definitionFromExample(file.Config.Spine)
+	config.Beats.Branches = definitionFromExample(file.Config.Branches)
+	return config
+}
+
+type exampleDistribution struct {
+	MinRunBeats uint32 `json:"min_run_beats"`
+	MaxRunBeats uint32 `json:"max_run_beats"`
+	Beats       []struct {
+		Kind   int    `json:"kind"`
+		Weight uint32 `json:"weight"`
+	} `json:"beats"`
+}
+
+func definitionFromExample(source *exampleDistribution) *BeatDistribution {
+	if source == nil {
+		return nil
+	}
+	out := &BeatDistribution{MinRunBeats: source.MinRunBeats, MaxRunBeats: source.MaxRunBeats}
+	for _, beat := range source.Beats {
+		out.Beats = append(out.Beats, BeatWeight{Kind: BeatKind(beat.Kind), Weight: beat.Weight})
+	}
+	return out
+}
+
+// exampleAnchorError reports spawn or goal cells that are not standing
+// positions under layout.Config.Profile. The column is ceil(BodyHeight) cells
+// tall starting at the standing cell: that is the space above the support,
+// and it is the same count the oracle uses for the body.
+func exampleAnchorError(layout PlatformLayout) string {
+	profile := layout.Config.Profile
+	var parts []string
+	for _, anchor := range []struct {
+		name string
+		at   Anchor
+	}{{"spawn", layout.Plane.Spawn}, {"goal", layout.Plane.Goal}} {
+		if msg := exampleStandError(layout.Plane, anchor.at, anchor.name, profile); msg != "" {
+			parts = append(parts, msg)
+		}
+	}
+	return joinParts(parts)
+}
+
+func exampleStandError(plane Plane, anchor Anchor, name string, profile MovementProfile) string {
+	if int(anchor.Room) >= len(plane.Rooms) {
+		return fmt.Sprintf("%s names room %d, which is not in the plane", name, anchor.Room)
+	}
+	room := plane.Rooms[anchor.Room]
+	kind, ok := room.Grid.At(anchor.At)
+	if !ok {
+		return fmt.Sprintf("%s room %d cell (%d,%d) is outside the room", name, anchor.Room, anchor.At.X, anchor.At.Y)
+	}
+	if kind != CellKindEmpty && kind != CellKindClimbable {
+		return fmt.Sprintf("%s room %d cell (%d,%d) is %s, not a traversable cell (empty or climbable)", name, anchor.Room, anchor.At.X, anchor.At.Y, kind)
+	}
+	below, ok := room.Grid.At(Cell{X: anchor.At.X, Y: anchor.At.Y + 1})
+	if !ok || (below != CellKindSolid && below != CellKindSemiSolid && below != CellKindClimbable) {
+		got := "outside"
+		if ok {
+			got = below.String()
+		}
+		return fmt.Sprintf("%s room %d cell (%d,%d) is not supported from below (cell beneath is %s)", name, anchor.Room, anchor.At.X, anchor.At.Y, got)
+	}
+	n := exampleClearance(profile)
+	for i := int32(1); i < n; i++ {
+		at := Cell{X: anchor.At.X, Y: anchor.At.Y - i}
+		above, ok := room.Grid.At(at)
+		if !ok || above.Blocks() {
+			got := "outside"
+			if ok {
+				got = above.String()
+			}
+			return fmt.Sprintf("%s room %d cell (%d,%d) does not leave %d body cells (ceil(BodyHeight)=%g) free above the support; cell (%d,%d) is %s",
+				name, anchor.Room, anchor.At.X, anchor.At.Y, n, profile.BodyHeight, at.X, at.Y, got)
+		}
+	}
+	return ""
+}
+
+func exampleClearance(profile MovementProfile) int32 {
+	n := int32(math.Ceil(profile.BodyHeight))
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// exampleOpeningError reports a transition whose mouth is not reachable from
+// the room's playable component under the profile's base locomotion plus the
+// abilities that room was authored for. Both ends of each pair are visited.
+func exampleOpeningError(layout PlatformLayout) string {
+	profile := layout.Config.Profile
+	abilities := make([]AbilitySet, len(layout.Plane.Rooms))
+	for _, room := range layout.Rooms {
+		if int(room.Room) < len(abilities) {
+			abilities[room.Room] = room.Abilities
+		}
+	}
+	playable := make([]map[Cell]bool, len(layout.Plane.Rooms))
+	for i := range layout.Plane.Rooms {
+		set := abilities[i]
+		if len(layout.Rooms) == 0 {
+			set = layout.Config.Progression.Final()
+		}
+		playable[i] = examplePlayable(layout.Plane.Rooms[i].Grid, profile, set)
+	}
+	var parts []string
+	for _, room := range layout.Plane.Rooms {
+		for _, transition := range room.Transitions {
+			if transition.Side == TransitionSideDoor {
+				continue
+			}
+			if exampleOpeningReached(room, transition, playable[room.ID], profile) {
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("room %d opening %d side %s offset %d extent %d is not reachable from the playable area",
+				room.ID, transition.ID, transition.Side, transition.Offset, transition.Extent))
+		}
+	}
+	return joinParts(parts)
+}
+
+// exampleSideOpeningError reports openings that share a side and are not two
+// doorways. A doorway is distinct only when both are true: the other opening
+// leads to a different room, and the solid run between the air spans is at
+// least OpeningExtent cells wide. Same room is a parallel edge (the player
+// arrives in the same place through either hole). A thinner wall is one hole
+// with a tooth, including a gap of zero, which is a single torn opening.
+func exampleSideOpeningError(plane Plane) string {
+	index := map[TransitionID]Transition{}
+	for _, room := range plane.Rooms {
+		for _, transition := range room.Transitions {
+			index[transition.ID] = transition
+		}
+	}
+	var parts []string
+	for _, room := range plane.Rooms {
+		bySide := map[TransitionSide][]Transition{}
+		for _, transition := range room.Transitions {
+			if !transition.Side.IsCardinal() {
+				continue
+			}
+			bySide[transition.Side] = append(bySide[transition.Side], transition)
+		}
+		sides := make([]TransitionSide, 0, len(bySide))
+		for side := range bySide {
+			sides = append(sides, side)
+		}
+		sort.Slice(sides, func(i, j int) bool { return sides[i] < sides[j] })
+		for _, side := range sides {
+			group := bySide[side]
+			sort.Slice(group, func(i, j int) bool {
+				if group[i].Offset != group[j].Offset {
+					return group[i].Offset < group[j].Offset
+				}
+				return group[i].ID < group[j].ID
+			})
+			for i := 0; i < len(group); i++ {
+				for j := i + 1; j < len(group); j++ {
+					a, b := group[i], group[j]
+					if a.Offset > b.Offset {
+						a, b = b, a
+					}
+					partnerA, okA := index[a.To]
+					partnerB, okB := index[b.To]
+					if !okA || !okB {
+						parts = append(parts, fmt.Sprintf("room %d side %s openings %d and %d have no partner", room.ID, side, a.ID, b.ID))
+						continue
+					}
+					gap := int(b.Offset) - int(a.Offset+a.Extent)
+					sameRoom := partnerA.Room == partnerB.Room
+					tooClose := gap < OpeningExtent
+					if !sameRoom && !tooClose {
+						continue
+					}
+					parts = append(parts, fmt.Sprintf("room %d side %s openings %d and %d offsets %d and %d extents %d and %d partners %d and %d solid gap %d",
+						room.ID, side, a.ID, b.ID, a.Offset, b.Offset, a.Extent, b.Extent, partnerA.Room, partnerB.Room, gap))
+				}
+			}
+		}
+	}
+	return joinParts(parts)
+}
+
+func exampleOpeningReached(room Room, transition Transition, playable map[Cell]bool, profile MovementProfile) bool {
+	borders, mouths := exampleOpeningCells(room, transition)
+	if len(borders) == 0 || len(mouths) == 0 {
+		return false
+	}
+	for _, border := range borders {
+		kind, ok := room.Grid.At(border)
+		if !ok || kind.Blocks() {
+			return false
+		}
+	}
+	n := exampleClearance(profile)
+	for _, mouth := range mouths {
+		if !exampleBodyFits(room.Grid, mouth.X, mouth.Y, n) {
+			continue
+		}
+		if playable[mouth] {
+			return true
+		}
+	}
+	return false
+}
+
+func exampleOpeningCells(room Room, transition Transition) (borders, mouths []Cell) {
+	extent := int32(transition.Extent)
+	if extent <= 0 {
+		return nil, nil
+	}
+	switch transition.Side {
+	case TransitionSideBottom:
+		y := int32(room.Grid.Height) - 1
+		for i := int32(0); i < extent; i++ {
+			x := int32(transition.Offset) + i
+			borders = append(borders, Cell{X: x, Y: y})
+			mouths = append(mouths, Cell{X: x, Y: y - 1})
+		}
+	case TransitionSideTop:
+		for i := int32(0); i < extent; i++ {
+			x := int32(transition.Offset) + i
+			borders = append(borders, Cell{X: x, Y: 0})
+			mouths = append(mouths, Cell{X: x, Y: 1})
+		}
+	case TransitionSideLeft:
+		y0 := int32(room.Grid.Height) - int32(transition.Offset) - extent
+		for i := int32(0); i < extent; i++ {
+			borders = append(borders, Cell{X: 0, Y: y0 + i})
+			mouths = append(mouths, Cell{X: 1, Y: y0 + i})
+		}
+	case TransitionSideRight:
+		y0 := int32(room.Grid.Height) - int32(transition.Offset) - extent
+		x := int32(room.Grid.Width) - 1
+		for i := int32(0); i < extent; i++ {
+			borders = append(borders, Cell{X: x, Y: y0 + i})
+			mouths = append(mouths, Cell{X: x - 1, Y: y0 + i})
+		}
+	}
+	return borders, mouths
+}
+
+func examplePlayable(grid Grid, profile MovementProfile, abilities AbilitySet) map[Cell]bool {
+	n := exampleClearance(profile)
+	visitedStand := map[Cell]bool{}
+	var best map[Cell]bool
+	bestStands := -1
+	var bestMin Cell
+	width := int32(grid.Width)
+	height := int32(grid.Height)
+	for y := int32(0); y < height; y++ {
+		for x := int32(0); x < width; x++ {
+			start := Cell{X: x, Y: y}
+			if visitedStand[start] || !exampleStandable(grid, x, y, profile) {
+				continue
+			}
+			comp := map[Cell]bool{}
+			stands := 0
+			minCell := start
+			queue := []Cell{start}
+			comp[start] = true
+			visitedStand[start] = true
+			stands++
+			for len(queue) > 0 {
+				cur := queue[0]
+				queue = queue[1:]
+				for _, next := range exampleMoves(grid, cur, profile, abilities, n) {
+					if comp[next] {
+						continue
+					}
+					comp[next] = true
+					queue = append(queue, next)
+					if next.Y < minCell.Y || (next.Y == minCell.Y && next.X < minCell.X) {
+						minCell = next
+					}
+					if exampleStandable(grid, next.X, next.Y, profile) {
+						visitedStand[next] = true
+						stands++
+					}
+				}
+			}
+			if best == nil || stands > bestStands || (stands == bestStands && (minCell.Y < bestMin.Y || (minCell.Y == bestMin.Y && minCell.X < bestMin.X))) {
+				best = comp
+				bestStands = stands
+				bestMin = minCell
+			}
+		}
+	}
+	if best == nil {
+		return map[Cell]bool{}
+	}
+	return best
+}
+
+func exampleStandable(grid Grid, x, y int32, profile MovementProfile) bool {
+	kind, ok := grid.At(Cell{X: x, Y: y})
+	if !ok || (kind != CellKindEmpty && kind != CellKindClimbable) {
+		return false
+	}
+	below, ok := grid.At(Cell{X: x, Y: y + 1})
+	if !ok || (below != CellKindSolid && below != CellKindSemiSolid && below != CellKindClimbable) {
+		return false
+	}
+	n := exampleClearance(profile)
+	for i := int32(1); i < n; i++ {
+		above, ok := grid.At(Cell{X: x, Y: y - i})
+		if !ok || above.Blocks() {
+			return false
+		}
+	}
+	return true
+}
+
+func exampleBodyFits(grid Grid, x, y, n int32) bool {
+	for i := int32(0); i < n; i++ {
+		kind, ok := grid.At(Cell{X: x, Y: y - i})
+		if !ok || kind.Blocks() {
+			return false
+		}
+	}
+	return true
+}
+
+func exampleMoves(grid Grid, cur Cell, profile MovementProfile, abilities AbilitySet, n int32) []Cell {
+	var out []Cell
+	if exampleStandable(grid, cur.X, cur.Y, profile) {
+		for _, dx := range []int32{-1, 1} {
+			if exampleBodyFits(grid, cur.X+dx, cur.Y, n) {
+				out = append(out, Cell{X: cur.X + dx, Y: cur.Y})
+			}
+		}
+		out = append(out, exampleJumps(grid, cur, profile, abilities, n)...)
+		if abilities.Has(AbilityDash) && profile.Dash != nil {
+			out = append(out, exampleDash(grid, cur, profile, n)...)
+		}
+	}
+	if exampleBodyFits(grid, cur.X, cur.Y+1, n) {
+		out = append(out, Cell{X: cur.X, Y: cur.Y + 1})
+	}
+	if abilities.Has(AbilityClimb) && profile.Climb != nil {
+		kind, ok := grid.At(cur)
+		if ok && kind == CellKindClimbable {
+			for _, dy := range []int32{-1, 1} {
+				next := Cell{X: cur.X, Y: cur.Y + dy}
+				nk, nok := grid.At(next)
+				if nok && nk == CellKindClimbable && exampleBodyFits(grid, next.X, next.Y, n) {
+					out = append(out, next)
+				}
+			}
+		}
+	}
+	if abilities.Has(AbilityWallJump) && profile.WallJump != nil && exampleBodyFits(grid, cur.X, cur.Y, n) {
+		if exampleBesideWall(grid, cur) {
+			out = append(out, exampleJumps(grid, cur, profile, abilities, n)...)
+		}
+	}
+	return out
+}
+
+func exampleBesideWall(grid Grid, cur Cell) bool {
+	for _, dx := range []int32{-1, 1} {
+		kind, ok := grid.At(Cell{X: cur.X + dx, Y: cur.Y})
+		if ok && kind.Blocks() {
+			return true
+		}
+	}
+	return false
+}
+
+func exampleDash(grid Grid, cur Cell, profile MovementProfile, n int32) []Cell {
+	distance := int32(math.Floor(profile.Dash.Speed * profile.Dash.Duration))
+	var out []Cell
+	for _, dx := range []int32{-1, 1} {
+		for step := int32(1); step <= distance; step++ {
+			x := cur.X + dx*step
+			if !exampleBodyFits(grid, x, cur.Y, n) {
+				break
+			}
+			out = append(out, Cell{X: x, Y: cur.Y})
+		}
+	}
+	return out
+}
+
+func exampleJumps(grid Grid, cur Cell, profile MovementProfile, abilities AbilitySet, n int32) []Cell {
+	maxPeak := profile.ApexHeight()
+	if abilities.Has(AbilityDoubleJump) && profile.DoubleJump != nil {
+		maxPeak += profile.ApexHeight()
+	}
+	peakCells := int32(math.Floor(maxPeak))
+	var out []Cell
+	for peak := int32(0); peak <= peakCells; peak++ {
+		for dy := -peak; dy <= int32(grid.Height); dy++ {
+			rise := float64(-dy)
+			reach := exampleJumpReach(profile, float64(peak), rise)
+			if reach < 0 {
+				continue
+			}
+			maxDx := int32(math.Floor(reach))
+			for dx := -maxDx; dx <= maxDx; dx++ {
+				if dx == 0 && dy == 0 {
+					continue
+				}
+				if math.Abs(float64(dx)) > reach {
+					continue
+				}
+				tx, ty := cur.X+dx, cur.Y+dy
+				if !exampleArcClear(grid, cur.X, cur.Y, tx, ty, cur.Y-peak, n) {
+					continue
+				}
+				out = append(out, Cell{X: tx, Y: ty})
+			}
+		}
+	}
+	return out
+}
+
+func exampleJumpReach(profile MovementProfile, peak, rise float64) float64 {
+	return shellJumpReach(profile, peak, rise)
+}
+
+func exampleArcClear(grid Grid, x, y, tx, ty, top, n int32) bool {
+	if ty < top {
+		top = ty
+	}
+	for yy := y; yy >= top; yy-- {
+		if !exampleBodyFits(grid, x, yy, n) {
+			return false
+		}
+	}
+	step := int32(1)
+	if tx < x {
+		step = -1
+	}
+	for xx := x; xx != tx; xx += step {
+		if !exampleBodyFits(grid, xx, top, n) {
+			return false
+		}
+	}
+	dir := int32(1)
+	if ty < top {
+		dir = -1
+	}
+	for yy := top; ; yy += dir {
+		if !exampleBodyFits(grid, tx, yy, n) {
+			return false
+		}
+		if yy == ty {
+			break
+		}
+	}
+	return true
+}
+
+func joinParts(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	out := parts[0]
+	for _, part := range parts[1:] {
+		out += "; " + part
+	}
 	return out
 }
 

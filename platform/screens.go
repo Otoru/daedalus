@@ -17,10 +17,11 @@ const saltRooms uint64 = 0x6D6163726F5F726D // "macro_rm"
 // The reference game does not publish where on a wall an opening sits. This
 // package decides: openings are aligned to bands of GateBandCells, measured
 // from the bottom of the overlap of the two rooms. Band 0 is the floor of
-// that overlap. The next opening on the same side, when the overlap is tall
-// enough, sits in the highest band that still holds a landing and a clearance,
-// so leaving through the high gate is a different event from leaving along
-// the floor. Offset remains the height of the air gap's bottom above the
+// that overlap. A second opening on the same wall is another room's contact,
+// not a second hole into the room this overlap already joins. Two holes into
+// the same room would be a parallel edge, and two holes separated by less
+// than a doorway of solid wall would be one torn opening. Offset remains the
+// height of the air gap's bottom above the
 // room's own bottom edge, which is what Transition records; rooms whose
 // bottoms do not line up therefore carry different Offsets for one shared gap.
 const GateBandCells = 4
@@ -30,8 +31,10 @@ const GateBandCells = 4
 // gate and fall through a horizontal one.
 const OpeningExtent = 3
 
-// minOverlapCells is the smallest shared run, in cells, that can host a floor
-// gate and a high gate in different bands: one landing plus two bands.
+// minOverlapCells is the smallest shared run, in cells, that contactBetween
+// treats as a wall long enough for one opening. It is two gate bands. A second
+// opening on that same run would leave a tooth thinner than the doorway, so
+// the generator does not place one there.
 const minOverlapCells = GateBandCells * 2
 
 // openingLandingCells is the solid cell a generated opening keeps under its

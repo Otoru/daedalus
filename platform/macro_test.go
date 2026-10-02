@@ -30,6 +30,15 @@ func TestVerticalOpeningsSitInDifferentBands(t *testing.T) {
 	if (spans[0].start-spans[1].start)%GateBandCells != 0 {
 		t.Fatalf("opening starts %d and %d are not on the band quantum %d", spans[0].start, spans[1].start, GateBandCells)
 	}
+	if spanSolidGap(spans[0], spans[1]) < int32(OpeningExtent) {
+		t.Fatalf("solid gap %d is thinner than a doorway of %d", spanSolidGap(spans[0], spans[1]), OpeningExtent)
+	}
+	// The shortest overlap that used to host two bands leaves one solid cell
+	// between two holes of OpeningExtent. That is one torn opening.
+	ragged := contactSpans(roomContact{axis0: 0, axis1: minOverlapCells, sideA: TransitionSideRight}, true)
+	if len(ragged) != 1 {
+		t.Fatalf("overlap of %d produced %d openings", minOverlapCells, len(ragged))
+	}
 }
 
 func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
@@ -52,13 +61,15 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 		t.Fatalf("ValidatePlane: %v", err)
 	}
 	stats := TransitionStatistics(macro.Plane)
-	wantPairs := targetPairCount(92)
-	if stats.Pairs != wantPairs {
-		t.Fatalf("pairs = %d, want %d", stats.Pairs, wantPairs)
+	if stats.ParallelPairs != 0 {
+		t.Fatalf("parallel room pairs = %d; inflated degree %.4f over %d distinct pairs", stats.ParallelPairs, stats.MeanDegree, stats.DistinctPairs)
 	}
-	wantDegree := targetEndpointsPerRoom
-	if math.Abs(stats.MeanDegree-wantDegree) > 0.02 {
-		t.Fatalf("mean degree = %.4f, want %.4f ± 0.02", stats.MeanDegree, wantDegree)
+	honest := 2 * float64(stats.DistinctPairs) / float64(stats.Rooms)
+	if math.Abs(stats.MeanDegree-honest) > 1e-9 {
+		t.Fatalf("mean degree = %.4f, honest degree = %.4f", stats.MeanDegree, honest)
+	}
+	if msg := exampleSideOpeningError(macro.Plane); msg != "" {
+		t.Fatal(msg)
 	}
 	wantAsym := targetAsymmetricCount(stats.Pairs)
 	if stats.AsymmetricPairs > wantAsym+1 || stats.ConditionalPairs < len(cfg.Steps) {
@@ -66,9 +77,6 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 	}
 	if stats.OneWayPairs > stats.ConditionalPairs {
 		t.Fatalf("one-way pairs %d outnumber conditional pairs %d", stats.OneWayPairs, stats.ConditionalPairs)
-	}
-	if stats.MultiOpeningSides == 0 {
-		t.Fatal("no side carries two openings")
 	}
 	widths := map[uint32]bool{}
 	var multiOffset bool
@@ -87,7 +95,7 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 	if len(widths) < 2 {
 		t.Fatal("every room has the same width")
 	}
-	if !multiOffset {
+	if stats.MultiOpeningSides > 0 && !multiOffset {
 		t.Fatal("a side with two openings does not give them different offsets")
 	}
 	audit, err := AuditMacro(context.Background(), macro)
@@ -117,7 +125,6 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 }
 
 func TestCalibrationIsStableAcrossSeeds(t *testing.T) {
-	var degrees []float64
 	var asym, oneWay, conditional, pairs, falls, returns int
 	for seed := uint64(1); seed <= 8; seed++ {
 		macro, err := GenerateMacro(context.Background(), MacroConfig{
@@ -132,10 +139,17 @@ func TestCalibrationIsStableAcrossSeeds(t *testing.T) {
 			t.Fatalf("seed %d: %v", seed, err)
 		}
 		stats := TransitionStatistics(macro.Plane)
-		if stats.Pairs != targetPairCount(92) || stats.ConditionalPairs != 3 || stats.OneWayPairs != 1 {
-			t.Fatalf("seed %d stats = %+v", seed, stats)
+		wantAsym := targetAsymmetricCount(stats.Pairs)
+		if stats.ParallelPairs != 0 || stats.ConditionalPairs != 3 || stats.AsymmetricPairs != wantAsym {
+			t.Fatalf("seed %d stats = %+v, want 3 conditional and %d asymmetric", seed, stats, wantAsym)
 		}
-		degrees = append(degrees, stats.MeanDegree)
+		if msg := exampleSideOpeningError(macro.Plane); msg != "" {
+			t.Fatalf("seed %d: %s", seed, msg)
+		}
+		honest := 2 * float64(stats.DistinctPairs) / float64(stats.Rooms)
+		if math.Abs(stats.MeanDegree-honest) > 1e-9 {
+			t.Fatalf("seed %d mean degree %.4f, honest %.4f", seed, stats.MeanDegree, honest)
+		}
 		asym += stats.AsymmetricPairs
 		oneWay += stats.OneWayPairs
 		conditional += stats.ConditionalPairs
@@ -161,24 +175,16 @@ func TestCalibrationIsStableAcrossSeeds(t *testing.T) {
 			t.Fatalf("seed %d audit failed", seed)
 		}
 	}
-	if math.Abs(average(degrees)-targetEndpointsPerRoom) > 0.01 {
-		t.Fatalf("mean degree %.4f, target %.4f", average(degrees), targetEndpointsPerRoom)
-	}
 	rate := float64(asym) / float64(pairs)
 	if math.Abs(rate-targetAsymmetricFraction) > 0.005 {
 		t.Fatalf("asymmetric %d/%d = %.4f, target %.4f", asym, pairs, rate, targetAsymmetricFraction)
 	}
-	if falls == 0 || returns == 0 || conditional <= oneWay {
+	// A fall is emitted only when the drop has no way back. Extra shared walls
+	// are real cycles, so a seed can have none. A bot-return still has to show
+	// up: that is the one-way whose return is another pair.
+	if returns == 0 || conditional <= oneWay {
 		t.Fatalf("falls %d, bot-returns %d, conditional %d, one-way %d", falls, returns, conditional, oneWay)
 	}
-}
-
-func average(values []float64) float64 {
-	sum := 0.0
-	for _, value := range values {
-		sum += value
-	}
-	return sum / float64(len(values))
 }
 
 // TestACanonicalBeatFitsInTheDefaultRoom is the composition check that used to

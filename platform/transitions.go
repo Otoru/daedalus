@@ -9,8 +9,10 @@ import (
 )
 
 // targetEndpointsPerRoom is the reference randomiser's mean, 890 endpoints
-// over 368 scenes. It is a calibration target, not a gate the generator refuses
-// to miss by a fraction.
+// over 368 scenes. Those endpoints are distinct transitions: a second opening
+// between the same two rooms is not one of them. The mean is what a map is
+// measured against. It is not a count this generator forges by punching a
+// parallel hole in a wall that already joins those rooms.
 const targetEndpointsPerRoom = 890.0 / 368.0
 
 // targetAsymmetricFraction is 16 one-way pairs over 445, counting the three
@@ -28,6 +30,11 @@ type TransitionStats struct {
 	ConditionalPairs  int
 	AsymmetricPairs   int
 	MultiOpeningSides int
+	// DistinctPairs is room pairs, not openings. Two openings between the
+	// same rooms count once. ParallelPairs is how many of those room pairs
+	// are joined by more than one opening.
+	DistinctPairs int
+	ParallelPairs int
 }
 
 // TransitionStatistics counts endpoints, pairs and the two asymmetry shapes.
@@ -56,6 +63,7 @@ func TransitionStatistics(plane Plane) TransitionStats {
 		stats.MeanDegree = float64(stats.Endpoints) / float64(stats.Rooms)
 	}
 	seen := map[TransitionID]bool{}
+	roomPairs := map[roomPair]int{}
 	for _, t := range index {
 		if seen[t.ID] {
 			continue
@@ -67,11 +75,18 @@ func TransitionStatistics(plane Plane) TransitionStats {
 		seen[t.ID] = true
 		seen[partner.ID] = true
 		stats.Pairs++
+		roomPairs[orderedPair(t.Room, partner.Room)]++
 		switch {
 		case t.IsOneWay() || partner.IsOneWay():
 			stats.OneWayPairs++
 		case t.IsConditional() || partner.IsConditional():
 			stats.ConditionalPairs++
+		}
+	}
+	stats.DistinctPairs = len(roomPairs)
+	for _, n := range roomPairs {
+		if n > 1 {
+			stats.ParallelPairs++
 		}
 	}
 	stats.AsymmetricPairs = stats.OneWayPairs + stats.ConditionalPairs
@@ -421,52 +436,27 @@ func fillOpenings(chosen, extras []roomContact, gates []gatePlan, rooms int) ([]
 	}
 	count := openingCount(chosen)
 	target := targetPairCount(rooms)
-	order := make([]int, len(chosen))
-	for i := range order {
-		order[i] = i
-	}
-	sort.Slice(order, func(i, j int) bool {
-		a, b := chosen[order[i]], chosen[order[j]]
-		if a.sideA.IsVertical() != b.sideA.IsVertical() {
-			return a.sideA.IsVertical()
-		}
-		if a.axis1-a.axis0 != b.axis1-b.axis0 {
-			return a.axis1-a.axis0 > b.axis1-b.axis0
-		}
-		if a.a != b.a {
-			return a.a < b.a
-		}
-		return a.b < b.b
-	})
-	for _, idx := range order {
-		if count >= target {
-			break
-		}
-		if gated[orderedPair(chosen[idx].a, chosen[idx].b)] || chosen[idx].pattern == patternConditional {
-			continue
-		}
-		if len(contactSpans(chosen[idx], true)) < 2 {
-			continue
-		}
-		chosen[idx].second = true
-		count++
-	}
-	if count >= target {
-		return chosen, nil
-	}
+	// The second span of a contact that already joins two rooms is a parallel
+	// edge: the player arrives in the same room through either hole, and on a
+	// short overlap the two holes are one opening with a tooth. Hollow Knight's
+	// left1/left2 on one wall go to different places. The target above stays
+	// the reference count of distinct transitions. Extra contacts are new room
+	// pairs, so they are the only thing spent against it. When the plane has
+	// no more shared walls, the map keeps the pairs it has. Missing the count
+	// is the measurement, not a reason to punch the parallel hole.
 	labels := labelsSkipping(rooms, chosen, gated)
 	for _, extra := range extras {
 		if count >= target {
 			break
+		}
+		if int(extra.a) >= len(labels) || int(extra.b) >= len(labels) {
+			continue
 		}
 		if labels[extra.a] < 0 || labels[extra.a] != labels[extra.b] {
 			continue
 		}
 		chosen = append(chosen, extra)
 		count++
-	}
-	if count < target {
-		return nil, geometryError("plane offers %d openings, short of the calibration target %d", count, target)
 	}
 	return chosen, nil
 }
@@ -619,9 +609,10 @@ func freeComponent(contacts []roomContact, start RoomID, block roomPair, useBloc
 	return seen
 }
 
-// spliceReturn spends one second opening on an extra bottom roomContact inside a
-// single lock component, so the map has a cycle a one-way drop can use as its
-// way back. The pair count stays on the calibration target.
+// spliceReturn adds one extra bottom contact inside a single lock component,
+// so a one-way drop has a cycle to come back on. The contact is a new room
+// pair. It is not paid for by deleting a second hole in a wall that already
+// joins two rooms.
 func spliceReturn(chosen, extras []roomContact, gates []gatePlan, rooms int) []roomContact {
 	if targetAsymmetricCount(openingCount(chosen)) <= len(gates) {
 		return chosen
@@ -648,14 +639,14 @@ func spliceReturn(chosen, extras []roomContact, gates []gatePlan, rooms int) []r
 	if extraAt < 0 {
 		return chosen
 	}
-	for i := range chosen {
-		if !chosen[i].second {
-			continue
+	extra := extras[extraAt]
+	want := orderedPair(extra.a, extra.b)
+	for _, c := range chosen {
+		if orderedPair(c.a, c.b) == want {
+			return chosen
 		}
-		chosen[i].second = false
-		return append(chosen, extras[extraAt])
 	}
-	return chosen
+	return append(chosen, extra)
 }
 
 func reaches(contacts []roomContact, from, to RoomID, block roomPair) bool {
@@ -709,7 +700,7 @@ func contactSpans(c roomContact, second bool) []axisSpan {
 			return []axisSpan{floor}
 		}
 		high, ok := highSpan(c.axis0, c.axis1)
-		if !ok || spansOverlap(floor, high) {
+		if !ok || spansOverlap(floor, high) || spanSolidGap(floor, high) < int32(OpeningExtent) {
 			return []axisSpan{floor}
 		}
 		return []axisSpan{floor, high}
@@ -722,10 +713,19 @@ func contactSpans(c roomContact, second bool) []axisSpan {
 		return []axisSpan{primary}
 	}
 	left, right, ok := endSpans(c.axis0, c.axis1)
-	if !ok || spansOverlap(left, right) {
+	if !ok || spansOverlap(left, right) || spanSolidGap(left, right) < int32(OpeningExtent) {
 		return []axisSpan{primary}
 	}
 	return []axisSpan{left, right}
+}
+
+// spanSolidGap is the solid cells between two air spans on the same axis.
+// A negative gap means the spans overlap.
+func spanSolidGap(a, b axisSpan) int32 {
+	if a.start > b.start {
+		a, b = b, a
+	}
+	return b.start - (a.start + a.extent)
 }
 
 func floorSpan(y0, y1 int32) (axisSpan, bool) {
