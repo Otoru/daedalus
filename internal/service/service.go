@@ -24,16 +24,24 @@ type GenerateFunc func(context.Context, daedalus.Config) (daedalus.Layout, error
 type Server struct {
 	daedalusv1.UnimplementedDaedalusServiceServer
 
-	generate  GenerateFunc
-	admission *Admission
-	context   context.Context
-	cancel    context.CancelFunc
-	serving   atomic.Bool
+	generate         GenerateFunc
+	generatePlatform GeneratePlatformFunc
+	admission        *Admission
+	context          context.Context
+	cancel           context.CancelFunc
+	serving          atomic.Bool
 }
 
 // New creates the service with the given generator and shared limiter.
 // A nil generate selects only the SDK's built-in algorithms.
 func New(generate GenerateFunc, admission *Admission) *Server {
+	return NewWithPlatform(generate, nil, admission)
+}
+
+// NewWithPlatform creates the service with an optional platform generator.
+// Until the platform generator is linked, GeneratePlatform returns
+// Unimplemented for an otherwise valid request rather than forging a verdict.
+func NewWithPlatform(generate GenerateFunc, generatePlatform GeneratePlatformFunc, admission *Admission) *Server {
 	if generate == nil {
 		generator := daedalus.Generator{}
 		generate = generator.GenerateContext
@@ -43,7 +51,7 @@ func New(generate GenerateFunc, admission *Admission) *Server {
 	}
 	serviceContext, cancel := context.WithCancel(context.Background())
 	server := &Server{
-		generate: generate, admission: admission,
+		generate: generate, generatePlatform: generatePlatform, admission: admission,
 		context: serviceContext, cancel: cancel,
 	}
 	server.serving.Store(true)

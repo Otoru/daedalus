@@ -16,6 +16,10 @@ service DaedalusService {
   // expiry returns DeadlineExceeded and caller cancellation returns Canceled.
   // It never returns a partial Layout.
   rpc Generate(GenerateRequest) returns (GenerateResponse);
+  // GeneratePlatform creates a platform Plane and its directed jump graph.
+  // Generate remains the dungeon API; Config was deliberately not changed
+  // into a oneof so its established proto3 presence semantics stay intact.
+  rpc GeneratePlatform(GeneratePlatformRequest) returns (GeneratePlatformResponse);
   // ComputeSteps answers, for each position, the next cardinal step toward
   // the nearest goal of that query. The service stores nothing: the grid
   // travels on every call and no field survives the response.
@@ -38,6 +42,158 @@ message GenerateRequest {
 // GenerateResponse carries the complete Layout that was generated successfully.
 message GenerateResponse {
   Layout layout = 1;
+}
+
+// GeneratePlatformRequest is separate from GenerateRequest because platform
+// generation has movement and certification semantics that dungeon Config has
+// never had.
+message GeneratePlatformRequest {
+  PlatformConfig config = 1;
+}
+
+message GeneratePlatformResponse {
+  PlatformLayout layout = 1;
+}
+
+// PlatformConfig carries the plane envelope. The platform generator validates
+// the movement profile and rhythm vocabulary; these fields are intentionally
+// not added to Config, whose meaning is frozen for existing dungeon clients.
+message PlatformConfig {
+  uint64 seed = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint32 max_rooms = 4;
+  repeated PlatformBeatDefinition beat_definitions = 5;
+  PlatformBeatDistribution spine = 6;
+  optional PlatformBeatDistribution branches = 7;
+}
+
+message PlatformBeatDefinition {
+  uint32 kind = 1;
+  uint32 min_cells = 2;
+  uint32 max_cells = 3;
+  uint32 difficulty = 4;
+  uint32 requires = 5;
+}
+
+message PlatformBeatWeight {
+  uint32 kind = 1;
+  uint32 weight = 2;
+}
+
+message PlatformBeatDistribution {
+  repeated PlatformBeatWeight beats = 1;
+  uint32 min_run_beats = 2;
+  uint32 max_run_beats = 3;
+}
+
+// PlatformCellKind is disjoint from dungeon CellKind. In particular, zero is
+// an invalid wire value here: an unrecognised value must be rejected rather
+// than silently treated as air.
+enum PlatformCellKind {
+  PLATFORM_CELL_KIND_UNSPECIFIED = 0;
+  PLATFORM_CELL_KIND_EMPTY = 1;
+  PLATFORM_CELL_KIND_SOLID = 2;
+  PLATFORM_CELL_KIND_SEMI_SOLID = 3;
+  PLATFORM_CELL_KIND_CLIMBABLE = 4;
+  PLATFORM_CELL_KIND_HAZARD = 5;
+}
+
+enum PlatformVerdict {
+  PLATFORM_VERDICT_UNKNOWN = 0;
+  PLATFORM_VERDICT_CERTIFIED = 1;
+  PLATFORM_VERDICT_REJECTED = 2;
+}
+
+enum PlatformVerdictReason {
+  PLATFORM_VERDICT_REASON_UNSPECIFIED = 0;
+  PLATFORM_VERDICT_REASON_WITNESS_FOUND = 1;
+  PLATFORM_VERDICT_REASON_TRIVIAL = 2;
+  PLATFORM_VERDICT_REASON_OUT_OF_ENVELOPE = 3;
+  PLATFORM_VERDICT_REASON_OBSTRUCTED = 4;
+  PLATFORM_VERDICT_REASON_LANDING_UNSUPPORTED = 5;
+  PLATFORM_VERDICT_REASON_RESOURCE_EXHAUSTED = 6;
+  PLATFORM_VERDICT_REASON_ABILITY_MISSING = 7;
+  PLATFORM_VERDICT_REASON_DISCONNECTED = 8;
+  PLATFORM_VERDICT_REASON_BUDGET_EXHAUSTED = 9;
+  PLATFORM_VERDICT_REASON_UNSUPPORTED_MOVESET = 10;
+  PLATFORM_VERDICT_REASON_UNSUPPORTED_GEOMETRY = 11;
+  PLATFORM_VERDICT_REASON_NOT_IMPLEMENTED = 12;
+}
+
+message PlatformBudgetReport {
+  uint64 candidate_edges = 1;
+  uint64 expanded_nodes = 2;
+  uint64 collision_tests = 3;
+  bool exhausted = 4;
+}
+
+// PlatformJudgement carries the three-valued result and its structured reason.
+// Unknown is a result, never a successful certificate.
+message PlatformJudgement {
+  PlatformVerdict verdict = 1;
+  PlatformVerdictReason reason = 2;
+  string detail = 3;
+  string model = 4;
+  string profile_version = 5;
+  PlatformBudgetReport budget = 6;
+}
+
+message PlatformGrid {
+  uint32 width = 1;
+  uint32 height = 2;
+  repeated PlatformCellKind cells = 3;
+}
+
+message PlatformRoom {
+  uint32 id = 1;
+  Cell origin = 2;
+  PlatformGrid grid = 3;
+}
+
+// PlatformJumpGraph is directed. Edges are navigation facts, not cardinal
+// steps; clients must not feed them into ComputeSteps.
+message PlatformJumpGraph {
+  string model = 1;
+  string profile_version = 2;
+  uint32 abilities = 3;
+  repeated PlatformMotionNode nodes = 4;
+  repeated PlatformMotionEdge edges = 5;
+}
+
+message PlatformMotionNode {
+  uint32 id = 1;
+  uint32 surface = 2;
+  uint32 interval = 3;
+  double height = 4;
+  double footing_lo = 5;
+  double footing_hi = 6;
+  double velocity_lo = 7;
+  double velocity_hi = 8;
+  uint32 mode = 9;
+}
+
+message PlatformMotionEdge {
+  uint32 id = 1;
+  uint32 from = 2;
+  uint32 to = 3;
+  uint32 kind = 4;
+  uint32 requires = 5;
+  uint32 passage = 6;
+  uint32 transition = 7;
+  double duration = 8;
+}
+
+// PlatformLayout exports the canonical tiles plus the generator judgement.
+// A future additive jump-graph message/RPC is required for platform routing:
+// ComputeSteps only represents cardinal directions and distances.
+message PlatformLayout {
+  uint64 seed = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  repeated PlatformRoom rooms = 4;
+  PlatformJudgement judgement = 5;
+  PlatformJumpGraph jump_graph = 6;
 }
 
 // CostGrid is one entry cost per Cell, row-major. costs is bytes rather than

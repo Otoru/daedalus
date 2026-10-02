@@ -597,7 +597,11 @@ func layoutFromProto(source *daedalusv1.Layout) (daedalus.Layout, error) {
 		if cell == nil || cell.At == nil {
 			return daedalus.Layout{}, fmt.Errorf("%w: grid cell %d missing", daedalus.ErrInvalidGating, i)
 		}
-		target.Grid.Cells[i] = daedalus.CellState{At: cellFromProto(cell.At), Kind: mapCellKind(cell.Kind), CorridorIDs: make([]daedalus.CorridorID, len(cell.CorridorIds))}
+		kind, err := mapCellKind(cell.Kind)
+		if err != nil {
+			return daedalus.Layout{}, err
+		}
+		target.Grid.Cells[i] = daedalus.CellState{At: cellFromProto(cell.At), Kind: kind, CorridorIDs: make([]daedalus.CorridorID, len(cell.CorridorIds))}
 		if cell.RoomId != nil {
 			roomID := daedalus.RoomID(*cell.RoomId)
 			target.Grid.Cells[i].RoomID = &roomID
@@ -655,15 +659,21 @@ func layoutFromProto(source *daedalusv1.Layout) (daedalus.Layout, error) {
 	return target, nil
 }
 
-func mapCellKind(source daedalusv1.CellKind) daedalus.CellKind {
+func mapCellKind(source daedalusv1.CellKind) (daedalus.CellKind, error) {
 	switch source {
+	case daedalusv1.CellKind_CELL_KIND_UNSPECIFIED:
+		// The dungeon wire format predates CellKind validation and its sparse
+		// Layout fixtures use the proto3 zero as their historical empty cell.
+		// New numeric values still fail closed below; platform kinds use their
+		// separate enum and never pass through this compatibility case.
+		return daedalus.CellKindEmpty, nil
 	case daedalusv1.CellKind_CELL_KIND_EMPTY:
-		return daedalus.CellKindEmpty
+		return daedalus.CellKindEmpty, nil
 	case daedalusv1.CellKind_CELL_KIND_ROOM:
-		return daedalus.CellKindRoom
+		return daedalus.CellKindRoom, nil
 	case daedalusv1.CellKind_CELL_KIND_CORRIDOR:
-		return daedalus.CellKindCorridor
+		return daedalus.CellKindCorridor, nil
 	default:
-		return daedalus.CellKindEmpty
+		return daedalus.CellKindEmpty, fmt.Errorf("%w: unknown cell kind %d", daedalus.ErrInvalidGating, source)
 	}
 }
