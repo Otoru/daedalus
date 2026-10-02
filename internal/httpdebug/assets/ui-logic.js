@@ -39,7 +39,10 @@ var DebugUI = {
       if (!requirements.every((ability) => abilities.has(ability))) return false;
       const from = nodes.get(String(edge.from));
       const to = nodes.get(String(edge.to));
-      return Boolean(from && to && (selected.has(String(from.surface)) || selected.has(String(to.surface))));
+	  // Before a surface is selected, show the whole usable graph. Requiring a
+	  // click here made the ability switches look inert on a freshly rendered
+	  // map because there were no arrows for them to filter.
+	  return Boolean(from && to && (selected.size === 0 || selected.has(String(from.surface)) || selected.has(String(to.surface))));
     });
   },
 

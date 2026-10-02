@@ -908,7 +908,6 @@ function drawArrow(context, from, to, scale, color, dashed) {
 
 function drawJumpGraph(context, scale) {
   if (!state.layout?.platform || !elements.showJumpGraph.checked) return;
-  if (state.selectedSurfaceIDs.length === 0) return;
   const graph = state.layout.jump_graph || {};
   const nodes = new Map((graph.nodes || []).map((node) => [String(node.id), node]));
   const visible = DebugUI.selectGraphEdges(graph, state.selectedSurfaceIDs, selectedAbilities());
@@ -942,7 +941,9 @@ function updateJumpGraphSummary() {
     return;
   }
   if (state.selectedSurfaceIDs.length === 0) {
-    elements.jumpGraphHint.textContent = "Select a platform surface to inspect its jumps; walking micro-edges stay hidden.";
+    const visible = DebugUI.selectGraphEdges(graph, [], selectedAbilities());
+    const aggregateCount = DebugUI.aggregateGraphEdges(visible, graph.nodes || []).length;
+    elements.jumpGraphHint.textContent = `Showing ${aggregateCount} jump arrows across the map. Select a surface to focus them.`;
     return;
   }
   const visible = DebugUI.selectGraphEdges(graph, state.selectedSurfaceIDs, selectedAbilities());

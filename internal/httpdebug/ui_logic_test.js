@@ -64,3 +64,12 @@ test("selected surface emits aggregated jumps and abilities change the count", (
   assert.equal(ui.aggregateGraphEdges(dash, graph.nodes).length, 2);
   console.log("COUNTS selected surface: base refined=2 arrows=1; dash refined=3 arrows=2");
 });
+
+test("an unselected platform graph shows every available manoeuvre", () => {
+  const graph = {
+    nodes: [{id: 1, surface: 10}, {id: 2, surface: 20}],
+    edges: [{id: 1, from: 1, to: 2, kind: "jump", requires: []}],
+  };
+  const edges = ui.selectGraphEdges(graph, [], new Set());
+  assert.equal(edges.length, 1);
+});
