@@ -116,7 +116,7 @@ func orderedPair(a, b RoomID) roomPair {
 	return roomPair{lo: a, hi: b}
 }
 
-type contact struct {
+type roomContact struct {
 	a, b     RoomID
 	sideA    TransitionSide
 	axis0    int32
@@ -138,7 +138,7 @@ type gatePlan struct {
 }
 
 type assembly struct {
-	contacts []contact
+	contacts []roomContact
 	gates    []gatePlan
 	spine    []RoomID
 	goal     RoomID
@@ -193,8 +193,8 @@ func wireTransitions(ctx context.Context, plane Plane, parents []int, steps []Pr
 	return plane, assembly{contacts: chosen, gates: gates, spine: spine, goal: goal}, nil
 }
 
-func geometricContacts(plane Plane) []contact {
-	var out []contact
+func geometricContacts(plane Plane) []roomContact {
+	var out []roomContact
 	for i := range plane.Rooms {
 		for j := i + 1; j < len(plane.Rooms); j++ {
 			if c, ok := contactBetween(plane.Rooms[i], plane.Rooms[j]); ok {
@@ -211,39 +211,39 @@ func geometricContacts(plane Plane) []contact {
 	return out
 }
 
-func contactBetween(a, b Room) (contact, bool) {
+func contactBetween(a, b Room) (roomContact, bool) {
 	aw, ah := int32(a.Grid.Width), int32(a.Grid.Height)
 	bw, bh := int32(b.Grid.Width), int32(b.Grid.Height)
 	switch {
 	case a.Origin.X+aw == b.Origin.X:
 		y0, y1 := overlap(a.Origin.Y, ah, b.Origin.Y, bh)
 		if y1-y0 >= minOverlapCells {
-			return contact{a: a.ID, b: b.ID, sideA: TransitionSideRight, axis0: y0, axis1: y1}, true
+			return roomContact{a: a.ID, b: b.ID, sideA: TransitionSideRight, axis0: y0, axis1: y1}, true
 		}
 	case b.Origin.X+bw == a.Origin.X:
 		y0, y1 := overlap(a.Origin.Y, ah, b.Origin.Y, bh)
 		if y1-y0 >= minOverlapCells {
-			return contact{a: b.ID, b: a.ID, sideA: TransitionSideRight, axis0: y0, axis1: y1}, true
+			return roomContact{a: b.ID, b: a.ID, sideA: TransitionSideRight, axis0: y0, axis1: y1}, true
 		}
 	case a.Origin.Y+ah == b.Origin.Y:
 		x0, x1 := overlap(a.Origin.X, aw, b.Origin.X, bw)
 		if x1-x0 >= minOverlapCells {
-			return contact{a: a.ID, b: b.ID, sideA: TransitionSideBottom, axis0: x0, axis1: x1}, true
+			return roomContact{a: a.ID, b: b.ID, sideA: TransitionSideBottom, axis0: x0, axis1: x1}, true
 		}
 	case b.Origin.Y+bh == a.Origin.Y:
 		x0, x1 := overlap(a.Origin.X, aw, b.Origin.X, bw)
 		if x1-x0 >= minOverlapCells {
-			return contact{a: b.ID, b: a.ID, sideA: TransitionSideBottom, axis0: x0, axis1: x1}, true
+			return roomContact{a: b.ID, b: a.ID, sideA: TransitionSideBottom, axis0: x0, axis1: x1}, true
 		}
 	}
-	return contact{}, false
+	return roomContact{}, false
 }
 
 func overlap(a0, aSpan, b0, bSpan int32) (int32, int32) {
 	return max(a0, b0), min(a0+aSpan, b0+bSpan)
 }
 
-func treeContacts(geometric []contact, parents []int) (chosen, extras []contact, err error) {
+func treeContacts(geometric []roomContact, parents []int) (chosen, extras []roomContact, err error) {
 	want := map[roomPair]bool{}
 	for child, parent := range parents {
 		if parent < 0 {
@@ -331,7 +331,7 @@ func farthest(start int, adj [][]int) (int, []int) {
 	return best, parent
 }
 
-func placeGates(contacts []contact, spine []RoomID, steps []ProgressionStep) ([]gatePlan, error) {
+func placeGates(contacts []roomContact, spine []RoomID, steps []ProgressionStep) ([]gatePlan, error) {
 	edges := len(spine) - 1
 	if edges < 0 {
 		edges = 0
@@ -404,7 +404,7 @@ func pickGateIndices(edges, steps int) ([]int, error) {
 	return out, nil
 }
 
-func findContact(contacts []contact, a, b RoomID) int {
+func findContact(contacts []roomContact, a, b RoomID) int {
 	want := orderedPair(a, b)
 	for i, c := range contacts {
 		if orderedPair(c.a, c.b) == want {
@@ -414,7 +414,7 @@ func findContact(contacts []contact, a, b RoomID) int {
 	return -1
 }
 
-func fillOpenings(chosen, extras []contact, gates []gatePlan, rooms int) ([]contact, error) {
+func fillOpenings(chosen, extras []roomContact, gates []gatePlan, rooms int) ([]roomContact, error) {
 	gated := map[roomPair]bool{}
 	for _, gate := range gates {
 		gated[gate.pair] = true
@@ -471,7 +471,7 @@ func fillOpenings(chosen, extras []contact, gates []gatePlan, rooms int) ([]cont
 	return chosen, nil
 }
 
-func openingCount(contacts []contact) int {
+func openingCount(contacts []roomContact) int {
 	n := 0
 	for _, c := range contacts {
 		n += len(contactSpans(c, c.second))
@@ -479,7 +479,7 @@ func openingCount(contacts []contact) int {
 	return n
 }
 
-func labelsSkipping(n int, contacts []contact, skip map[roomPair]bool) []int {
+func labelsSkipping(n int, contacts []roomContact, skip map[roomPair]bool) []int {
 	adj := make([][]int, n)
 	for _, c := range contacts {
 		if skip[orderedPair(c.a, c.b)] {
@@ -518,7 +518,7 @@ func labelsSkipping(n int, contacts []contact, skip map[roomPair]bool) []int {
 	return label
 }
 
-func addFalls(contacts []contact, gates []gatePlan, goal RoomID) error {
+func addFalls(contacts []roomContact, gates []gatePlan, goal RoomID) error {
 	pairs := openingCount(contacts)
 	want := targetAsymmetricCount(pairs) - len(gates)
 	if want <= 0 {
@@ -578,7 +578,7 @@ func addFalls(contacts []contact, gates []gatePlan, goal RoomID) error {
 
 // freeComponent is the rooms reachable from start without crossing block and
 // without crossing a conditional gate. block is ignored when useBlock is false.
-func freeComponent(contacts []contact, start RoomID, block roomPair, useBlock bool) map[RoomID]bool {
+func freeComponent(contacts []roomContact, start RoomID, block roomPair, useBlock bool) map[RoomID]bool {
 	n := 0
 	for _, c := range contacts {
 		if int(c.a) >= n {
@@ -619,10 +619,10 @@ func freeComponent(contacts []contact, start RoomID, block roomPair, useBlock bo
 	return seen
 }
 
-// spliceReturn spends one second opening on an extra bottom contact inside a
+// spliceReturn spends one second opening on an extra bottom roomContact inside a
 // single lock component, so the map has a cycle a one-way drop can use as its
 // way back. The pair count stays on the calibration target.
-func spliceReturn(chosen, extras []contact, gates []gatePlan, rooms int) []contact {
+func spliceReturn(chosen, extras []roomContact, gates []gatePlan, rooms int) []roomContact {
 	if targetAsymmetricCount(openingCount(chosen)) <= len(gates) {
 		return chosen
 	}
@@ -658,7 +658,7 @@ func spliceReturn(chosen, extras []contact, gates []gatePlan, rooms int) []conta
 	return chosen
 }
 
-func reaches(contacts []contact, from, to RoomID, block roomPair) bool {
+func reaches(contacts []roomContact, from, to RoomID, block roomPair) bool {
 	if from == to {
 		return true
 	}
@@ -699,7 +699,7 @@ func reaches(contacts []contact, from, to RoomID, block roomPair) bool {
 	return false
 }
 
-func contactSpans(c contact, second bool) []axisSpan {
+func contactSpans(c roomContact, second bool) []axisSpan {
 	if c.sideA.IsVertical() {
 		floor, ok := floorSpan(c.axis0, c.axis1)
 		if !ok {
@@ -774,7 +774,7 @@ func spansOverlap(a, b axisSpan) bool {
 	return a.start < b.start+b.extent && b.start < a.start+a.extent
 }
 
-func materialize(plane Plane, contacts []contact, gates []gatePlan) (Plane, []gatePlan, error) {
+func materialize(plane Plane, contacts []roomContact, gates []gatePlan) (Plane, []gatePlan, error) {
 	gateAt := map[roomPair]int{}
 	for i, gate := range gates {
 		gateAt[gate.pair] = i
@@ -830,7 +830,7 @@ func materialize(plane Plane, contacts []contact, gates []gatePlan) (Plane, []ga
 	return plane, gates, nil
 }
 
-func senses(c contact, room RoomID) (*Traversal, *Traversal) {
+func senses(c roomContact, room RoomID) (*Traversal, *Traversal) {
 	switch c.pattern {
 	case patternFall:
 		if room == c.a {

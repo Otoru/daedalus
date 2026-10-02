@@ -10,7 +10,7 @@ import (
 )
 
 func TestVerticalOpeningsSitInDifferentBands(t *testing.T) {
-	spans := contactSpans(contact{axis0: 0, axis1: 12, sideA: TransitionSideRight}, true)
+	spans := contactSpans(roomContact{axis0: 0, axis1: 12, sideA: TransitionSideRight}, true)
 	if len(spans) != 2 {
 		t.Fatalf("spans = %d, want a floor opening and a high opening", len(spans))
 	}
