@@ -21,12 +21,10 @@
       <output id="status" class="status" aria-live="polite">Ready to generate</output>
     </div>
     <div id="request-actions" class="actions" data-request-mode="dungeon">
-      <label class="mode-select" for="generate-mode">Mode
-        <select id="generate-mode">
-          <option value="dungeon" selected>Dungeon</option>
-          <option value="platform">Platform</option>
-        </select>
-      </label>
+      <select id="generate-mode" class="mode-select" aria-label="Generation mode">
+        <option value="dungeon" selected>Dungeon</option>
+        <option value="platform">Platform</option>
+      </select>
       <button id="generate" class="button primary" type="button">
         <span>Generate map</span>
       </button>
