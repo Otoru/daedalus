@@ -35,14 +35,17 @@ import (
 )
 
 const (
-	// MaxHTTPDebugBodyBytes is 1 MiB. The limit is applied before the body
-	// is read into memory; a larger body is rejected with 413.
-	MaxHTTPDebugBodyBytes = 1 << 20
+	// MaxHTTPDebugBodyBytes is 32 MiB. Platform layouts carry a tile grid plus
+	// their derived jump graph and witnesses, so the former 1 MiB limit was too
+	// small for a modest multi-room debug response. The limit is applied before
+	// the body is read into memory; a larger body is rejected with 413.
+	MaxHTTPDebugBodyBytes = 32 << 20
 
-	requestIDBytes = 16
-	debugIndexPath = "assets/index.html"
-	debugCSSPath   = "assets/styles.css"
-	debugJSPath    = "assets/app.js"
+	requestIDBytes           = 16
+	debugIndexPath           = "assets/index.html"
+	debugCSSPath             = "assets/styles.css"
+	debugJSPath              = "assets/app.js"
+	debugPlatformFixturePath = "assets/platform-layout.fixture.json"
 	// Debug JSON requests and responses use Content-Type application/json.
 	// A successful generate response is 200 with the full Layout. Errors
 	// are JSON with code, an English message, and an opaque request_id,
@@ -168,6 +171,9 @@ func (server *Server) debug(writer http.ResponseWriter, request *http.Request) {
 	case "/debug/app.js":
 		assetPath = debugJSPath
 		contentType = "text/javascript; charset=utf-8"
+	case "/debug/platform-layout.fixture.json":
+		assetPath = debugPlatformFixturePath
+		contentType = "application/json"
 	default:
 		// /debug/ serves only the embedded page, stylesheet, and script,
 		// with no CDN and no external resource. An unknown path has no
@@ -335,7 +341,7 @@ func (server *Server) buildGatingPlan(writer http.ResponseWriter, request *http.
 }
 
 // readDebugJSON applies the shared debug POST limits: application/json, then
-// a 1 MiB ceiling before the body is buffered. A caller that gets false has
+// a 32 MiB ceiling before the body is buffered. A caller that gets false has
 // already received the structured error.
 func readDebugJSON(writer http.ResponseWriter, request *http.Request) ([]byte, bool) {
 	mediaType, _, err := mime.ParseMediaType(request.Header.Get(contentTypeHeader))
@@ -349,7 +355,7 @@ func readDebugJSON(writer http.ResponseWriter, request *http.Request) ([]byte, b
 	if request.ContentLength > MaxHTTPDebugBodyBytes {
 		writeError(
 			writer, request, http.StatusRequestEntityTooLarge,
-			"body_too_large", "request body exceeds the 1 MiB limit",
+			"body_too_large", "request body exceeds the 32 MiB limit",
 		)
 		return nil, false
 	}
@@ -361,7 +367,7 @@ func readDebugJSON(writer http.ResponseWriter, request *http.Request) ([]byte, b
 		if errors.As(err, &maxBytesError) {
 			writeError(
 				writer, request, http.StatusRequestEntityTooLarge,
-				"body_too_large", "request body exceeds the 1 MiB limit",
+				"body_too_large", "request body exceeds the 32 MiB limit",
 			)
 			return nil, false
 		}

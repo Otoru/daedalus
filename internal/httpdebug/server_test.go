@@ -80,6 +80,7 @@ func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 		{path: "/debug/", contentType: "text/html; charset=utf-8", snippet: `id="request-editor"`},
 		{path: "/debug/styles.css", contentType: "text/css; charset=utf-8", snippet: ".map-canvas"},
 		{path: "/debug/app.js", contentType: "text/javascript; charset=utf-8", snippet: "/api/v1/generate"},
+		{path: "/debug/platform-layout.fixture.json", contentType: "application/json", snippet: `"jump_graph"`},
 	}
 
 	for _, expected := range expectedAssets {
@@ -96,6 +97,32 @@ func TestUIAssetsAreEmbeddedLocalAndCORSFree(t *testing.T) {
 			assert.Empty(t, response.Header().Get("Access-Control-Allow-Origin"))
 		})
 	}
+}
+
+// TestPlatformDebugAssetsExposeDirectedGraphControls locks the local fixture
+// seam until GeneratePlatform is wired. The renderer must make direction,
+// ability filtering, the three-valued judgement, and cell-to-node inspection
+// visible without depending on a remote asset or endpoint.
+func TestPlatformDebugAssetsExposeDirectedGraphControls(t *testing.T) {
+	t.Parallel()
+
+	app, err := assets.ReadFile(debugJSPath)
+	require.NoError(t, err)
+	page, err := assets.ReadFile(debugIndexPath)
+	require.NoError(t, err)
+	fixture, err := assets.ReadFile(debugPlatformFixturePath)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(app), "function drawJumpGraph(context, scale)")
+	assert.Contains(t, string(app), "function setLayoutForRendering(layout)")
+	assert.Contains(t, string(app), "motion_node_ids")
+	assert.Contains(t, string(app), "drawArrow")
+	assert.Contains(t, string(page), `id="ability-dash"`)
+	assert.Contains(t, string(page), `id="ability-double-jump"`)
+	assert.Contains(t, string(page), `id="ability-wall-jump"`)
+	assert.Contains(t, string(fixture), `"semi-solid"`)
+	assert.Contains(t, string(fixture), `"hazard"`)
+	assert.Contains(t, string(fixture), `"verdict":"unknown"`)
 }
 
 // TestAllEmbeddedAssetsDoNotReferenceAnExternalHost checks that every embedded
@@ -627,7 +654,7 @@ func TestGenerateRequiresCanonicalProtoJSONAndRequiredFields(t *testing.T) {
 }
 
 // TestGenerateRejectsOversizedBodyBeforeGeneration checks that a body above
-// 1 MiB returns 413 before generation runs.
+// 32 MiB returns 413 before generation runs.
 func TestGenerateRejectsOversizedBodyBeforeGeneration(t *testing.T) {
 	t.Parallel()
 
@@ -1024,7 +1051,7 @@ func TestComputeStepsRejectsNonBase64CostsAndAMissingGrid(t *testing.T) {
 	assert.Zero(t, generations.Load())
 }
 
-// TestComputeStepsRejectsAnOversizedBody checks the same 1 MiB ceiling as
+// TestComputeStepsRejectsAnOversizedBody checks the same 32 MiB ceiling as
 // generate, before the service reads the grid.
 func TestComputeStepsRejectsAnOversizedBody(t *testing.T) {
 	t.Parallel()

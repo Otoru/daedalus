@@ -51,6 +51,17 @@
         <input id="zoom" type="range" min="2" max="24" value="8">
         <output id="zoom-value" for="zoom">8 px</output>
         <button id="fit-map" class="button secondary compact" type="button">Fit</button>
+        <button id="load-platform-fixture" class="button secondary compact" type="button">Load platform fixture</button>
+      </div>
+      <div class="field-controls" aria-label="Platform jump graph">
+        <div class="toggle-row">
+          <label class="centerline-toggle" for="show-jump-graph"><input id="show-jump-graph" type="checkbox" checked> Jump graph</label>
+          <label class="centerline-toggle" for="ability-dash"><input id="ability-dash" type="checkbox"> Dash</label>
+          <label class="centerline-toggle" for="ability-double-jump"><input id="ability-double-jump" type="checkbox"> Double jump</label>
+          <label class="centerline-toggle" for="ability-wall-jump"><input id="ability-wall-jump" type="checkbox"> Wall-cling</label>
+        </div>
+        <output id="platform-verdict" class="platform-verdict" hidden></output>
+        <p class="click-hint">The graph only shows directed edges whose required abilities are selected.</p>
       </div>
       <div class="field-controls" aria-label="Distance field">
         <div class="toggle-row">
@@ -103,6 +114,10 @@
         <span><i class="swatch terrain"></i>Terrain</span>
         <span><i class="swatch gate-main"></i>Main gate</span>
         <span><i class="swatch gate-key"></i>Key room</span>
+        <span><i class="swatch solid"></i>Solid</span>
+        <span><i class="swatch semi-solid"></i>Semi-solid</span>
+        <span><i class="swatch climbable"></i>Rope / ladder</span>
+        <span><i class="swatch hazard"></i>Hazard</span>
       </div>
       <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
         <h3 id="inspector-title">Selected cell</h3>
