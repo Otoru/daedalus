@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	DaedalusService_Generate_FullMethodName          = "/daedalus.v1.DaedalusService/Generate"
+	DaedalusService_GeneratePlatform_FullMethodName  = "/daedalus.v1.DaedalusService/GeneratePlatform"
 	DaedalusService_ComputeSteps_FullMethodName      = "/daedalus.v1.DaedalusService/ComputeSteps"
 	DaedalusService_ComputeVisibility_FullMethodName = "/daedalus.v1.DaedalusService/ComputeVisibility"
 	DaedalusService_BuildGatingPlan_FullMethodName   = "/daedalus.v1.DaedalusService/BuildGatingPlan"
@@ -41,6 +42,10 @@ type DaedalusServiceClient interface {
 	// expiry returns DeadlineExceeded and caller cancellation returns Canceled.
 	// It never returns a partial Layout.
 	Generate(ctx context.Context, in *GenerateRequest, opts ...grpc.CallOption) (*GenerateResponse, error)
+	// GeneratePlatform creates a platform Plane and its directed jump graph.
+	// Generate remains the dungeon API; Config was deliberately not changed
+	// into a oneof so its established proto3 presence semantics stay intact.
+	GeneratePlatform(ctx context.Context, in *GeneratePlatformRequest, opts ...grpc.CallOption) (*GeneratePlatformResponse, error)
 	// ComputeSteps answers, for each position, the next cardinal step toward
 	// the nearest goal of that query. The service stores nothing: the grid
 	// travels on every call and no field survives the response.
@@ -66,6 +71,16 @@ func (c *daedalusServiceClient) Generate(ctx context.Context, in *GenerateReques
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GenerateResponse)
 	err := c.cc.Invoke(ctx, DaedalusService_Generate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daedalusServiceClient) GeneratePlatform(ctx context.Context, in *GeneratePlatformRequest, opts ...grpc.CallOption) (*GeneratePlatformResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GeneratePlatformResponse)
+	err := c.cc.Invoke(ctx, DaedalusService_GeneratePlatform_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +133,10 @@ type DaedalusServiceServer interface {
 	// expiry returns DeadlineExceeded and caller cancellation returns Canceled.
 	// It never returns a partial Layout.
 	Generate(context.Context, *GenerateRequest) (*GenerateResponse, error)
+	// GeneratePlatform creates a platform Plane and its directed jump graph.
+	// Generate remains the dungeon API; Config was deliberately not changed
+	// into a oneof so its established proto3 presence semantics stay intact.
+	GeneratePlatform(context.Context, *GeneratePlatformRequest) (*GeneratePlatformResponse, error)
 	// ComputeSteps answers, for each position, the next cardinal step toward
 	// the nearest goal of that query. The service stores nothing: the grid
 	// travels on every call and no field survives the response.
@@ -141,6 +160,9 @@ type UnimplementedDaedalusServiceServer struct{}
 
 func (UnimplementedDaedalusServiceServer) Generate(context.Context, *GenerateRequest) (*GenerateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Generate not implemented")
+}
+func (UnimplementedDaedalusServiceServer) GeneratePlatform(context.Context, *GeneratePlatformRequest) (*GeneratePlatformResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GeneratePlatform not implemented")
 }
 func (UnimplementedDaedalusServiceServer) ComputeSteps(context.Context, *ComputeStepsRequest) (*ComputeStepsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ComputeSteps not implemented")
@@ -186,6 +208,24 @@ func _DaedalusService_Generate_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaedalusServiceServer).Generate(ctx, req.(*GenerateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaedalusService_GeneratePlatform_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GeneratePlatformRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaedalusServiceServer).GeneratePlatform(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaedalusService_GeneratePlatform_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaedalusServiceServer).GeneratePlatform(ctx, req.(*GeneratePlatformRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -254,6 +294,10 @@ var DaedalusService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Generate",
 			Handler:    _DaedalusService_Generate_Handler,
+		},
+		{
+			MethodName: "GeneratePlatform",
+			Handler:    _DaedalusService_GeneratePlatform_Handler,
 		},
 		{
 			MethodName: "ComputeSteps",
