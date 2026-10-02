@@ -715,11 +715,14 @@ function renderLayout() {
   const canvas = elements.canvas;
   const contentWidth = grid.width * scale;
   const contentHeight = grid.height * scale;
-  const cssWidth = Math.max(elements.viewport.clientWidth, contentWidth);
-  const cssHeight = Math.max(elements.viewport.clientHeight, contentHeight);
+  // Keep a camera apron around the map. Without it panning stops the moment
+  // the final row enters view, which makes inspection at the edge awkward.
+  const cameraPad = Math.max(80, Math.round(scale * 6));
+  const cssWidth = Math.max(elements.viewport.clientWidth, contentWidth + cameraPad * 2);
+  const cssHeight = Math.max(elements.viewport.clientHeight, contentHeight + cameraPad * 2);
   state.origin = {
-    x: Math.floor((cssWidth - contentWidth) / 2),
-    y: Math.floor((cssHeight - contentHeight) / 2),
+    x: cameraPad + Math.floor((cssWidth - contentWidth - cameraPad * 2) / 2),
+    y: cameraPad + Math.floor((cssHeight - contentHeight - cameraPad * 2) / 2),
   };
   const dpr = window.devicePixelRatio || 1;
   // A canvas does not reflow with its container. Size the backing store from
@@ -908,6 +911,7 @@ function drawArrow(context, from, to, scale, color, dashed) {
 
 function drawJumpGraph(context, scale) {
   if (!state.layout?.platform || !elements.showJumpGraph.checked) return;
+	if (state.selectedSurfaceIDs.length === 0) return;
   const graph = state.layout.jump_graph || {};
   const nodes = new Map((graph.nodes || []).map((node) => [String(node.id), node]));
   const visible = DebugUI.selectGraphEdges(graph, state.selectedSurfaceIDs, selectedAbilities());
@@ -1442,6 +1446,14 @@ function clearInspector() {
 }
 
 function platformSurfaceIDsAt(graph, grid, x, y) {
+	const cell = grid.cells[y * grid.width + x];
+	const room = (state.layout?.plane?.rooms || []).find((candidate) => String(candidate.id) === String(cell?.room_id));
+	if (room) {
+		const localX = x - Number(room.origin?.x || 0);
+		const localY = y - Number(room.origin?.y || 0);
+		const feet = Number(room.grid?.height || 0) - localY;
+		return [...new Set((graph.nodes || []).filter((node) => String(node.room) === String(room.id) && Math.floor(Number(node.height)) === feet && localX >= Number(node.footing?.lo ?? node.footing_lo ?? 0) && localX <= Number(node.footing?.hi ?? node.footing_hi ?? 0)).map((node) => node.surface))];
+	}
   return (graph.surfaces || []).filter((surface) => {
     const extent = surface.extent || {}; const at = Number(surface.at); const worldY = Number(grid.height) - y;
     return (surface.kind === "wall-left" || surface.kind === "wall-right" || surface.kind === "climbable")
