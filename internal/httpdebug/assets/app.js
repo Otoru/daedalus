@@ -115,6 +115,7 @@ const elements = {
   abilityDash: document.querySelector("#ability-dash"),
   abilityDoubleJump: document.querySelector("#ability-double-jump"),
   abilityWallJump: document.querySelector("#ability-wall-jump"),
+  abilityClimb: document.querySelector("#ability-climb"),
   platformVerdict: document.querySelector("#platform-verdict"),
   jumpGraphHint: document.querySelector("#jump-graph-hint"),
   mapMode: document.querySelector("#map-mode"),
@@ -281,8 +282,22 @@ elements.clearVisibility.addEventListener("click", clearVisibility);
 elements.buildGating.addEventListener("click", buildGatingPlan);
 elements.clearGating.addEventListener("click", clearGatingPlan);
 elements.canvas.addEventListener("click", selectCellFromPointer);
-[elements.showJumpGraph, elements.abilityDash, elements.abilityDoubleJump, elements.abilityWallJump].forEach((control) => {
+[elements.showJumpGraph, elements.abilityDash, elements.abilityDoubleJump, elements.abilityWallJump, elements.abilityClimb].forEach((control) => {
   control.addEventListener("change", () => {
+    if (control !== elements.showJumpGraph) elements.showJumpGraph.checked = true;
+    if (elements.showJumpGraph.checked && state.layout?.platform) {
+      const graph = state.layout.jump_graph || {};
+      const ability = new Map([
+        [elements.abilityClimb, "climb"],
+        [elements.abilityWallJump, "wall-jump"],
+        [elements.abilityDoubleJump, "double-jump"],
+        [elements.abilityDash, "dash"],
+      ]).get(control) || "";
+      const focused = DebugUI.selectGraphEdges(graph, state.selectedSurfaceIDs, selectedAbilities());
+      if (state.selectedSurfaceIDs.length === 0 || (ability && control.checked && !focused.some(edge => DebugUI.graphRequirements(edge).includes(ability)))) {
+        state.selectedSurfaceIDs = DebugUI.initialGraphSurface(graph, selectedAbilities(), control.checked ? ability : "");
+      }
+    }
     updateJumpGraphSummary();
     renderLayout();
   });
@@ -372,6 +387,9 @@ function setLayoutForRendering(layout) {
   state.layout = normalizePlatformLayout(layout);
   state.roomOffsets = roomOffsets(state.layout);
   state.selectedSurfaceIDs = [];
+  if (state.layout?.platform && elements.showJumpGraph.checked) {
+    state.selectedSurfaceIDs = DebugUI.initialGraphSurface(state.layout.jump_graph || {}, selectedAbilities());
+  }
   updateMapTools();
   updatePlatformVerdict();
   updateJumpGraphSummary();
@@ -382,10 +400,13 @@ function updateRequestMode() {
 }
 
 function updateMapTools() {
-  const mode = state.layout?.platform ? "platform" : state.layout ? "dungeon" : "empty";
+  let mode = "empty";
+  if (state.layout?.platform) mode = "platform";
+  else if (state.layout) mode = "dungeon";
   elements.viewControls.dataset.mapMode = mode;
   elements.mapMode.className = `map-mode ${mode}`;
-  elements.mapMode.textContent = mode === "platform" ? "Platform map" : mode === "dungeon" ? "Dungeon map" : "No map";
+  const labels = {platform: "Platform map", dungeon: "Dungeon map", empty: "No map"};
+  elements.mapMode.textContent = labels[mode];
 }
 
 function selectedGenerateMode() {
@@ -397,7 +418,7 @@ function exampleForSelectedMode() {
 }
 
 function layoutForRendering(parsed) {
-  if (parsed && parsed.layout && !parsed.grid && (parsed.layout.judgement || parsed.layout.jump_graph)) {
+  if (parsed?.layout && !parsed.grid && (parsed.layout.judgement || parsed.layout.jump_graph)) {
     return parsed.layout;
   }
   return parsed;
@@ -793,7 +814,7 @@ const cellColors = {
 };
 
 function colorForCell(cell) {
-  if (state.layout?.platform) return platformCellColor(cell.kind);
+  if (state.layout?.platform) return cell.room_id == null ? "#0d131c" : platformCellColor(cell.kind);
   if (cell.kind === "CELL_KIND_ROOM") {
     return roomColor(cell.room_id || 0);
   }
@@ -805,22 +826,29 @@ function colorForCell(cell) {
 
 function platformCellColor(kind) {
   switch (platformKindName(kind)) {
-    case "solid": return "#697586";
+    case "solid": return "#465569";
     case "semi-solid": return "#7a5a2b";
     case "climbable": return "#5a4630";
     case "hazard": return "#5d2630";
-    default: return cellColors.empty;
+    default: return "#18222f";
   }
 }
 
 function drawPlatformTerrain(context, scale) {
   const cells = state.layout.grid.cells || [];
+  const width = state.layout.grid.width;
   context.save();
   cells.forEach((cell) => {
     const x = cell.at.x * scale;
     const y = cell.at.y * scale;
     const kind = platformKindName(cell.kind);
-    if (kind === "semi-solid") {
+    if (kind === "solid") {
+      const above = cells[(cell.at.y - 1) * width + cell.at.x];
+      if (above && platformKindName(above.kind) !== "solid") {
+        context.fillStyle = "#b2c8d9";
+        context.fillRect(x, y, scale, Math.max(1, scale * .16));
+      }
+    } else if (kind === "semi-solid") {
       context.strokeStyle = "#f2c879";
       context.lineWidth = Math.max(1, scale * 0.16);
       context.beginPath(); context.moveTo(x, y + scale * 0.23); context.lineTo(x + scale, y + scale * 0.23); context.stroke();
@@ -844,7 +872,16 @@ function platformPoint(anchor) {
 function drawPlatformAnchors(context, scale) {
   const marks = [[state.layout.plane.spawn, "S", "#8ee6a2"], [state.layout.plane.goal, "G", "#ffd166"]];
   context.save(); context.font = `${Math.max(10, scale)}px ui-monospace`; context.textAlign = "center"; context.textBaseline = "middle";
-  marks.forEach(([anchor, label, color]) => { const point = platformPoint(anchor); if (!point) return; context.fillStyle = color; context.beginPath(); context.arc(point.x * scale, point.y * scale, Math.max(4, scale * .32), 0, Math.PI * 2); context.fill(); context.fillStyle = "#111"; context.fillText(label, point.x * scale, point.y * scale + 1); });
+  marks.forEach(([anchor, label, color]) => {
+    const point = platformPoint(anchor);
+    if (!point) return;
+    context.fillStyle = color;
+    context.beginPath();
+    context.arc(point.x * scale, point.y * scale, Math.max(4, scale * .32), 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#111";
+    context.fillText(label, point.x * scale, point.y * scale + 1);
+  });
   context.restore();
 }
 
@@ -859,13 +896,18 @@ function drawPlatformTransitions(context, scale) {
     else { x += offset; y += Number(grid.height || 0); horizontal = true; }
     context.strokeStyle = transition.outbound && !transition.inbound ? "#ff8a8a" : "#a7d8ff"; context.lineWidth = Math.max(2, scale * .18);
     context.beginPath(); if (horizontal) { context.moveTo(x * scale, y * scale); context.lineTo((x + extent) * scale, y * scale); } else { context.moveTo(x * scale, y * scale); context.lineTo(x * scale, (y + extent) * scale); } context.stroke();
-    context.fillStyle = "#f2f2f2"; context.font = `${Math.max(8, scale * .62)}px ui-monospace`; context.fillText(`h${offset}`, (x + .5) * scale, (y + .5) * scale);
+    if (scale >= 10) {
+      let direction = "←";
+      if (transition.outbound && transition.inbound) direction = "↔";
+      else if (transition.outbound) direction = "→";
+      context.fillStyle = "#a7d8ff"; context.font = `${Math.max(8, scale * .62)}px ui-monospace`; context.fillText(`${direction} ${transition.to}`, (x + .5) * scale, (y + .5) * scale);
+    }
   }));
   context.restore();
 }
 
 function selectedAbilities() {
-  return new Set([elements.abilityDash.checked && "dash", elements.abilityDoubleJump.checked && "double-jump", elements.abilityWallJump.checked && "wall-jump"].filter(Boolean));
+  return new Set([elements.abilityDash.checked && "dash", elements.abilityDoubleJump.checked && "double-jump", elements.abilityWallJump.checked && "wall-jump", elements.abilityClimb.checked && "climb"].filter(Boolean));
 }
 
 function edgeRequirements(edge) {
@@ -911,16 +953,17 @@ function drawArrow(context, from, to, scale, color, dashed) {
 
 function drawJumpGraph(context, scale) {
   if (!state.layout?.platform || !elements.showJumpGraph.checked) return;
-	if (state.selectedSurfaceIDs.length === 0) return;
+  // Inspect outgoing connectivity only after choosing a surface. The wire
+  // carries no motion witnesses, so these dashed links are not trajectories.
   const graph = state.layout.jump_graph || {};
   const nodes = new Map((graph.nodes || []).map((node) => [String(node.id), node]));
   const visible = DebugUI.selectGraphEdges(graph, state.selectedSurfaceIDs, selectedAbilities());
-  const aggregates = DebugUI.aggregateGraphEdges(visible, graph.nodes || []);
-  const colors = {jump: "#7dd3fc", "double-jump": "#c4b5fd", dash: "#fb7185", "wall-jump": "#fbbf24", "wall-cling": "#a3e635"};
+  const aggregates = DebugUI.previewGraphEdges(DebugUI.aggregateGraphEdges(visible, graph.nodes || []), graph.nodes || []);
+  const colors = {jump: "#7dd3fc", "double-jump": "#c4b5fd", dash: "#fb7185", "wall-jump": "#fbbf24", "wall-cling": "#a3e635", climb: "#eac087"};
   aggregates.forEach((edge) => {
     const from = nodes.get(String(edge.from));
     const to = nodes.get(String(edge.to));
-    if (from && to) drawArrow(context, graphNodePoint(from), graphNodePoint(to), scale, colors[edge.kind] || "#d1d5db", false);
+    if (from && to) drawArrow(context, graphNodePoint(from), graphNodePoint(to), scale, colors[edge.kind] || "#d1d5db", true);
   });
   context.save();
   const endpointIDs = new Set(aggregates.flatMap((edge) => [String(edge.from), String(edge.to)]));
@@ -936,23 +979,23 @@ function updateJumpGraphSummary() {
   if (!state.layout?.platform) return;
   const graph = state.layout.jump_graph || {};
   const hasAbilityEdges = (graph.edges || []).some((edge) => edgeRequirements(edge).length > 0);
-  if (!hasAbilityEdges) {
-    elements.jumpGraphHint.textContent = "This map has no ability-gated edges; the ability toggles have nothing to add.";
-    return;
-  }
+  const abilityNote = hasAbilityEdges ? "" : "No ability-gated links on this map. ";
   if (!elements.showJumpGraph.checked) {
-    elements.jumpGraphHint.textContent = "Turn on Jump graph to inspect jumps from a selected surface.";
+    elements.jumpGraphHint.textContent = `${abilityNote}Turn on Surface connections, then click a platform to inspect its reachable surfaces.`;
     return;
   }
   if (state.selectedSurfaceIDs.length === 0) {
-    const visible = DebugUI.selectGraphEdges(graph, [], selectedAbilities());
-    const aggregateCount = DebugUI.aggregateGraphEdges(visible, graph.nodes || []).length;
-    elements.jumpGraphHint.textContent = `Showing ${aggregateCount} jump arrows across the map. Select a surface to focus them.`;
+    elements.jumpGraphHint.textContent = `${abilityNote}Click a platform to inspect outgoing connections. Dashed arrows show reachability, not flight trajectories.`;
     return;
   }
   const visible = DebugUI.selectGraphEdges(graph, state.selectedSurfaceIDs, selectedAbilities());
-  const aggregateCount = DebugUI.aggregateGraphEdges(visible, graph.nodes || []).length;
-  elements.jumpGraphHint.textContent = `${visible.length} refined jump edges collapse into ${aggregateCount} surface-to-surface arrows.`;
+  const aggregates = DebugUI.aggregateGraphEdges(visible, graph.nodes || []);
+  const preview = DebugUI.previewGraphEdges(aggregates, graph.nodes || []);
+  const byKind = new Map();
+  aggregates.forEach(edge => byKind.set(edge.kind, (byKind.get(edge.kind) || 0) + 1));
+  const kinds = [...byKind].map(([kind, count]) => `${count} ${kind}`).join(" · ");
+  const kindSummary = kinds ? ` (${kinds})` : "";
+  elements.jumpGraphHint.textContent = `${abilityNote}${aggregates.length} outgoing surface connections${kindSummary}. Showing ${preview.length} arrows; dashed lines mean connectivity, not the flight path. Click another platform or rope to inspect it.`;
 }
 
 function updatePlatformVerdict() {
@@ -1024,7 +1067,7 @@ function terrainAt(x, y) {
   if (!terrain) return null;
   const raw = terrain.indices;
   const bytes = typeof raw === "string" ? base64ToBytes(raw) : raw;
-  const selected = bytes && bytes[y * grid.width + x];
+  const selected = bytes?.[y * grid.width + x];
   if (!selected || !Array.isArray(terrain.palette)) return null;
   return terrain.palette[selected - 1] || null;
 }
@@ -1032,7 +1075,7 @@ function terrainAt(x, y) {
 function terrainColor(definition, index) {
   const text = `${definition?.id || "terrain"}:${index}`;
   let hash = 0;
-  for (let offset = 0; offset < text.length; offset += 1) hash = (hash * 31 + text.charCodeAt(offset)) >>> 0;
+  for (let offset = 0; offset < text.length; offset += 1) hash = (hash * 31 + text.codePointAt(offset)) >>> 0;
   return `hsl(${hash % 360} 28% ${definition?.transparent ? 52 : 38}%)`;
 }
 
@@ -1452,7 +1495,7 @@ function platformSurfaceIDsAt(graph, grid, x, y) {
 		const localX = x - Number(room.origin?.x || 0);
 		const localY = y - Number(room.origin?.y || 0);
 		const feet = Number(room.grid?.height || 0) - localY;
-		return [...new Set((graph.nodes || []).filter((node) => String(node.room) === String(room.id) && Math.floor(Number(node.height)) === feet && localX >= Number(node.footing?.lo ?? node.footing_lo ?? 0) && localX <= Number(node.footing?.hi ?? node.footing_hi ?? 0)).map((node) => node.surface))];
+		return DebugUI.surfaceIDsAt(graph.nodes || [], room.id, localX, feet, platformKindName(cell.kind));
 	}
   return (graph.surfaces || []).filter((surface) => {
     const extent = surface.extent || {}; const at = Number(surface.at); const worldY = Number(grid.height) - y;
@@ -1466,12 +1509,16 @@ function updateInspector(x, y) {
   const grid = state.layout.grid;
   const index = y * grid.width + x;
   const cell = (grid.cells || [])[index] || {at: {x, y}, kind: "CELL_KIND_EMPTY"};
+  document.querySelector("#cell-summary").textContent = `Cell ${x}, ${y} · ${cell.kind}`;
+  elements.inspector.scrollTop = 0;
   if (state.layout.platform) {
     const graph = state.layout.jump_graph || {};
     const surfaceIDs = platformSurfaceIDsAt(graph, grid, x, y);
     state.selectedSurfaceIDs = surfaceIDs;
+    if (surfaceIDs.length > 0) elements.showJumpGraph.checked = true;
     updateJumpGraphSummary();
     const nodeIDs = (graph.nodes || []).filter((node) => surfaceIDs.map(String).includes(String(node.surface))).map((node) => node.id);
+    document.querySelector("#cell-summary").textContent = `Cell ${x}, ${y} · ${cell.kind}\nRoom ${cell.room_id ?? "—"} · ${surfaceIDs.length} surfaces · ${nodeIDs.length} motion nodes`;
     const room = (state.layout.plane.rooms || []).find((candidate) => String(candidate.id) === String(cell.room_id));
     const details = {coordinates: {x, y}, kind: cell.kind, room_id: cell.room_id ?? null, surface_ids: surfaceIDs, motion_node_ids: nodeIDs, transitions: (room?.transitions || []).filter((transition) => transitionCoversPlatformCell(room, transition, x, y)).map((transition) => ({id: transition.id, side: transition.side, height: transition.offset, extent: transition.extent, one_way: Boolean(transition.outbound) !== Boolean(transition.inbound)}))};
     elements.cellDetails.textContent = `Platform cell\n${JSON.stringify(details, null, 2)}`;
@@ -1531,11 +1578,13 @@ function updateInspector(x, y) {
       transparent: terrainAt(x, y).transparent,
     } : null,
   };
-  const headline = state.observer
-    ? `Vision: ${visible ? "Visible" : "Hidden"}${step ? ` · ${statusLabel(step.status)} · distance ${step.distance}` : ""}`
-    : step
-      ? `${statusLabel(step.status)} · distance ${step.distance}`
-      : "No field on this cell yet.";
+  let headline = "No field on this cell yet.";
+  if (step) headline = `${statusLabel(step.status)} · distance ${step.distance}`;
+  if (state.observer) {
+    const visibilityLabel = visible ? "Visible" : "Hidden";
+    const stepSummary = step ? ` · ${headline}` : "";
+    headline = `Vision: ${visibilityLabel}${stepSummary}`;
+  }
   elements.cellDetails.textContent = `${headline}\n${JSON.stringify(details, null, 2)}`;
   elements.inspector.hidden = false;
 }
@@ -1743,7 +1792,7 @@ function bytesToBase64(bytes) {
   const chunk = 4096;
   for (let offset = 0; offset < bytes.length; offset += chunk) {
     const slice = bytes.subarray(offset, offset + chunk);
-    binary += String.fromCharCode.apply(null, slice);
+    binary += String.fromCodePoint.apply(null, slice);
   }
   return btoa(binary);
 }
@@ -1752,7 +1801,7 @@ function base64ToBytes(text) {
   const binary = atob(text || "");
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+    bytes[index] = binary.codePointAt(index);
   }
   return bytes;
 }
@@ -1800,7 +1849,7 @@ async function loadVisibility() {
       return;
     }
     const payload = JSON.parse(responseText);
-    const encoded = payload.fields && payload.fields[0] ? payload.fields[0].visible : "";
+    const encoded = payload.fields?.[0]?.visible || "";
     const visibility = base64ToBytes(encoded);
     if (visibility.length !== Math.ceil(layout.grid.width * layout.grid.height / 8)) {
       showLocalError("ComputeVisibility returned a field with an unexpected size.");
@@ -1840,23 +1889,7 @@ async function loadField() {
     const steps = new Array(total);
     for (let offset = 0; offset < total; offset += maxStepsPerCall) {
       const end = Math.min(total, offset + maxStepsPerCall);
-      const positions = [];
-      for (let index = offset; index < end; index += 1) {
-        positions.push({x: index % width, y: Math.floor(index / width)});
-      }
-      const response = await fetch("/api/v1/compute-steps", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          cost_grid: {width, height, costs},
-          queries: [{
-            sources: [{at: goal}],
-            positions,
-            flee,
-          }],
-        }),
-      });
-      const responseText = await response.text();
+      const {response, responseText, positions} = await requestFieldChunk({width, height, costs, goal, flee, offset, end});
       if (token !== state.fieldToken) {
         return;
       }
@@ -1868,7 +1901,7 @@ async function loadField() {
         return;
       }
       const payload = JSON.parse(responseText);
-      const batch = payload.results && payload.results[0] ? payload.results[0].steps : null;
+      const batch = payload.results?.[0]?.steps ?? null;
       if (!Array.isArray(batch) || batch.length !== positions.length) {
         showLocalError("ComputeSteps returned a step list that does not match the positions.");
         setStatus("Field response was incomplete", "failure");
@@ -1883,16 +1916,7 @@ async function loadField() {
     if (token !== state.fieldToken) {
       return;
     }
-    state.field = steps;
-    renderLayout();
-    if (state.selectedCell) {
-      updateInspector(state.selectedCell.x, state.selectedCell.y);
-    }
-    if (state.position) {
-      describePosition();
-      return;
-    }
-    setStatus(flee ? "Flee field ready" : "Field ready", "success");
+    displayReadyField(steps, flee);
   } catch (error) {
     if (token !== state.fieldToken) {
       return;
@@ -1900,6 +1924,30 @@ async function loadField() {
     showLocalError(`Could not complete the field request: ${error.message}`);
     setStatus("Field request failed", "failure");
   }
+}
+
+async function requestFieldChunk({width, height, costs, goal, flee, offset, end}) {
+  const positions = [];
+  for (let index = offset; index < end; index += 1) {
+    positions.push({x: index % width, y: Math.floor(index / width)});
+  }
+  const response = await fetch("/api/v1/compute-steps", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      cost_grid: {width, height, costs},
+      queries: [{sources: [{at: goal}], positions, flee}],
+    }),
+  });
+  return {response, responseText: await response.text(), positions};
+}
+
+function displayReadyField(steps, flee) {
+  state.field = steps;
+  renderLayout();
+  if (state.selectedCell) updateInspector(state.selectedCell.x, state.selectedCell.y);
+  if (state.position) describePosition();
+  else setStatus(flee ? "Flee field ready" : "Field ready", "success");
 }
 
 function describePosition() {
@@ -2050,7 +2098,7 @@ function routeFrom(origin) {
     seen.add(key);
     path.push({x, y});
     const step = stepAt(x, y);
-    if (!step || step.status !== "STEP_STATUS_MOVED") {
+    if (step?.status !== "STEP_STATUS_MOVED") {
       break;
     }
     const delta = directionVector(step.direction);

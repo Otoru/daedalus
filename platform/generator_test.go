@@ -129,6 +129,35 @@ func TestCanonicalCoversWhatItClaimsTo(t *testing.T) {
 
 	// Canonical reads through the slices it is given, so each case copies the
 	// one slice it edits and leaves the original layout alone.
+	cases := canonicalMutationCases()
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			mutated := layout
+			test.mutate(&mutated)
+			if bytes.Equal(base, mutated.Canonical()) {
+				t.Fatalf("changing %s did not change the canonical encoding, so it is not covered", test.name)
+			}
+		})
+	}
+
+	// A witness is part of the certificate, so it is part of the identity.
+	var witnessed bool
+	for _, edge := range layout.JumpGraph.Edges {
+		if edge.Witness == nil || len(edge.Witness.Phases) == 0 {
+			continue
+		}
+		witnessed = true
+		break
+	}
+	if !witnessed {
+		t.Fatal("no certified edge carries a witness, so the witness half of the encoding is untested")
+	}
+}
+
+func canonicalMutationCases() []struct {
+	name   string
+	mutate func(*PlatformLayout)
+} {
 	cases := []struct {
 		name   string
 		mutate func(*PlatformLayout)
@@ -165,28 +194,7 @@ func TestCanonicalCoversWhatItClaimsTo(t *testing.T) {
 		}},
 		{"the request seed", func(l *PlatformLayout) { l.Config.Seed++ }},
 	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			mutated := layout
-			test.mutate(&mutated)
-			if bytes.Equal(base, mutated.Canonical()) {
-				t.Fatalf("changing %s did not change the canonical encoding, so it is not covered", test.name)
-			}
-		})
-	}
-
-	// A witness is part of the certificate, so it is part of the identity.
-	var witnessed bool
-	for _, edge := range layout.JumpGraph.Edges {
-		if edge.Witness == nil || len(edge.Witness.Phases) == 0 {
-			continue
-		}
-		witnessed = true
-		break
-	}
-	if !witnessed {
-		t.Fatal("no certified edge carries a witness, so the witness half of the encoding is untested")
-	}
+	return cases
 }
 
 // TestTheSameSeedIsAlsoTheSameWithTheFake guards the other direction of
@@ -275,7 +283,7 @@ func TestALayoutBudgetExhaustionIsUnknownAndKeepsThePartialGraph(t *testing.T) {
 // shows both halves: that attempt zero on its own really is a rejection, and
 // that the layout returned is the certified one.
 func TestARejectedDrawIsRetriedUntilItConverges(t *testing.T) {
-	config := narrowLedgeConfig(2).Normalize()
+	config := narrowLedgeConfig(8).Normalize()
 
 	layout, err := Generate(context.Background(), NewM1Oracle(), config)
 	if err != nil {
@@ -373,6 +381,13 @@ func TestTheStampNeverTouchesARoomBorder(t *testing.T) {
 	}
 
 	var checked int
+	checked = checkStampedRoomBorders(t, layout, checked)
+	if checked == 0 {
+		t.Fatal("no border cell was compared")
+	}
+}
+
+func checkStampedRoomBorders(t *testing.T, layout PlatformLayout, checked int) int {
 	for _, room := range layout.Plane.Rooms {
 		ring := room
 		ring.Grid.Cells = append([]CellKind(nil), room.Grid.Cells...)
@@ -387,22 +402,25 @@ func TestTheStampNeverTouchesARoomBorder(t *testing.T) {
 		for _, transition := range room.Transitions {
 			punchOpening(&ring, transition)
 		}
-		for y := uint32(0); y < room.Grid.Height; y++ {
-			for x := uint32(0); x < room.Grid.Width; x++ {
-				if x != 0 && y != 0 && x+1 != room.Grid.Width && y+1 != room.Grid.Height {
-					continue
-				}
-				checked++
-				at := y*room.Grid.Width + x
-				if room.Grid.Cells[at] != ring.Grid.Cells[at] {
-					t.Fatalf("room %d border cell (%d,%d) is %s, want the solid ring with the final openings punched (%s)", room.ID, x, y, room.Grid.Cells[at], ring.Grid.Cells[at])
-				}
+		checked = compareStampedBorderCells(t, room, checked, ring)
+	}
+	return checked
+}
+
+func compareStampedBorderCells(t *testing.T, room Room, checked int, ring Room) int {
+	for y := uint32(0); y < room.Grid.Height; y++ {
+		for x := uint32(0); x < room.Grid.Width; x++ {
+			if x != 0 && y != 0 && x+1 != room.Grid.Width && y+1 != room.Grid.Height {
+				continue
+			}
+			checked++
+			at := y*room.Grid.Width + x
+			if room.Grid.Cells[at] != ring.Grid.Cells[at] {
+				t.Fatalf("room %d border cell (%d,%d) is %s, want the solid ring with the final openings punched (%s)", room.ID, x, y, room.Grid.Cells[at], ring.Grid.Cells[at])
 			}
 		}
 	}
-	if checked == 0 {
-		t.Fatal("no border cell was compared")
-	}
+	return checked
 }
 
 // TestEveryStampedBeatLiesInsideItsRoom is the other half of the same rule: a
@@ -474,6 +492,13 @@ func TestAStampedRunChainsAtMatchingHeights(t *testing.T) {
 	}
 
 	var chained int
+	chained = checkStampedBeatChains(t, layout, standsOn, chained)
+	if chained == 0 {
+		t.Fatal("no room stamped two beats, so nothing was chained and the composition check is vacuous")
+	}
+}
+
+func checkStampedBeatChains(t *testing.T, layout PlatformLayout, standsOn func(t *testing.T, grid Grid, room RoomID, label string, x float64, height float64), chained int) int {
 	for _, room := range layout.Rooms {
 		grid := layout.Plane.Rooms[room.Room].Grid
 		for index, placement := range room.Placements {
@@ -487,16 +512,16 @@ func TestAStampedRunChainsAtMatchingHeights(t *testing.T) {
 				t.Errorf("room %d: beat %d arrives at height %v and beat %d departs from %v",
 					room.Room, previous.Beat, previous.ArrivalHeight, placement.Beat, placement.DepartureHeight)
 			}
-			if want := previous.Origin.X + int32(previous.Width); placement.Origin.X != want {
+			previousSpan := departureSpan(previous.Width)
+			currentSpan := departureSpan(placement.Width)
+			if want := previous.Origin.X + int32(previous.Width) - int32(min(previousSpan, currentSpan)); placement.Origin.X != want {
 				t.Errorf("room %d: beat %d ends at x=%d and beat %d starts at x=%d",
 					room.Room, previous.Beat, want, placement.Beat, placement.Origin.X)
 			}
 			chained++
 		}
 	}
-	if chained == 0 {
-		t.Fatal("no room stamped two beats, so nothing was chained and the composition check is vacuous")
-	}
+	return chained
 }
 
 // TestTheMergedGraphRenumbersWithoutCollision checks the one thing a
@@ -511,6 +536,36 @@ func TestTheMergedGraphRenumbersWithoutCollision(t *testing.T) {
 	if len(graph.Nodes) == 0 || len(graph.Edges) == 0 {
 		t.Fatal("the merged graph is empty")
 	}
+	checkMergedGraphIdentifiers(t, graph)
+
+	// Each room's declared range has to be the room's own, and the ranges
+	// have to tile the graph without a gap.
+	//
+	// The assertions that actually bite are the CONTAINMENT ones below, not
+	// the bounds checks above. The oracle builds each room from zero, so a
+	// reference that was never shifted still lands inside the first room's
+	// range and stays a legal index: "in range" cannot tell a renumbered
+	// reference from an un-renumbered one. Requiring every edge to join two
+	// nodes of its OWN room, and every node to name a surface of its own
+	// room, can — and it is true by construction, because the oracle builds
+	// one room at a time and emits no edge across rooms.
+	var nextNode MotionNodeID
+	var nextEdge MotionEdgeID
+	var nextSurface SurfaceID
+	var crossRoom int
+	nextNode, nextEdge, nextSurface, crossRoom = checkMergedRoomRanges(t, layout, nextNode, nextEdge, nextSurface, graph, crossRoom)
+	if int(nextNode) != len(graph.Nodes) || int(nextEdge) != len(graph.Edges) || int(nextSurface) != len(graph.Surfaces) {
+		t.Fatalf("the room ranges cover %d/%d/%d of %d/%d/%d", nextNode, nextEdge, nextSurface, len(graph.Nodes), len(graph.Edges), len(graph.Surfaces))
+	}
+	if crossRoom == 0 {
+		t.Fatal("no edge was checked for containment")
+	}
+	if len(layout.Rooms) < 2 || layout.Rooms[1].NodeBase == 0 {
+		t.Fatal("the map has no second room with a non-zero base, so a missing offset would be invisible here")
+	}
+}
+
+func checkMergedGraphIdentifiers(t *testing.T, graph JumpGraph) {
 	for index, node := range graph.Nodes {
 		if node.ID != MotionNodeID(index) {
 			t.Fatalf("node %d carries id %d; Nodes must be dense and ascending", index, node.ID)
@@ -532,22 +587,9 @@ func TestTheMergedGraphRenumbersWithoutCollision(t *testing.T) {
 			t.Fatalf("edge %d runs %d->%d in a graph of %d nodes", index, edge.From, edge.To, len(graph.Nodes))
 		}
 	}
+}
 
-	// Each room's declared range has to be the room's own, and the ranges
-	// have to tile the graph without a gap.
-	//
-	// The assertions that actually bite are the CONTAINMENT ones below, not
-	// the bounds checks above. The oracle builds each room from zero, so a
-	// reference that was never shifted still lands inside the first room's
-	// range and stays a legal index: "in range" cannot tell a renumbered
-	// reference from an un-renumbered one. Requiring every edge to join two
-	// nodes of its OWN room, and every node to name a surface of its own
-	// room, can — and it is true by construction, because the oracle builds
-	// one room at a time and emits no edge across rooms.
-	var nextNode MotionNodeID
-	var nextEdge MotionEdgeID
-	var nextSurface SurfaceID
-	var crossRoom int
+func checkMergedRoomRanges(t *testing.T, layout PlatformLayout, nextNode MotionNodeID, nextEdge MotionEdgeID, nextSurface SurfaceID, graph JumpGraph, crossRoom int) (MotionNodeID, MotionEdgeID, SurfaceID, int) {
 	for _, room := range layout.Rooms {
 		if room.NodeBase != nextNode || room.EdgeBase != nextEdge || room.SurfaceBase != nextSurface {
 			t.Fatalf("room %d declares bases %d/%d/%d where the running totals are %d/%d/%d",
@@ -556,40 +598,37 @@ func TestTheMergedGraphRenumbersWithoutCollision(t *testing.T) {
 		nodeEnd := room.NodeBase + MotionNodeID(room.NodeCount)
 		surfaceEnd := room.SurfaceBase + SurfaceID(room.SurfaceCount)
 
-		for offset := uint32(0); offset < room.SurfaceCount; offset++ {
-			if got := graph.Surfaces[uint32(room.SurfaceBase)+offset].Room; got != room.Room {
-				t.Fatalf("surface %d is inside room %d's range and names room %d", uint32(room.SurfaceBase)+offset, room.Room, got)
-			}
-		}
-		for offset := uint32(0); offset < room.NodeCount; offset++ {
-			node := graph.Nodes[uint32(room.NodeBase)+offset]
-			if node.Surface < room.SurfaceBase || node.Surface >= surfaceEnd {
-				t.Fatalf("node %d belongs to room %d and names surface %d, outside that room's range [%d, %d)",
-					node.ID, room.Room, node.Surface, room.SurfaceBase, surfaceEnd)
-			}
-		}
-		for offset := uint32(0); offset < room.EdgeCount; offset++ {
-			edge := graph.Edges[uint32(room.EdgeBase)+offset]
-			if edge.From < room.NodeBase || edge.From >= nodeEnd || edge.To < room.NodeBase || edge.To >= nodeEnd {
-				t.Fatalf("edge %d belongs to room %d and runs %d->%d, outside that room's node range [%d, %d)",
-					edge.ID, room.Room, edge.From, edge.To, room.NodeBase, nodeEnd)
-			}
-			crossRoom++
-		}
+		crossRoom = checkMergedRoomContents(t, room, graph, surfaceEnd, nodeEnd, crossRoom)
 
 		nextNode = nodeEnd
 		nextEdge += MotionEdgeID(room.EdgeCount)
 		nextSurface = surfaceEnd
 	}
-	if int(nextNode) != len(graph.Nodes) || int(nextEdge) != len(graph.Edges) || int(nextSurface) != len(graph.Surfaces) {
-		t.Fatalf("the room ranges cover %d/%d/%d of %d/%d/%d", nextNode, nextEdge, nextSurface, len(graph.Nodes), len(graph.Edges), len(graph.Surfaces))
+	return nextNode, nextEdge, nextSurface, crossRoom
+}
+
+func checkMergedRoomContents(t *testing.T, room RoomSynthesis, graph JumpGraph, surfaceEnd SurfaceID, nodeEnd MotionNodeID, crossRoom int) int {
+	for offset := uint32(0); offset < room.SurfaceCount; offset++ {
+		if got := graph.Surfaces[uint32(room.SurfaceBase)+offset].Room; got != room.Room {
+			t.Fatalf("surface %d is inside room %d's range and names room %d", uint32(room.SurfaceBase)+offset, room.Room, got)
+		}
 	}
-	if crossRoom == 0 {
-		t.Fatal("no edge was checked for containment")
+	for offset := uint32(0); offset < room.NodeCount; offset++ {
+		node := graph.Nodes[uint32(room.NodeBase)+offset]
+		if node.Surface < room.SurfaceBase || node.Surface >= surfaceEnd {
+			t.Fatalf("node %d belongs to room %d and names surface %d, outside that room's range [%d, %d)",
+				node.ID, room.Room, node.Surface, room.SurfaceBase, surfaceEnd)
+		}
 	}
-	if len(layout.Rooms) < 2 || layout.Rooms[1].NodeBase == 0 {
-		t.Fatal("the map has no second room with a non-zero base, so a missing offset would be invisible here")
+	for offset := uint32(0); offset < room.EdgeCount; offset++ {
+		edge := graph.Edges[uint32(room.EdgeBase)+offset]
+		if edge.From < room.NodeBase || edge.From >= nodeEnd || edge.To < room.NodeBase || edge.To >= nodeEnd {
+			t.Fatalf("edge %d belongs to room %d and runs %d->%d, outside that room's node range [%d, %d)",
+				edge.ID, room.Room, edge.From, edge.To, room.NodeBase, nodeEnd)
+		}
+		crossRoom++
 	}
+	return crossRoom
 }
 
 // TestTheCertifiedGraphCarriesNoTransitionEdge records the decision that the
@@ -761,14 +800,18 @@ func TestNoVerdictIsSoldOnAnUnfinishedSearch(t *testing.T) {
 		if layout.Judgement.Budget.Exhausted && layout.Judgement.Verdict != VerdictUnknown {
 			t.Errorf("seed %d: verdict %s with an exhausted budget", seed, layout.Judgement.Verdict)
 		}
-		for _, room := range layout.Rooms {
-			for label, part := range map[string]Judgement{"build": room.Build, "composition": room.Composition} {
-				if err := part.Validate(); err != nil {
-					t.Errorf("seed %d room %d: the %s judgement does not validate: %v", seed, room.Room, label, err)
-				}
-				if part.Budget.Exhausted && part.Verdict != VerdictUnknown {
-					t.Errorf("seed %d room %d: the %s verdict is %s with an exhausted budget", seed, room.Room, label, part.Verdict)
-				}
+		checkRoomJudgements(t, layout, seed)
+	}
+}
+
+func checkRoomJudgements(t *testing.T, layout PlatformLayout, seed Seed) {
+	for _, room := range layout.Rooms {
+		for label, part := range map[string]Judgement{"build": room.Build, "composition": room.Composition} {
+			if err := part.Validate(); err != nil {
+				t.Errorf("seed %d room %d: the %s judgement does not validate: %v", seed, room.Room, label, err)
+			}
+			if part.Budget.Exhausted && part.Verdict != VerdictUnknown {
+				t.Errorf("seed %d room %d: the %s verdict is %s with an exhausted budget", seed, room.Room, label, part.Verdict)
 			}
 		}
 	}
@@ -792,7 +835,7 @@ func TestRoomSizeFollowsTheBeatVocabulary(t *testing.T) {
 
 	narrowMacro := macroConfigFor(narrow, 1)
 	wideMacro := macroConfigFor(wide, 1)
-	if !(wideMacro.MaxWidth > narrowMacro.MaxWidth) {
+	if wideMacro.MaxWidth <= narrowMacro.MaxWidth {
 		t.Fatalf("a vocabulary of 10..12 cell beats gave rooms up to %d wide and one of 3..4 gave %d", wideMacro.MaxWidth, narrowMacro.MaxWidth)
 	}
 	if narrowMacro.MinWidth < widestBeatCells(narrow) {
@@ -856,6 +899,10 @@ func TestStampingNeverErasesWhatIsAlreadyThere(t *testing.T) {
 	}
 	shell := shellGrid(10, 8)
 	stampInterior(&shell, wide, -2, -2)
+	checkStampedShell(t, shell)
+}
+
+func checkStampedShell(t *testing.T, shell Grid) {
 	for y := uint32(0); y < shell.Height; y++ {
 		for x := uint32(0); x < shell.Width; x++ {
 			onBorder := x == 0 || y == 0 || x+1 == shell.Width || y+1 == shell.Height

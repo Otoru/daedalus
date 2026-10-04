@@ -73,27 +73,41 @@ func TestVisibleCellsIsRowMajorAndReusesDestination(t *testing.T) {
 func TestVisibilityIsReciprocalForExhaustiveSmallGridsAndRandomGrids(t *testing.T) {
 	for _, dimensions := range [][2]int{{2, 2}, {3, 2}, {3, 3}} {
 		width, height := dimensions[0], dimensions[1]
-		cells := width * height
-		for mask := 0; mask < 1<<cells; mask++ {
-			grid := maskGrid(width, height, mask)
-			for first := 0; first < cells; first++ {
-				if !grid.TransparentAt(indexCell(width, first)) {
-					continue
-				}
-				for second := first + 1; second < cells; second++ {
-					if !grid.TransparentAt(indexCell(width, second)) {
-						continue
-					}
-					left, err := vision.Compute(context.Background(), grid, indexCell(width, first), 4)
-					require.NoError(t, err)
-					right, err := vision.Compute(context.Background(), grid, indexCell(width, second), 4)
-					require.NoError(t, err)
-					assert.Equal(t, left.VisibleAt(indexCell(width, second)), right.VisibleAt(indexCell(width, first)), "grid %dx%d mask %#x pair %d,%d", width, height, mask, first, second)
-				}
-			}
+		for mask := 0; mask < 1<<(width*height); mask++ {
+			assertReciprocalForEveryTransparentPair(t, maskGrid(width, height, mask), width, height, mask)
 		}
 	}
-	rng := rand.New(rand.NewSource(7))
+	assertReciprocalOnRandomGrids(t, rand.New(rand.NewSource(7)))
+}
+
+func assertReciprocalVisibility(t *testing.T, grid vision.OpacityGrid, a, b daedalus.Cell, radius uint32, msgAndArgs ...any) {
+	t.Helper()
+	left, err := vision.Compute(context.Background(), grid, a, radius)
+	require.NoError(t, err)
+	right, err := vision.Compute(context.Background(), grid, b, radius)
+	require.NoError(t, err)
+	assert.Equal(t, left.VisibleAt(b), right.VisibleAt(a), msgAndArgs...)
+}
+
+func assertReciprocalForEveryTransparentPair(t *testing.T, grid vision.OpacityGrid, width, height, mask int) {
+	t.Helper()
+	cells := width * height
+	for first := 0; first < cells; first++ {
+		if !grid.TransparentAt(indexCell(width, first)) {
+			continue
+		}
+		for second := first + 1; second < cells; second++ {
+			if !grid.TransparentAt(indexCell(width, second)) {
+				continue
+			}
+			assertReciprocalVisibility(t, grid, indexCell(width, first), indexCell(width, second), 4,
+				"grid %dx%d mask %#x pair %d,%d", width, height, mask, first, second)
+		}
+	}
+}
+
+func assertReciprocalOnRandomGrids(t *testing.T, rng *rand.Rand) {
+	t.Helper()
 	for sample := 0; sample < 100; sample++ {
 		grid := openGrid(8, 7)
 		for i := range grid.Transparent {
@@ -105,11 +119,7 @@ func TestVisibilityIsReciprocalForExhaustiveSmallGridsAndRandomGrids(t *testing.
 			if !grid.TransparentAt(a) || !grid.TransparentAt(b) {
 				continue
 			}
-			left, err := vision.Compute(context.Background(), grid, a, 7)
-			require.NoError(t, err)
-			right, err := vision.Compute(context.Background(), grid, b, 7)
-			require.NoError(t, err)
-			assert.Equal(t, left.VisibleAt(b), right.VisibleAt(a), "sample %d pair %+v %+v", sample, a, b)
+			assertReciprocalVisibility(t, grid, a, b, 7, "sample %d pair %+v %+v", sample, a, b)
 		}
 	}
 }

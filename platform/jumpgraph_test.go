@@ -52,6 +52,29 @@ func replayWitness(t *testing.T, graph *JumpGraph, edge MotionEdge, profile Move
 	if len(phases) == 0 {
 		t.Fatalf("edge %d has an empty witness", edge.ID)
 	}
+	checkWitnessPhases(t, phases, edge, tolerance)
+	from, to := graph.Nodes[edge.From], graph.Nodes[edge.To]
+	start, end := phases[0].Start, phases[len(phases)-1].End
+	if from.Mode == MotionModeGrounded {
+		if math.Abs(start.X-from.Footing.Lo) > tolerance || math.Abs(start.Y-from.Height) > tolerance {
+			t.Fatalf("edge %d starts at (%v, %v) but leaves node %d at (%v, %v)",
+				edge.ID, start.X, start.Y, from.ID, from.Footing.Lo, from.Height)
+		}
+	}
+	if to.Mode == MotionModeGrounded {
+		if math.Abs(end.X-to.Footing.Lo) > tolerance || math.Abs(end.Y-to.Height) > tolerance {
+			t.Fatalf("edge %d (%s) ends at (%v, %v) but claims node %d at (%v, %v)",
+				edge.ID, edge.Kind, end.X, end.Y, to.ID, to.Footing.Lo, to.Height)
+		}
+	}
+	if to.Mode == MotionModeWallCling {
+		if math.Abs(end.Y-to.Height) > tolerance {
+			t.Fatalf("edge %d ends clinging at %v but claims node %d at %v", edge.ID, end.Y, to.ID, to.Height)
+		}
+	}
+}
+
+func checkWitnessPhases(t *testing.T, phases []Phase, edge MotionEdge, tolerance float64) {
 	for i, phase := range phases {
 		if phase.Duration < 0 {
 			t.Fatalf("edge %d phase %d runs backwards", edge.ID, i)
@@ -70,25 +93,6 @@ func replayWitness(t *testing.T, graph *JumpGraph, edge MotionEdge, profile Move
 		}
 		if phase.Mode == MotionModeAirborne && phase.AccelY > 0 {
 			t.Fatalf("edge %d phase %d accelerates a free body upward", edge.ID, i)
-		}
-	}
-	from, to := graph.Nodes[edge.From], graph.Nodes[edge.To]
-	start, end := phases[0].Start, phases[len(phases)-1].End
-	if from.Mode == MotionModeGrounded {
-		if math.Abs(start.X-from.Footing.Lo) > tolerance || math.Abs(start.Y-from.Height) > tolerance {
-			t.Fatalf("edge %d starts at (%v, %v) but leaves node %d at (%v, %v)",
-				edge.ID, start.X, start.Y, from.ID, from.Footing.Lo, from.Height)
-		}
-	}
-	if to.Mode == MotionModeGrounded {
-		if math.Abs(end.X-to.Footing.Lo) > tolerance || math.Abs(end.Y-to.Height) > tolerance {
-			t.Fatalf("edge %d (%s) ends at (%v, %v) but claims node %d at (%v, %v)",
-				edge.ID, edge.Kind, end.X, end.Y, to.ID, to.Footing.Lo, to.Height)
-		}
-	}
-	if to.Mode == MotionModeWallCling {
-		if math.Abs(end.Y-to.Height) > tolerance {
-			t.Fatalf("edge %d ends clinging at %v but claims node %d at %v", edge.ID, end.Y, to.ID, to.Height)
 		}
 	}
 }
@@ -194,28 +198,7 @@ func TestTheShaftIsClimbedOnlyWithTheWallJumpAndTheEdgesSaySo(t *testing.T) {
 	without := buildGraph(t, shaftRoom(), profile, 0)
 	withWall := buildGraph(t, shaftRoom(), profile, wall)
 
-	for _, node := range without.Graph.Nodes {
-		if node.Mode == MotionModeWallCling {
-			t.Fatalf("a character without the ability does not hold on to walls")
-		}
-	}
-	clings, jumps := 0, 0
-	for _, node := range withWall.Graph.Nodes {
-		if node.Mode == MotionModeWallCling {
-			clings++
-		}
-	}
-	for _, edge := range withWall.Graph.Edges {
-		if edge.Kind == MotionEdgeKindWallJump {
-			jumps++
-			if !edge.Requires.Has(AbilityWallJump) {
-				t.Fatalf("a wall jump must declare the ability it needs, got %s", edge.Requires)
-			}
-			if withWall.Graph.Nodes[edge.From].Mode != MotionModeWallCling {
-				t.Fatalf("edge %d is a wall jump that does not leave a wall", edge.ID)
-			}
-		}
-	}
+	clings, jumps := countWallClingsAndJumps(t, without, withWall)
 	if clings == 0 || jumps == 0 {
 		t.Fatalf("the shaft must produce wall clings and wall jumps, got %d and %d", clings, jumps)
 	}
@@ -272,6 +255,32 @@ func TestTheShaftIsClimbedOnlyWithTheWallJumpAndTheEdgesSaySo(t *testing.T) {
 	}
 }
 
+func countWallClingsAndJumps(t *testing.T, without GraphResult, withWall GraphResult) (int, int) {
+	for _, node := range without.Graph.Nodes {
+		if node.Mode == MotionModeWallCling {
+			t.Fatalf("a character without the ability does not hold on to walls")
+		}
+	}
+	clings, jumps := 0, 0
+	for _, node := range withWall.Graph.Nodes {
+		if node.Mode == MotionModeWallCling {
+			clings++
+		}
+	}
+	for _, edge := range withWall.Graph.Edges {
+		if edge.Kind == MotionEdgeKindWallJump {
+			jumps++
+			if !edge.Requires.Has(AbilityWallJump) {
+				t.Fatalf("a wall jump must declare the ability it needs, got %s", edge.Requires)
+			}
+			if withWall.Graph.Nodes[edge.From].Mode != MotionModeWallCling {
+				t.Fatalf("edge %d is a wall jump that does not leave a wall", edge.ID)
+			}
+		}
+	}
+	return clings, jumps
+}
+
 // --- static climbing -----------------------------------------------------
 
 func ladderRoom() []string {
@@ -311,19 +320,7 @@ func TestALadderIsClimbedOnlyWithTheAbilityAndIsStatic(t *testing.T) {
 		}
 	}
 	up, down := 0, 0
-	for _, edge := range withClimb.Graph.Edges {
-		if edge.Kind != MotionEdgeKindClimb {
-			continue
-		}
-		if !edge.Requires.Has(AbilityClimb) {
-			t.Fatalf("a climb must declare the ability it needs, got %s", edge.Requires)
-		}
-		if withClimb.Graph.Nodes[edge.To].Height > withClimb.Graph.Nodes[edge.From].Height {
-			up++
-		} else {
-			down++
-		}
-	}
+	up, down = countLadderEdges(t, withClimb, up, down)
 	if up == 0 || down == 0 {
 		t.Fatalf("a static ladder is traversable both ways, got %d up and %d down", up, down)
 	}
@@ -337,6 +334,23 @@ func TestALadderIsClimbedOnlyWithTheAbilityAndIsStatic(t *testing.T) {
 			t.Fatalf("row %d treats a ladder as a block: %v", row, runs)
 		}
 	}
+}
+
+func countLadderEdges(t *testing.T, withClimb GraphResult, up int, down int) (int, int) {
+	for _, edge := range withClimb.Graph.Edges {
+		if edge.Kind != MotionEdgeKindClimb {
+			continue
+		}
+		if !edge.Requires.Has(AbilityClimb) {
+			t.Fatalf("a climb must declare the ability it needs, got %s", edge.Requires)
+		}
+		if withClimb.Graph.Nodes[edge.To].Height > withClimb.Graph.Nodes[edge.From].Height {
+			up++
+		} else {
+			down++
+		}
+	}
+	return up, down
 }
 
 // --- surfaces, discipline and query hygiene ------------------------------
@@ -355,17 +369,7 @@ func TestSurfaceIdentifiersAreStableAndTheDerivationIsExhaustive(t *testing.T) {
 	if len(first.Surfaces) != len(second.Surfaces) {
 		t.Fatalf("two derivations of one room must agree")
 	}
-	for i := range first.Surfaces {
-		if first.Surfaces[i].ID != SurfaceID(i) {
-			t.Fatalf("surface %d carries id %d; ids are positions", i, first.Surfaces[i].ID)
-		}
-		if first.Surfaces[i].Kind != second.Surfaces[i].Kind || first.Surfaces[i].At != second.Surfaces[i].At {
-			t.Fatalf("surface %d differs between derivations", i)
-		}
-		if first.Surfaces[i].Kind == SurfaceKindUnspecified {
-			t.Fatalf("surface %d has no kind", i)
-		}
-	}
+	checkSurfaceIdentifiers(t, first, second)
 	kinds := map[SurfaceKind]int{}
 	for _, surface := range first.Surfaces {
 		kinds[surface.Kind]++
@@ -393,6 +397,20 @@ func TestSurfaceIdentifiersAreStableAndTheDerivationIsExhaustive(t *testing.T) {
 	}
 	if ceilings == 0 {
 		t.Fatalf("the slab over the pit has an underside and the derivation must name it")
+	}
+}
+
+func checkSurfaceIdentifiers(t *testing.T, first SurfaceResult, second SurfaceResult) {
+	for i := range first.Surfaces {
+		if first.Surfaces[i].ID != SurfaceID(i) {
+			t.Fatalf("surface %d carries id %d; ids are positions", i, first.Surfaces[i].ID)
+		}
+		if first.Surfaces[i].Kind != second.Surfaces[i].Kind || first.Surfaces[i].At != second.Surfaces[i].At {
+			t.Fatalf("surface %d differs between derivations", i)
+		}
+		if first.Surfaces[i].Kind == SurfaceKindUnspecified {
+			t.Fatalf("surface %d has no kind", i)
+		}
 	}
 }
 
@@ -519,6 +537,10 @@ func TestAHazardIsNeverStoodOnAndNeverFlownThrough(t *testing.T) {
 			t.Fatalf("node %d stands on spikes at %v", node.ID, node.Footing)
 		}
 	}
+	checkHazardEdges(t, graph)
+}
+
+func checkHazardEdges(t *testing.T, graph *JumpGraph) {
 	for _, edge := range graph.Edges {
 		if edge.Witness == nil {
 			continue

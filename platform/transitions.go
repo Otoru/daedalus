@@ -8,13 +8,6 @@ import (
 	"github.com/Otoru/daedalus/core"
 )
 
-// targetEndpointsPerRoom is the reference randomiser's mean, 890 endpoints
-// over 368 scenes. Those endpoints are distinct transitions: a second opening
-// between the same two rooms is not one of them. The mean is what a map is
-// measured against. It is not a count this generator forges by punching a
-// parallel hole in a wall that already joins those rooms.
-const targetEndpointsPerRoom = 890.0 / 368.0
-
 // targetAsymmetricFraction is 16 one-way pairs over 445, counting the three
 // patterns the reference marks: a fall, a bottom exit whose return is another
 // path, and the same opening with a different ability in each sense.
@@ -46,22 +39,40 @@ func TransitionStatistics(plane Plane) TransitionStats {
 	index := map[TransitionID]Transition{}
 	for _, room := range plane.Rooms {
 		stats.Endpoints += len(room.Transitions)
-		var perSide [6]int
-		for _, t := range room.Transitions {
-			index[t.ID] = t
-			if t.Side >= 0 && int(t.Side) < len(perSide) {
-				perSide[t.Side]++
-			}
-		}
-		for _, count := range perSide {
-			if count >= 2 {
-				stats.MultiOpeningSides++
-			}
-		}
+		stats.MultiOpeningSides += countMultiOpeningSides(room.Transitions, index)
 	}
 	if stats.Rooms > 0 {
 		stats.MeanDegree = float64(stats.Endpoints) / float64(stats.Rooms)
 	}
+	roomPairs := countTransitionPairs(index, &stats)
+	stats.DistinctPairs = len(roomPairs)
+	for _, n := range roomPairs {
+		if n > 1 {
+			stats.ParallelPairs++
+		}
+	}
+	stats.AsymmetricPairs = stats.OneWayPairs + stats.ConditionalPairs
+	return stats
+}
+
+func countMultiOpeningSides(transitions []Transition, index map[TransitionID]Transition) int {
+	var perSide [6]int
+	for _, t := range transitions {
+		index[t.ID] = t
+		if t.Side >= 0 && int(t.Side) < len(perSide) {
+			perSide[t.Side]++
+		}
+	}
+	count := 0
+	for _, n := range perSide {
+		if n >= 2 {
+			count++
+		}
+	}
+	return count
+}
+
+func countTransitionPairs(index map[TransitionID]Transition, stats *TransitionStats) map[roomPair]int {
 	seen := map[TransitionID]bool{}
 	roomPairs := map[roomPair]int{}
 	for _, t := range index {
@@ -83,14 +94,7 @@ func TransitionStatistics(plane Plane) TransitionStats {
 			stats.ConditionalPairs++
 		}
 	}
-	stats.DistinctPairs = len(roomPairs)
-	for _, n := range roomPairs {
-		if n > 1 {
-			stats.ParallelPairs++
-		}
-	}
-	stats.AsymmetricPairs = stats.OneWayPairs + stats.ConditionalPairs
-	return stats
+	return roomPairs
 }
 
 func targetPairCount(rooms int) int {
@@ -392,31 +396,30 @@ func pickGateIndices(edges, steps int) ([]int, error) {
 			idx = edges - 1
 		}
 		if used[idx] {
-			found := -1
-			for j := idx; j < edges; j++ {
-				if !used[j] {
-					found = j
-					break
-				}
-			}
-			if found < 0 {
-				for j := 0; j < idx; j++ {
-					if !used[j] {
-						found = j
-						break
-					}
-				}
-			}
-			if found < 0 {
+			idx = nextUnusedGateEdge(used, idx)
+			if idx < 0 {
 				return nil, progressionError("could not place %d distinct gates on %d edges", steps, edges)
 			}
-			idx = found
 		}
 		used[idx] = true
 		out = append(out, idx)
 	}
 	sort.Ints(out)
 	return out, nil
+}
+
+func nextUnusedGateEdge(used []bool, start int) int {
+	for j := start; j < len(used); j++ {
+		if !used[j] {
+			return j
+		}
+	}
+	for j := 0; j < start; j++ {
+		if !used[j] {
+			return j
+		}
+	}
+	return -1
 }
 
 func findContact(contacts []roomContact, a, b RoomID) int {
@@ -490,34 +493,44 @@ func labelsSkipping(n int, contacts []roomContact, skip map[roomPair]bool) []int
 		if label[i] >= 0 {
 			continue
 		}
-		queue := []int{i}
-		label[i] = next
-		for len(queue) > 0 {
-			cur := queue[0]
-			queue = queue[1:]
-			for _, nxt := range adj[cur] {
-				if label[nxt] >= 0 {
-					continue
-				}
-				label[nxt] = next
-				queue = append(queue, nxt)
-			}
-		}
+		labelComponent(adj, label, i, next)
 		next++
 	}
 	return label
 }
 
-func addFalls(contacts []roomContact, gates []gatePlan, goal RoomID) error {
+func labelComponent(adj [][]int, label []int, start, component int) {
+	queue := []int{start}
+	label[start] = component
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, next := range adj[cur] {
+			if label[next] >= 0 {
+				continue
+			}
+			label[next] = component
+			queue = append(queue, next)
+		}
+	}
+}
+
+func addFalls(contacts []roomContact, gates []gatePlan, goal RoomID) {
 	pairs := openingCount(contacts)
 	want := targetAsymmetricCount(pairs) - len(gates)
 	if want <= 0 {
-		return nil
+		return
 	}
 	gated := map[roomPair]bool{}
 	for _, gate := range gates {
 		gated[gate.pair] = true
 	}
+	added := addReturningFalls(contacts, gated, want)
+	spawnFree := freeComponent(contacts, 0, roomPair{lo: 0, hi: 0}, false)
+	addIrreversibleFalls(contacts, gated, spawnFree, goal, want-added)
+}
+
+func addReturningFalls(contacts []roomContact, gated map[roomPair]bool, want int) int {
 	added := 0
 	for i := range contacts {
 		if added >= want {
@@ -537,7 +550,11 @@ func addFalls(contacts []roomContact, gates []gatePlan, goal RoomID) error {
 		contacts[i].pattern = patternBotReturn
 		added++
 	}
-	spawnFree := freeComponent(contacts, 0, roomPair{lo: 0, hi: 0}, false)
+	return added
+}
+
+func addIrreversibleFalls(contacts []roomContact, gated map[roomPair]bool, spawnFree map[RoomID]bool, goal RoomID, want int) {
+	added := 0
 	for i := range contacts {
 		if added >= want {
 			break
@@ -563,34 +580,14 @@ func addFalls(contacts []roomContact, gates []gatePlan, goal RoomID) error {
 		contacts[i].pattern = patternFall
 		added++
 	}
-	return nil
 }
 
 // freeComponent is the rooms reachable from start without crossing block and
 // without crossing a conditional gate. block is ignored when useBlock is false.
 func freeComponent(contacts []roomContact, start RoomID, block roomPair, useBlock bool) map[RoomID]bool {
-	n := 0
-	for _, c := range contacts {
-		if int(c.a) >= n {
-			n = int(c.a) + 1
-		}
-		if int(c.b) >= n {
-			n = int(c.b) + 1
-		}
-	}
-	adj := make([][]int, n)
-	for _, c := range contacts {
-		if c.pattern == patternConditional {
-			continue
-		}
-		if useBlock && orderedPair(c.a, c.b) == block {
-			continue
-		}
-		adj[c.a] = append(adj[c.a], int(c.b))
-		adj[c.b] = append(adj[c.b], int(c.a))
-	}
+	adj := contactAdjacency(contacts, block, useBlock, true)
 	seen := map[RoomID]bool{}
-	if int(start) >= n {
+	if int(start) >= len(adj) {
 		return seen
 	}
 	queue := []int{int(start)}
@@ -607,6 +604,22 @@ func freeComponent(contacts []roomContact, start RoomID, block roomPair, useBloc
 		}
 	}
 	return seen
+}
+
+func contactAdjacency(contacts []roomContact, block roomPair, useBlock, skipGates bool) [][]int {
+	n := 0
+	for _, c := range contacts {
+		n = max(n, int(c.a)+1, int(c.b)+1)
+	}
+	adj := make([][]int, n)
+	for _, c := range contacts {
+		if skipGates && c.pattern == patternConditional || useBlock && orderedPair(c.a, c.b) == block {
+			continue
+		}
+		adj[c.a] = append(adj[c.a], int(c.b))
+		adj[c.b] = append(adj[c.b], int(c.a))
+	}
+	return adj
 }
 
 // spliceReturn adds one extra bottom contact inside a single lock component,
@@ -653,24 +666,8 @@ func reaches(contacts []roomContact, from, to RoomID, block roomPair) bool {
 	if from == to {
 		return true
 	}
-	n := 0
-	for _, c := range contacts {
-		if int(c.a) >= n {
-			n = int(c.a) + 1
-		}
-		if int(c.b) >= n {
-			n = int(c.b) + 1
-		}
-	}
-	adj := make([][]int, n)
-	for _, c := range contacts {
-		if orderedPair(c.a, c.b) == block {
-			continue
-		}
-		adj[c.a] = append(adj[c.a], int(c.b))
-		adj[c.b] = append(adj[c.b], int(c.a))
-	}
-	seen := make([]bool, n)
+	adj := contactAdjacency(contacts, block, true, false)
+	seen := make([]bool, len(adj))
 	queue := []int{int(from)}
 	seen[from] = true
 	for len(queue) > 0 {
@@ -781,33 +778,11 @@ func materialize(plane Plane, contacts []roomContact, gates []gatePlan) (Plane, 
 	}
 	var all []Transition
 	for _, c := range contacts {
-		spans := contactSpans(c, c.second)
-		if len(spans) == 0 {
-			return plane, nil, geometryError("rooms %d and %d share a wall with no place for an opening", c.a, c.b)
+		transitions, err := materializeContact(plane, c, TransitionID(len(all)), gateAt, gates)
+		if err != nil {
+			return plane, nil, err
 		}
-		roomA := plane.Rooms[c.a]
-		roomB := plane.Rooms[c.b]
-		sideB := oppositeSide(c.sideA)
-		for spanIndex, sp := range spans {
-			idA := TransitionID(len(all))
-			idB := idA + 1
-			outA, inA := senses(c, c.a)
-			outB, inB := senses(c, c.b)
-			tA, okA := newTransition(roomA, idA, c.sideA, sp, idB, outA, inA)
-			tB, okB := newTransition(roomB, idB, sideB, sp, idA, outB, inB)
-			if !okA || !okB {
-				return plane, nil, geometryError("opening between rooms %d and %d does not land on both walls", c.a, c.b)
-			}
-			all = append(all, tA, tB)
-			if gi, ok := gateAt[orderedPair(c.a, c.b)]; ok && spanIndex == 0 {
-				if tA.Room == gates[gi].spawnSide {
-					gates[gi].gate = tA.ID
-				} else {
-					gates[gi].gate = tB.ID
-				}
-				gates[gi].haveGate = true
-			}
-		}
+		all = append(all, transitions...)
 	}
 	for i := range gates {
 		if !gates[i].haveGate {
@@ -828,6 +803,39 @@ func materialize(plane Plane, contacts []roomContact, gates []gatePlan) (Plane, 
 		}
 	}
 	return plane, gates, nil
+}
+
+func materializeContact(plane Plane, c roomContact, firstID TransitionID, gateAt map[roomPair]int, gates []gatePlan) ([]Transition, error) {
+	spans := contactSpans(c, c.second)
+	if len(spans) == 0 {
+		return nil, geometryError("rooms %d and %d share a wall with no place for an opening", c.a, c.b)
+	}
+	roomA, roomB := plane.Rooms[c.a], plane.Rooms[c.b]
+	var out []Transition
+	for spanIndex, sp := range spans {
+		idA := firstID + TransitionID(len(out))
+		idB := idA + 1
+		outA, inA := senses(c, c.a)
+		outB, inB := senses(c, c.b)
+		tA, okA := newTransition(roomA, idA, c.sideA, sp, idB, outA, inA)
+		tB, okB := newTransition(roomB, idB, oppositeSide(c.sideA), sp, idA, outB, inB)
+		if !okA || !okB {
+			return nil, geometryError("opening between rooms %d and %d does not land on both walls", c.a, c.b)
+		}
+		out = append(out, tA, tB)
+		if gi, ok := gateAt[orderedPair(c.a, c.b)]; ok && spanIndex == 0 {
+			markGateOpening(&gates[gi], tA, tB)
+		}
+	}
+	return out, nil
+}
+
+func markGateOpening(gate *gatePlan, a, b Transition) {
+	gate.gate = b.ID
+	if a.Room == gate.spawnSide {
+		gate.gate = a.ID
+	}
+	gate.haveGate = true
 }
 
 func senses(c roomContact, room RoomID) (*Traversal, *Traversal) {
@@ -986,43 +994,56 @@ func punchOpening(room *Room, t Transition) {
 	}
 }
 
+type transitionLoc struct{ room, index int }
+
+type transitionValidationIndex struct {
+	count int
+	maxID TransitionID
+	seen  map[TransitionID]transitionLoc
+}
+
 func validateTransitions(plane Plane) error {
-	count := 0
-	var maxID TransitionID
-	seen := map[TransitionID]struct{ room, index int }{}
+	index := transitionValidationIndex{seen: map[TransitionID]transitionLoc{}}
 	for ri := range plane.Rooms {
-		var previous TransitionID
-		for ti := range plane.Rooms[ri].Transitions {
-			t := plane.Rooms[ri].Transitions[ti]
-			count++
-			if t.Room != plane.Rooms[ri].ID {
-				return geometryError("transition %d is listed on room %d but names room %d", t.ID, plane.Rooms[ri].ID, t.Room)
-			}
-			if _, ok := seen[t.ID]; ok {
-				return geometryError("transition %d is listed twice", t.ID)
-			}
-			seen[t.ID] = struct{ room, index int }{ri, ti}
-			if count == 1 || t.ID > maxID {
-				maxID = t.ID
-			}
-			if ti > 0 && t.ID < previous {
-				return geometryError("room %d lists transition %d before %d", plane.Rooms[ri].ID, previous, t.ID)
-			}
-			previous = t.ID
-			if err := validateOneTransition(plane.Rooms[ri], t); err != nil {
-				return err
-			}
-		}
-		if err := validateSideIndices(plane.Rooms[ri]); err != nil {
+		if err := indexRoomTransitions(plane.Rooms[ri], ri, &index); err != nil {
 			return err
 		}
 	}
-	if count == 0 {
+	if index.count == 0 {
 		return nil
 	}
-	if int(maxID) != count-1 || len(seen) != count {
-		return geometryError("transition ids are not the dense range 0..%d", count-1)
+	if int(index.maxID) != index.count-1 || len(index.seen) != index.count {
+		return geometryError("transition ids are not the dense range 0..%d", index.count-1)
 	}
+	return validateTransitionPairs(plane, index.seen)
+}
+
+func indexRoomTransitions(room Room, roomIndex int, index *transitionValidationIndex) error {
+	var previous TransitionID
+	for ti, t := range room.Transitions {
+		index.count++
+		if t.Room != room.ID {
+			return geometryError("transition %d is listed on room %d but names room %d", t.ID, room.ID, t.Room)
+		}
+		if _, ok := index.seen[t.ID]; ok {
+			return geometryError("transition %d is listed twice", t.ID)
+		}
+		index.seen[t.ID] = transitionLoc{roomIndex, ti}
+		if index.count == 1 || t.ID > index.maxID {
+			index.maxID = t.ID
+		}
+		if ti > 0 && t.ID < previous {
+			return geometryError("room %d lists transition %d before %d", room.ID, previous, t.ID)
+		}
+		previous = t.ID
+		if err := validateOneTransition(room, t); err != nil {
+			return err
+		}
+	}
+	return validateSideIndices(room)
+}
+
+func validateTransitionPairs(plane Plane, seen map[TransitionID]transitionLoc) error {
 	for _, loc := range seen {
 		t := plane.Rooms[loc.room].Transitions[loc.index]
 		if t.To == t.ID {
@@ -1085,17 +1106,24 @@ func validateSideIndices(room Room) error {
 		buckets[t.Side] = append(buckets[t.Side], t)
 	}
 	for side, group := range buckets {
-		if len(group) > MaxTransitionsPerSide {
-			return limitError("room %d side %s has %d openings, above the ceiling of %d", room.ID, TransitionSide(side), len(group), MaxTransitionsPerSide)
+		if err := validateSideGroup(room.ID, TransitionSide(side), group); err != nil {
+			return err
 		}
-		sort.Slice(group, func(i, j int) bool { return group[i].Offset < group[j].Offset })
-		for rank, t := range group {
-			if t.Index != uint32(rank+1) {
-				return geometryError("transition %d has index %d, want %d for its offset order on %s", t.ID, t.Index, rank+1, t.Side)
-			}
-			if rank > 0 && group[rank-1].Offset+group[rank-1].Extent > t.Offset {
-				return geometryError("openings %d and %d overlap on room %d %s", group[rank-1].ID, t.ID, room.ID, t.Side)
-			}
+	}
+	return nil
+}
+
+func validateSideGroup(roomID RoomID, side TransitionSide, group []Transition) error {
+	if len(group) > MaxTransitionsPerSide {
+		return limitError("room %d side %s has %d openings, above the ceiling of %d", roomID, side, len(group), MaxTransitionsPerSide)
+	}
+	sort.Slice(group, func(i, j int) bool { return group[i].Offset < group[j].Offset })
+	for rank, t := range group {
+		if t.Index != uint32(rank+1) {
+			return geometryError("transition %d has index %d, want %d for its offset order on %s", t.ID, t.Index, rank+1, t.Side)
+		}
+		if rank > 0 && group[rank-1].Offset+group[rank-1].Extent > t.Offset {
+			return geometryError("openings %d and %d overlap on room %d %s", group[rank-1].ID, t.ID, roomID, t.Side)
 		}
 	}
 	return nil

@@ -56,6 +56,9 @@ const (
 	// connection. The response uses the conventional 499 so a client
 	// cancel is not reported as an internal 500 failure.
 	clientClosedRequestStatus = 499
+	// invalidProtoJSONMessage is the English message returned when a debug
+	// request body is not valid ProtoJSON for the target message.
+	invalidProtoJSONMessage = "invalid ProtoJSON request"
 )
 
 type requestIDContextKey struct{}
@@ -206,11 +209,11 @@ func (server *Server) generate(writer http.ResponseWriter, request *http.Request
 
 	var protoRequest daedalusv1.GenerateRequest
 	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 
@@ -245,11 +248,11 @@ func (server *Server) generatePlatform(writer http.ResponseWriter, request *http
 
 	var protoRequest daedalusv1.GeneratePlatformRequest
 	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 
@@ -283,11 +286,11 @@ func (server *Server) computeSteps(writer http.ResponseWriter, request *http.Req
 
 	var protoRequest daedalusv1.ComputeStepsRequest
 	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 
@@ -318,11 +321,11 @@ func (server *Server) computeVisibility(writer http.ResponseWriter, request *htt
 
 	var protoRequest daedalusv1.ComputeVisibilityRequest
 	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 
@@ -353,11 +356,11 @@ func (server *Server) buildGatingPlan(writer http.ResponseWriter, request *http.
 
 	var protoRequest daedalusv1.BuildGatingPlanRequest
 	if err := validateCanonicalRequest(body, protoRequest.ProtoReflect().Descriptor()); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &protoRequest); err != nil {
-		writeError(writer, request, http.StatusBadRequest, "invalid_json", "invalid ProtoJSON request")
+		writeError(writer, request, http.StatusBadRequest, "invalid_json", invalidProtoJSONMessage)
 		return
 	}
 

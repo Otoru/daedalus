@@ -46,7 +46,7 @@ type Span struct {
 func Point(v float64) Span { return Span{Lo: v, Hi: v} }
 
 // IsEmpty reports whether the span contains no value. A NaN bound is empty.
-func (s Span) IsEmpty() bool { return !(s.Lo <= s.Hi) }
+func (s Span) IsEmpty() bool { return math.IsNaN(s.Lo) || math.IsNaN(s.Hi) || s.Lo > s.Hi }
 
 // IsPoint reports whether the span contains exactly one value.
 func (s Span) IsPoint() bool { return s.Lo == s.Hi }

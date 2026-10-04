@@ -128,6 +128,12 @@ func layoutRun(room Room, rhythm Rhythm, run []int, pad, reserve int32) ([]BeatP
 	for position, index := range run {
 		beat := rhythm.Beats[index]
 		grid := beat.Grid
+		if position > 0 {
+			// The arrival and next departure share a height. Overlap only
+			// their common solid ledge, never either beat's gap or obstacle.
+			previous := rhythm.Beats[run[position-1]].Grid
+			cursorX -= int32(min(departureSpan(previous.Width), departureSpan(grid.Width)))
+		}
 		if grid.Width == 0 || grid.Height == 0 {
 			return nil, false, nil
 		}

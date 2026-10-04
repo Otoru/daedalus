@@ -390,6 +390,27 @@ func TestFakeOracleBuildsAGraphAndRoutesOverIt(t *testing.T) {
 	if graph.Discipline != NodeDisciplineRefined {
 		t.Fatalf("Discipline = %s, want the refined default", graph.Discipline)
 	}
+	checkFakeGraphNodesAndEdges(t, graph, profile)
+
+	route, err := fake.FindRoute(context.Background(), RouteQuery{
+		Graph: &graph, From: 1, To: 0, Abilities: profile.Abilities(),
+	})
+	if err != nil {
+		t.Fatalf("FindRoute() failed: %v", err)
+	}
+	if !route.Judgement.Certified() {
+		t.Fatalf("judgement = %+v, want a route from the floor to the ledge", route.Judgement)
+	}
+	if len(route.Route.Edges) == 0 {
+		t.Fatal("a certified non-trivial route must list its edges")
+	}
+	if route.Route.From != 1 || route.Route.To != 0 {
+		t.Fatalf("route runs %d -> %d, want 1 -> 0", route.Route.From, route.Route.To)
+	}
+}
+
+func checkFakeGraphNodesAndEdges(t *testing.T, graph JumpGraph, profile MovementProfile) {
+	t.Helper()
 	for index, node := range graph.Nodes {
 		if node.ID != MotionNodeID(index) {
 			t.Fatalf("node %d carries ID %d; IDs are indices", index, node.ID)
@@ -408,22 +429,6 @@ func TestFakeOracleBuildsAGraphAndRoutesOverIt(t *testing.T) {
 		if _, ok := graph.Node(edge.To); !ok {
 			t.Fatalf("edge %d enters a node that does not exist", index)
 		}
-	}
-
-	route, err := fake.FindRoute(context.Background(), RouteQuery{
-		Graph: &graph, From: 1, To: 0, Abilities: profile.Abilities(),
-	})
-	if err != nil {
-		t.Fatalf("FindRoute() failed: %v", err)
-	}
-	if !route.Judgement.Certified() {
-		t.Fatalf("judgement = %+v, want a route from the floor to the ledge", route.Judgement)
-	}
-	if len(route.Route.Edges) == 0 {
-		t.Fatal("a certified non-trivial route must list its edges")
-	}
-	if route.Route.From != 1 || route.Route.To != 0 {
-		t.Fatalf("route runs %d -> %d, want 1 -> 0", route.Route.From, route.Route.To)
 	}
 }
 

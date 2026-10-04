@@ -38,12 +38,32 @@ func seatShell(plane *Plane, profile MovementProfile, stages []AbilitySet) (Verd
 }
 
 func reseatOpenings(plane *Plane, profile MovementProfile, stages []AbilitySet) (VerdictReason, string, bool) {
+	index := openingIndex(plane)
+	ordered, detail := orderedOpenings(plane, index)
+	if detail != "" {
+		return ReasonDisconnected, detail, true
+	}
+	for _, id := range ordered {
+		loc := index[id]
+		t := plane.Rooms[loc.room].Transitions[loc.at]
+		if detail, rejected := slideOpening(plane, loc, index[t.To], profile, stages); rejected {
+			return ReasonDisconnected, detail, true
+		}
+	}
+	return repairOpenings(plane, index, ordered, profile, stages)
+}
+
+func openingIndex(plane *Plane) map[TransitionID]struct{ room, at int } {
 	index := map[TransitionID]struct{ room, at int }{}
 	for ri := range plane.Rooms {
 		for ti := range plane.Rooms[ri].Transitions {
 			index[plane.Rooms[ri].Transitions[ti].ID] = struct{ room, at int }{ri, ti}
 		}
 	}
+	return index
+}
+
+func orderedOpenings(plane *Plane, index map[TransitionID]struct{ room, at int }) ([]TransitionID, string) {
 	seen := map[TransitionID]bool{}
 	var ordered []TransitionID
 	for ri := range plane.Rooms {
@@ -53,7 +73,7 @@ func reseatOpenings(plane *Plane, profile MovementProfile, stages []AbilitySet) 
 			}
 			partner, ok := index[t.To]
 			if !ok {
-				return ReasonDisconnected, fmt.Sprintf("opening %d in room %d has no partner", t.ID, t.Room), true
+				return nil, fmt.Sprintf("opening %d in room %d has no partner", t.ID, t.Room)
 			}
 			seen[t.ID] = true
 			seen[plane.Rooms[partner.room].Transitions[partner.at].ID] = true
@@ -65,30 +85,17 @@ func reseatOpenings(plane *Plane, profile MovementProfile, stages []AbilitySet) 
 		}
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
-	for _, id := range ordered {
-		loc := index[id]
-		t := plane.Rooms[loc.room].Transitions[loc.at]
-		partnerLoc := index[t.To]
-		if detail, rejected := slideOpening(plane, loc, partnerLoc, profile, stages); rejected {
-			return ReasonDisconnected, detail, true
-		}
-	}
+	return ordered, ""
+}
+
+func repairOpenings(plane *Plane, index map[TransitionID]struct{ room, at int }, ordered []TransitionID, profile MovementProfile, stages []AbilitySet) (VerdictReason, string, bool) {
 	// A later pair's footing can sit on an earlier mouth's approach. Rebuild
 	// any mouth that the rest of the pass walled off, and stop if a pass
 	// stops changing the count. Eight passes is the room diameter in practice;
 	// a pair that still oscillates is rejected rather than certified.
 	var last int
 	for pass := 0; pass < 8; pass++ {
-		var broken []TransitionID
-		for _, id := range ordered {
-			loc := index[id]
-			t := plane.Rooms[loc.room].Transitions[loc.at]
-			partnerLoc := index[t.To]
-			if mouthsReach(plane, t, plane.Rooms[partnerLoc.room].Transitions[partnerLoc.at], profile, stages) {
-				continue
-			}
-			broken = append(broken, id)
-		}
+		broken := brokenOpenings(plane, index, ordered, profile, stages)
 		if len(broken) == 0 {
 			assignIndices(plane.Rooms)
 			return 0, "", false
@@ -109,6 +116,19 @@ func reseatOpenings(plane *Plane, profile MovementProfile, stages []AbilitySet) 
 	loc := index[ordered[0]]
 	t := plane.Rooms[loc.room].Transitions[loc.at]
 	return ReasonDisconnected, openingSealed(t.Room, t), true
+}
+
+func brokenOpenings(plane *Plane, index map[TransitionID]struct{ room, at int }, ordered []TransitionID, profile MovementProfile, stages []AbilitySet) []TransitionID {
+	var broken []TransitionID
+	for _, id := range ordered {
+		loc := index[id]
+		t := plane.Rooms[loc.room].Transitions[loc.at]
+		partnerLoc := index[t.To]
+		if !mouthsReach(plane, t, plane.Rooms[partnerLoc.room].Transitions[partnerLoc.at], profile, stages) {
+			broken = append(broken, id)
+		}
+	}
+	return broken
 }
 
 func slideOpening(plane *Plane, loc, partner struct{ room, at int }, profile MovementProfile, stages []AbilitySet) (string, bool) {
@@ -143,35 +163,43 @@ func slideOpening(plane *Plane, loc, partner struct{ room, at int }, profile Mov
 	// other than the span the macro punched, and only after that footing exists.
 	for _, grow := range []bool{false, true} {
 		for start := lo; start+span.extent <= hi; start++ {
-			candidate := axisSpan{start: start, extent: span.extent}
-			nextA, okA := offsetFromSpan(*roomA, tA.Side, candidate)
-			nextB, okB := offsetFromSpan(*roomB, tB.Side, candidate)
-			if !okA || !okB {
-				continue
-			}
-			if openingHitsCorner(*roomA, tA.Side, nextA, tA.Extent) || openingHitsCorner(*roomB, tB.Side, nextB, tB.Extent) {
-				continue
-			}
-			if crowdsSibling(*roomA, tA.ID, tA.Side, nextA, tA.Extent) || crowdsSibling(*roomB, tB.ID, tB.Side, nextB, tB.Extent) {
-				continue
-			}
-			restore()
-			sealOpening(roomA, roomA.Transitions[loc.at])
-			sealOpening(roomB, roomB.Transitions[partner.at])
-			roomA.Transitions[loc.at].Offset = nextA
-			roomB.Transitions[partner.at].Offset = nextB
-			punchOpening(roomA, roomA.Transitions[loc.at])
-			punchOpening(roomB, roomB.Transitions[partner.at])
-			if grow && !growApproaches(plane, loc, partner, profile, stages) {
-				continue
-			}
-			if mouthsReach(plane, roomA.Transitions[loc.at], roomB.Transitions[partner.at], profile, stages) {
+			candidate := openingCandidate{span: axisSpan{start: start, extent: span.extent}, grow: grow}
+			if tryOpeningCandidate(plane, loc, partner, candidate, restore, profile, stages) {
 				return "", false
 			}
 		}
 		restore()
 	}
 	return openingSealed(roomA.ID, roomA.Transitions[loc.at]) + "; " + openingSealed(roomB.ID, roomB.Transitions[partner.at]), true
+}
+
+type openingCandidate struct {
+	span axisSpan
+	grow bool
+}
+
+func tryOpeningCandidate(plane *Plane, loc, partner struct{ room, at int }, candidate openingCandidate, restore func(), profile MovementProfile, stages []AbilitySet) bool {
+	roomA, roomB := &plane.Rooms[loc.room], &plane.Rooms[partner.room]
+	tA, tB := roomA.Transitions[loc.at], roomB.Transitions[partner.at]
+	nextA, okA := offsetFromSpan(*roomA, tA.Side, candidate.span)
+	nextB, okB := offsetFromSpan(*roomB, tB.Side, candidate.span)
+	if !okA || !okB || openingHitsCorner(*roomA, tA.Side, nextA, tA.Extent) || openingHitsCorner(*roomB, tB.Side, nextB, tB.Extent) {
+		return false
+	}
+	if crowdsSibling(*roomA, tA.ID, tA.Side, nextA, tA.Extent) || crowdsSibling(*roomB, tB.ID, tB.Side, nextB, tB.Extent) {
+		return false
+	}
+	restore()
+	sealOpening(roomA, roomA.Transitions[loc.at])
+	sealOpening(roomB, roomB.Transitions[partner.at])
+	roomA.Transitions[loc.at].Offset = nextA
+	roomB.Transitions[partner.at].Offset = nextB
+	punchOpening(roomA, roomA.Transitions[loc.at])
+	punchOpening(roomB, roomB.Transitions[partner.at])
+	if candidate.grow && !growApproaches(plane, loc, partner, profile, stages) {
+		return false
+	}
+	return mouthsReach(plane, roomA.Transitions[loc.at], roomB.Transitions[partner.at], profile, stages)
 }
 
 // growApproaches cuts a jumpable approach from each room's playable component
@@ -249,19 +277,28 @@ func nearestStand(grid Grid, profile MovementProfile, playable map[Cell]bool, mo
 			if !playable[Cell{X: x, Y: y}] || !shellStandable(grid, x, y, profile) {
 				continue
 			}
-			dist := int32(1 << 30)
-			for _, mouth := range mouths {
-				d := absInt32(x-mouth.X) + absInt32(y-mouth.Y)
-				if d < dist {
-					dist = d
-				}
-			}
-			if !found || dist < bestDist || (dist == bestDist && (y > best.Y || (y == best.Y && x < best.X))) {
+			dist := distanceToMouths(Cell{X: x, Y: y}, mouths)
+			if betterStand(found, dist, bestDist, Cell{X: x, Y: y}, best) {
 				best, bestDist, found = Cell{X: x, Y: y}, dist, true
 			}
 		}
 	}
 	return best, found
+}
+
+func distanceToMouths(cell Cell, mouths []Cell) int32 {
+	dist := int32(1 << 30)
+	for _, mouth := range mouths {
+		d := absInt32(cell.X-mouth.X) + absInt32(cell.Y-mouth.Y)
+		if d < dist {
+			dist = d
+		}
+	}
+	return dist
+}
+
+func betterStand(found bool, dist, bestDist int32, cell, best Cell) bool {
+	return !found || dist < bestDist || (dist == bestDist && (cell.Y > best.Y || (cell.Y == best.Y && cell.X < best.X)))
 }
 
 func closestCell(mouths []Cell, origin Cell) Cell {
@@ -277,23 +314,28 @@ func closestCell(mouths []Cell, origin Cell) Cell {
 }
 
 func placeStep(room *Room, origin, mouth Cell, profile MovementProfile) bool {
+	next, ok := stepDestination(room, origin, mouth, profile)
+	if !ok || !clearJumpColumn(room, origin, next, profile) {
+		return false
+	}
+	return makeStand(room, next.X, next.Y, profile)
+}
+
+func stepDestination(room *Room, origin, mouth Cell, profile MovementProfile) (Cell, bool) {
 	rise := int32(math.Floor(profile.ApexHeight()))
 	if rise < 1 {
 		rise = 1
 	}
 	dx := signInt32(mouth.X - origin.X)
 	dy := signInt32(mouth.Y - origin.Y)
-	nx, ny := origin.X, origin.Y
+	var nx int32
+	ny := origin.Y
 	if absInt32(mouth.Y-origin.Y) >= absInt32(mouth.X-origin.X) && dy != 0 {
-		step := rise
-		if absInt32(mouth.Y-origin.Y) < step {
-			step = absInt32(mouth.Y - origin.Y)
-		}
-		ny = origin.Y + dy*step
+		nx, ny = verticalStep(room, origin, mouth, rise, dx, dy)
 	} else if dx != 0 {
 		nx = origin.X + dx
 	} else {
-		return false
+		return Cell{}, false
 	}
 	if nx == mouth.X && ny == mouth.Y {
 		// The mouth is the opening, not a footing. Step aside onto a neighbour.
@@ -304,10 +346,25 @@ func placeStep(room *Room, origin, mouth Cell, profile MovementProfile) bool {
 		}
 		ny = mouth.Y
 	}
-	if !clearJumpColumn(room, origin, Cell{X: nx, Y: ny}, profile) {
-		return false
+	return Cell{X: nx, Y: ny}, true
+}
+
+func verticalStep(room *Room, origin, mouth Cell, rise, dx, dy int32) (int32, int32) {
+	step := min(rise, absInt32(mouth.Y-origin.Y))
+	nx := origin.X
+	// A vertical stack in one column cannot be climbed: the solid under the
+	// new footing sits in the jump arc. Stagger sideways so shellJumps can
+	// clear the support from a neighbour column.
+	if dx == 0 {
+		if origin.X+1 < int32(room.Grid.Width)-1 {
+			nx = origin.X + 1
+		} else if origin.X-1 > 0 {
+			nx = origin.X - 1
+		}
+	} else {
+		nx = origin.X + dx
 	}
-	return makeStand(room, nx, ny, profile)
+	return nx, origin.Y + dy*step
 }
 
 func clearJumpColumn(room *Room, from, to Cell, profile MovementProfile) bool {

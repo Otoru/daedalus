@@ -75,8 +75,9 @@ func ComputeInto(ctx context.Context, dst *Field, grid OpacityGrid, origin daeda
 	dst.rows = dst.rows[:0]
 	setVisibleBit(dst.Visible, grid, origin)
 
-	var visited uint64
+	scan := quadrantScan{ctx: ctx, field: dst, grid: grid, origin: origin, radius: radius}
 	for direction := daedalus.DirectionNorth; direction <= daedalus.DirectionWest; direction++ {
+		scan.direction = direction
 		dst.rows = append(dst.rows, scanRow{depth: 1, start: slope{-1, 1}, end: slope{1, 1}})
 		for len(dst.rows) != 0 {
 			last := len(dst.rows) - 1
@@ -85,7 +86,7 @@ func ComputeInto(ctx context.Context, dst *Field, grid OpacityGrid, origin daeda
 			if row.depth > int64(radius) {
 				continue
 			}
-			if err := scanRowInto(ctx, dst, grid, origin, radius, direction, row, &visited); err != nil {
+			if err := scan.scanRow(row); err != nil {
 				return err
 			}
 		}
@@ -118,47 +119,80 @@ func (field Field) VisibleCells(dst []daedalus.Cell) []daedalus.Cell {
 	return dst
 }
 
-func scanRowInto(ctx context.Context, field *Field, grid OpacityGrid, origin daedalus.Cell, radius uint32, direction daedalus.Direction, row scanRow, visited *uint64) error {
+// quadrantScan carries the fixed inputs of one quadrant sweep plus the shared
+// cancellation counter, so scanning a row takes a single receiver.
+type quadrantScan struct {
+	ctx       context.Context
+	field     *Field
+	grid      OpacityGrid
+	origin    daedalus.Cell
+	radius    uint32
+	direction daedalus.Direction
+	visited   uint64
+}
+
+// rowEdges tracks the wall transitions seen so far in one row, which is what
+// splits the row into the child rows scanned at the next depth.
+type rowEdges struct {
+	previousWall bool
+	hasPrevious  bool
+}
+
+// tick counts one visited cell and reports cancellation on the sampled cells.
+func (scan *quadrantScan) tick() error {
+	scan.visited++
+	if scan.visited%fieldCancellationInterval != 0 {
+		return nil
+	}
+	return scan.ctx.Err()
+}
+
+// scanRow sweeps one row of the quadrant, revealing its cells and queueing the
+// child rows left by the transparent runs it finds.
+func (scan *quadrantScan) scanRow(row scanRow) error {
 	minCol := roundTiesUp(row.start, row.depth)
 	maxCol := roundTiesDown(row.end, row.depth)
-	previousWall := false
-	hasPrevious := false
+	var edges rowEdges
 	for col := minCol; col <= maxCol; col++ {
-		*visited = *visited + 1
-		if *visited%fieldCancellationInterval == 0 {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
+		if err := scan.tick(); err != nil {
+			return err
 		}
-		at := quadrantCell(origin, direction, row.depth, col)
-		inBounds := at.X >= 0 && at.Y >= 0 && uint32(at.X) < grid.Width && uint32(at.Y) < grid.Height
-		if !withinRadius(origin, at, radius) {
+		at := quadrantCell(scan.origin, scan.direction, row.depth, col)
+		if !withinRadius(scan.origin, at, scan.radius) {
 			continue
 		}
-		tileSlope := slope{2*col - 1, 2 * row.depth}
-		symmetric := slope{col, row.depth}.between(row.start, row.end)
-		wall := !inBounds || !grid.TransparentAt(at)
-		if (wall || symmetric) && inBounds {
-			setVisibleBit(field.Visible, grid, at)
-		}
-		if wall {
-			if hasPrevious && !previousWall {
-				field.rows = append(field.rows, scanRow{depth: row.depth + 1, start: row.start, end: tileSlope})
-			}
-			previousWall = true
-			hasPrevious = true
-			continue
-		}
-		if hasPrevious && previousWall {
-			row.start = tileSlope
-		}
-		previousWall = false
-		hasPrevious = true
+		wall := scan.revealCell(at, row, col)
+		scan.stepColumn(&row, &edges, wall, slope{2*col - 1, 2 * row.depth})
 	}
-	if hasPrevious && !previousWall {
-		field.rows = append(field.rows, scanRow{depth: row.depth + 1, start: row.start, end: row.end})
+	if edges.hasPrevious && !edges.previousWall {
+		scan.field.rows = append(scan.field.rows, scanRow{depth: row.depth + 1, start: row.start, end: row.end})
 	}
 	return nil
+}
+
+// revealCell sets at when it is a wall or symmetrically visible, and reports
+// whether it blocks sight. A cell outside the grid counts as a wall.
+func (scan *quadrantScan) revealCell(at daedalus.Cell, row scanRow, col int64) bool {
+	inBounds := at.X >= 0 && at.Y >= 0 && uint32(at.X) < scan.grid.Width && uint32(at.Y) < scan.grid.Height
+	wall := !inBounds || !scan.grid.TransparentAt(at)
+	symmetric := slope{col, row.depth}.between(row.start, row.end)
+	if inBounds && (wall || symmetric) {
+		setVisibleBit(scan.field.Visible, scan.grid, at)
+	}
+	return wall
+}
+
+// stepColumn records the transition at tileSlope: a transparent run that ends
+// at a wall queues a child row, and a wall run that ends narrows row.start.
+func (scan *quadrantScan) stepColumn(row *scanRow, edges *rowEdges, wall bool, tileSlope slope) {
+	switch {
+	case wall && edges.hasPrevious && !edges.previousWall:
+		scan.field.rows = append(scan.field.rows, scanRow{depth: row.depth + 1, start: row.start, end: tileSlope})
+	case !wall && edges.hasPrevious && edges.previousWall:
+		row.start = tileSlope
+	}
+	edges.previousWall = wall
+	edges.hasPrevious = true
 }
 
 func quadrantCell(origin daedalus.Cell, direction daedalus.Direction, depth, col int64) daedalus.Cell {

@@ -85,22 +85,25 @@ func (PlatformCellKind) EnumDescriptor() ([]byte, []int) {
 type PlatformVerdict int32
 
 const (
-	PlatformVerdict_PLATFORM_VERDICT_UNKNOWN   PlatformVerdict = 0
-	PlatformVerdict_PLATFORM_VERDICT_CERTIFIED PlatformVerdict = 1
-	PlatformVerdict_PLATFORM_VERDICT_REJECTED  PlatformVerdict = 2
+	PlatformVerdict_PLATFORM_VERDICT_UNSPECIFIED PlatformVerdict = 0
+	PlatformVerdict_PLATFORM_VERDICT_CERTIFIED   PlatformVerdict = 1
+	PlatformVerdict_PLATFORM_VERDICT_REJECTED    PlatformVerdict = 2
+	PlatformVerdict_PLATFORM_VERDICT_UNKNOWN     PlatformVerdict = 3
 )
 
 // Enum value maps for PlatformVerdict.
 var (
 	PlatformVerdict_name = map[int32]string{
-		0: "PLATFORM_VERDICT_UNKNOWN",
+		0: "PLATFORM_VERDICT_UNSPECIFIED",
 		1: "PLATFORM_VERDICT_CERTIFIED",
 		2: "PLATFORM_VERDICT_REJECTED",
+		3: "PLATFORM_VERDICT_UNKNOWN",
 	}
 	PlatformVerdict_value = map[string]int32{
-		"PLATFORM_VERDICT_UNKNOWN":   0,
-		"PLATFORM_VERDICT_CERTIFIED": 1,
-		"PLATFORM_VERDICT_REJECTED":  2,
+		"PLATFORM_VERDICT_UNSPECIFIED": 0,
+		"PLATFORM_VERDICT_CERTIFIED":   1,
+		"PLATFORM_VERDICT_REJECTED":    2,
+		"PLATFORM_VERDICT_UNKNOWN":     3,
 	}
 )
 
@@ -1667,7 +1670,7 @@ func (x *PlatformJudgement) GetVerdict() PlatformVerdict {
 	if x != nil {
 		return x.Verdict
 	}
-	return PlatformVerdict_PLATFORM_VERDICT_UNKNOWN
+	return PlatformVerdict_PLATFORM_VERDICT_UNSPECIFIED
 }
 
 func (x *PlatformJudgement) GetReason() PlatformVerdictReason {
@@ -6113,11 +6116,12 @@ const file_daedalus_v1_daedalus_proto_rawDesc = "" +
 	"\x18PLATFORM_CELL_KIND_SOLID\x10\x02\x12!\n" +
 	"\x1dPLATFORM_CELL_KIND_SEMI_SOLID\x10\x03\x12 \n" +
 	"\x1cPLATFORM_CELL_KIND_CLIMBABLE\x10\x04\x12\x1d\n" +
-	"\x19PLATFORM_CELL_KIND_HAZARD\x10\x05*n\n" +
-	"\x0fPlatformVerdict\x12\x1c\n" +
-	"\x18PLATFORM_VERDICT_UNKNOWN\x10\x00\x12\x1e\n" +
+	"\x19PLATFORM_CELL_KIND_HAZARD\x10\x05*\x90\x01\n" +
+	"\x0fPlatformVerdict\x12 \n" +
+	"\x1cPLATFORM_VERDICT_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aPLATFORM_VERDICT_CERTIFIED\x10\x01\x12\x1d\n" +
-	"\x19PLATFORM_VERDICT_REJECTED\x10\x02*\xdb\x04\n" +
+	"\x19PLATFORM_VERDICT_REJECTED\x10\x02\x12\x1c\n" +
+	"\x18PLATFORM_VERDICT_UNKNOWN\x10\x03*\xdb\x04\n" +
 	"\x15PlatformVerdictReason\x12'\n" +
 	"#PLATFORM_VERDICT_REASON_UNSPECIFIED\x10\x00\x12)\n" +
 	"%PLATFORM_VERDICT_REASON_WITNESS_FOUND\x10\x01\x12#\n" +

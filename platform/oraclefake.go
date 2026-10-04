@@ -180,56 +180,39 @@ func (f *FakeOracle) CheckEdge(ctx context.Context, query EdgeQuery) (EdgeResult
 	budget := BudgetReport{CandidateEdges: 1}
 
 	for _, kind := range f.candidateKinds(query) {
-		if missing, ok := f.missingAbility(kind, query.Abilities); !ok {
-			if query.Kind != MotionEdgeKindUnspecified {
-				return EdgeResult{Judgement: f.judgement(VerdictRejected, ReasonAbilityMissing, profile,
-					"the moveset lacks "+missing.String(), budget)}, nil
-			}
-			continue
+		if result, decided := f.checkCandidate(query, kind, budget); decided {
+			return result, nil
 		}
-		if !f.hasResources(kind, query.From.Resources) {
-			if query.Kind != MotionEdgeKindUnspecified {
-				return EdgeResult{Judgement: f.judgement(VerdictRejected, ReasonResourceExhausted, profile,
-					"no charge left for "+kind.String(), budget)}, nil
-			}
-			continue
-		}
-		reach, airtime, supported := f.envelope(kind, profile, query)
-		if !supported {
-			if query.Kind != MotionEdgeKindUnspecified {
-				return EdgeResult{Judgement: f.judgement(VerdictUnknown, ReasonUnsupportedMoveset, profile,
-					"the fake model does not analyse "+kind.String(), budget)}, nil
-			}
-			continue
-		}
-		if reach < 0 {
-			continue
-		}
-		demand := Span{
-			Lo: query.To.Footing.Lo - query.From.Footing.Hi,
-			Hi: query.To.Footing.Hi - query.From.Footing.Lo,
-		}
-		if !demand.Overlaps(Span{Lo: -reach, Hi: reach}) {
-			continue
-		}
-		edge := MotionEdge{
-			From:     query.From.ID,
-			To:       query.To.ID,
-			Kind:     kind,
-			Requires: f.requirement(kind),
-			Duration: airtime,
-		}
-		if !query.OmitWitness {
-			edge.Witness = f.witness(profile, query, kind, airtime)
-		}
-		return EdgeResult{
-			Edge: edge,
-			Judgement: f.judgement(VerdictCertified, ReasonWitnessFound, profile,
-				"fake envelope only: no collision was tested", budget),
-		}, nil
 	}
 	return EdgeResult{Judgement: f.judgement(VerdictRejected, ReasonOutOfEnvelope, profile,
 		"no fake manoeuvre spans the gap", budget)}, nil
+}
+
+func (f *FakeOracle) checkCandidate(query EdgeQuery, kind MotionEdgeKind, budget BudgetReport) (EdgeResult, bool) {
+	profile := query.Profile
+	if missing, ok := f.missingAbility(kind, query.Abilities); !ok {
+		return EdgeResult{Judgement: f.judgement(VerdictRejected, ReasonAbilityMissing, profile,
+			"the moveset lacks "+missing.String(), budget)}, query.Kind != MotionEdgeKindUnspecified
+	}
+	if !f.hasResources(kind, query.From.Resources) {
+		return EdgeResult{Judgement: f.judgement(VerdictRejected, ReasonResourceExhausted, profile,
+			"no charge left for "+kind.String(), budget)}, query.Kind != MotionEdgeKindUnspecified
+	}
+	reach, airtime, supported := f.envelope(kind, profile, query)
+	if !supported {
+		return EdgeResult{Judgement: f.judgement(VerdictUnknown, ReasonUnsupportedMoveset, profile,
+			"the fake model does not analyse "+kind.String(), budget)}, query.Kind != MotionEdgeKindUnspecified
+	}
+	demand := Span{Lo: query.To.Footing.Lo - query.From.Footing.Hi, Hi: query.To.Footing.Hi - query.From.Footing.Lo}
+	if reach < 0 || !demand.Overlaps(Span{Lo: -reach, Hi: reach}) {
+		return EdgeResult{}, false
+	}
+	edge := MotionEdge{From: query.From.ID, To: query.To.ID, Kind: kind, Requires: f.requirement(kind), Duration: airtime}
+	if !query.OmitWitness {
+		edge.Witness = f.witness(profile, query, kind, airtime)
+	}
+	return EdgeResult{Edge: edge, Judgement: f.judgement(VerdictCertified, ReasonWitnessFound, profile,
+		"fake envelope only: no collision was tested", budget)}, true
 }
 
 // candidateKinds returns the manoeuvres the fake will try, in a fixed order so
@@ -311,36 +294,44 @@ func (f *FakeOracle) envelope(kind MotionEdgeKind, profile MovementProfile, quer
 	case MotionEdgeKindJump:
 		return f.ballistic(profile, profile.JumpVelocity, rise)
 	case MotionEdgeKindDoubleJump:
-		if profile.DoubleJump == nil {
-			return -1, 0, false
-		}
-		// Crude: a reset-mode second jump at the apex doubles the reachable
-		// height and adds one more airtime. An impulse-mode one does not, and
-		// the fake does not try to tell them apart.
-		reach, airtime, ok := f.ballistic(profile, profile.JumpVelocity, rise-profile.ApexHeight())
-		if !ok || reach < 0 {
-			return reach, airtime, ok
-		}
-		extraReach := float64(profile.MaxRunSpeed * profile.TimeToApex())
-		return float64(reach + extraReach), airtime + profile.TimeToApex(), true
+		return f.doubleJumpEnvelope(profile, rise)
 	case MotionEdgeKindDash:
-		if profile.Dash == nil {
-			return -1, 0, false
-		}
-		if rise > 0 {
-			return -1, 0, true
-		}
-		reach := float64(profile.Dash.Speed * profile.Dash.Duration)
-		airtime := profile.Dash.Duration
-		if rise < 0 {
-			fall := math.Sqrt(2 * -rise / profile.GravityDown)
-			extraReach := float64(profile.MaxRunSpeed * fall)
-			reach = float64(reach + extraReach)
-			airtime += fall
-		}
-		return reach, airtime, true
+		return f.dashEnvelope(profile, rise)
 	}
 	return -1, 0, false
+}
+
+func (f *FakeOracle) doubleJumpEnvelope(profile MovementProfile, rise float64) (float64, float64, bool) {
+	if profile.DoubleJump == nil {
+		return -1, 0, false
+	}
+	// Crude: a reset-mode second jump at the apex doubles the reachable
+	// height and adds one more airtime. An impulse-mode one does not, and
+	// the fake does not try to tell them apart.
+	reach, airtime, ok := f.ballistic(profile, profile.JumpVelocity, rise-profile.ApexHeight())
+	if !ok || reach < 0 {
+		return reach, airtime, ok
+	}
+	extraReach := float64(profile.MaxRunSpeed * profile.TimeToApex())
+	return float64(reach + extraReach), airtime + profile.TimeToApex(), true
+}
+
+func (f *FakeOracle) dashEnvelope(profile MovementProfile, rise float64) (float64, float64, bool) {
+	if profile.Dash == nil {
+		return -1, 0, false
+	}
+	if rise > 0 {
+		return -1, 0, true
+	}
+	reach := float64(profile.Dash.Speed * profile.Dash.Duration)
+	airtime := profile.Dash.Duration
+	if rise < 0 {
+		fall := math.Sqrt(2 * -rise / profile.GravityDown)
+		extraReach := float64(profile.MaxRunSpeed * fall)
+		reach = float64(reach + extraReach)
+		airtime += fall
+	}
+	return reach, airtime, true
 }
 
 // ballistic returns the reach and airtime of a jump of initial velocity
@@ -436,75 +427,81 @@ func (f *FakeOracle) BuildGraph(ctx context.Context, query GraphQuery) (GraphRes
 		Discipline:     discipline,
 		Surfaces:       derived.Surfaces,
 	}
-	for _, surface := range derived.Surfaces {
-		for index, interval := range surface.Intervals {
-			if interval.Footing.IsEmpty() {
-				continue
-			}
-			if len(graph.Nodes) >= MaxMotionNodes {
-				return GraphResult{Graph: graph, Judgement: f.judgement(VerdictUnknown, ReasonBudgetExhausted, profile,
-					"node ceiling reached", BudgetReport{Exhausted: true})}, nil
-			}
-			graph.Nodes = append(graph.Nodes, MotionNode{
-				ID:        MotionNodeID(len(graph.Nodes)),
-				Surface:   surface.ID,
-				Interval:  uint32(index),
-				Height:    surface.At,
-				Footing:   interval.Footing,
-				Velocity:  Point(0),
-				Mode:      MotionModeGrounded,
-				Resources: profile.FullResources(),
-			})
-		}
+	if !seedFakeNodes(&graph, profile) {
+		return GraphResult{Graph: graph, Judgement: f.judgement(VerdictUnknown, ReasonBudgetExhausted, profile,
+			"node ceiling reached", BudgetReport{Exhausted: true})}, nil
 	}
-
-	report := BudgetReport{}
-	for _, from := range graph.Nodes {
-		for _, to := range graph.Nodes {
-			if from.ID == to.ID {
-				continue
-			}
-			if err := ctx.Err(); err != nil {
-				return GraphResult{}, err
-			}
-			if budget.MaxCandidateEdges > 0 && report.CandidateEdges >= budget.MaxCandidateEdges {
-				report.Exhausted = true
-				return GraphResult{Graph: graph, Judgement: f.judgement(VerdictUnknown, ReasonBudgetExhausted, profile,
-					"candidate ceiling reached", report)}, nil
-			}
-			report.CandidateEdges++
-			result, err := f.CheckEdge(ctx, EdgeQuery{
-				Grid:        query.Grid,
-				Profile:     profile,
-				Abilities:   query.Abilities,
-				From:        from,
-				To:          to,
-				Budget:      budget,
-				OmitWitness: query.OmitWitness,
-			})
-			if err != nil {
-				return GraphResult{}, err
-			}
-			if !result.Judgement.Certified() {
-				continue
-			}
-			if len(graph.Edges) >= MaxMotionEdges {
-				report.Exhausted = true
-				return GraphResult{Graph: graph, Judgement: f.judgement(VerdictUnknown, ReasonBudgetExhausted, profile,
-					"edge ceiling reached", report)}, nil
-			}
-			edge := result.Edge
-			edge.ID = MotionEdgeID(len(graph.Edges))
-			edge.From = from.ID
-			edge.To = to.ID
-			graph.Edges = append(graph.Edges, edge)
-		}
+	report, ceiling, err := f.buildFakeEdges(ctx, query, budget, &graph)
+	if err != nil {
+		return GraphResult{}, err
+	}
+	if ceiling != "" {
+		return GraphResult{Graph: graph, Judgement: f.judgement(VerdictUnknown, ReasonBudgetExhausted, profile, ceiling, report)}, nil
 	}
 	return GraphResult{
 		Graph: graph,
 		Judgement: f.judgement(VerdictCertified, ReasonWitnessFound, profile,
 			"fake envelope only: no collision was tested", report),
 	}, nil
+}
+
+func seedFakeNodes(graph *JumpGraph, profile MovementProfile) bool {
+	for _, surface := range graph.Surfaces {
+		for index, interval := range surface.Intervals {
+			if interval.Footing.IsEmpty() {
+				continue
+			}
+			if len(graph.Nodes) >= MaxMotionNodes {
+				return false
+			}
+			graph.Nodes = append(graph.Nodes, MotionNode{ID: MotionNodeID(len(graph.Nodes)), Surface: surface.ID,
+				Interval: uint32(index), Height: surface.At, Footing: interval.Footing, Velocity: Point(0),
+				Mode: MotionModeGrounded, Resources: profile.FullResources()})
+		}
+	}
+	return true
+}
+
+func (f *FakeOracle) buildFakeEdges(ctx context.Context, query GraphQuery, budget SearchBudget, graph *JumpGraph) (BudgetReport, string, error) {
+	report := BudgetReport{}
+	for _, from := range graph.Nodes {
+		for _, to := range graph.Nodes {
+			if from.ID == to.ID {
+				continue
+			}
+			ceiling, err := f.fakeEdgeCandidate(ctx, query, budget, graph, from, to, &report)
+			if err != nil || ceiling != "" {
+				return report, ceiling, err
+			}
+		}
+	}
+	return report, "", nil
+}
+
+func (f *FakeOracle) fakeEdgeCandidate(ctx context.Context, query GraphQuery, budget SearchBudget, graph *JumpGraph, from, to MotionNode, report *BudgetReport) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if budget.MaxCandidateEdges > 0 && report.CandidateEdges >= budget.MaxCandidateEdges {
+		report.Exhausted = true
+		return "candidate ceiling reached", nil
+	}
+	report.CandidateEdges++
+	result, err := f.CheckEdge(ctx, EdgeQuery{Grid: query.Grid, Profile: query.Profile, Abilities: query.Abilities,
+		From: from, To: to, Budget: budget, OmitWitness: query.OmitWitness})
+	if err != nil || !result.Judgement.Certified() {
+		return "", err
+	}
+	if len(graph.Edges) >= MaxMotionEdges {
+		report.Exhausted = true
+		return "edge ceiling reached", nil
+	}
+	edge := result.Edge
+	edge.ID = MotionEdgeID(len(graph.Edges))
+	edge.From = from.ID
+	edge.To = to.ID
+	graph.Edges = append(graph.Edges, edge)
+	return "", nil
 }
 
 // FindRoute runs a breadth-first search over the graph, visiting edges in
@@ -514,17 +511,8 @@ func (f *FakeOracle) FindRoute(ctx context.Context, query RouteQuery) (RouteResu
 	if f.FindRouteFunc != nil {
 		return f.FindRouteFunc(ctx, query)
 	}
-	if err := ctx.Err(); err != nil {
+	if err := validateFakeRouteQuery(ctx, query); err != nil {
 		return RouteResult{}, err
-	}
-	if query.Graph == nil {
-		return RouteResult{}, queryError("RouteQuery.Graph is nil")
-	}
-	if _, ok := query.Graph.Node(query.From); !ok {
-		return RouteResult{}, queryError("RouteQuery.From %d is not a node of the graph", query.From)
-	}
-	if _, ok := query.Graph.Node(query.To); !ok {
-		return RouteResult{}, queryError("RouteQuery.To %d is not a node of the graph", query.To)
 	}
 	profile := MovementProfile{Version: query.Graph.ProfileVersion}
 	budget := effectiveBudget(query.Budget)
@@ -559,27 +547,47 @@ func (f *FakeOracle) FindRoute(ctx context.Context, query RouteQuery) (RouteResu
 		queue = queue[1:]
 		report.ExpandedNodes++
 
-		for _, edge := range query.Graph.Edges {
-			if edge.From != current || !edge.Reachable(query.Abilities) {
-				continue
-			}
-			if visited[edge.To] {
-				continue
-			}
-			visited[edge.To] = true
-			cameFrom[edge.To] = int(edge.ID)
-			if edge.To == query.To {
-				return RouteResult{
-					Route: f.rebuild(query, cameFrom),
-					Judgement: f.judgement(VerdictCertified, ReasonWitnessFound, profile,
-						"fake envelope only: every edge on this route is unverified", report),
-				}, nil
-			}
-			queue = append(queue, edge.To)
+		if fakeRouteStep(query, current, visited, cameFrom, &queue) {
+			return RouteResult{
+				Route: f.rebuild(query, cameFrom),
+				Judgement: f.judgement(VerdictCertified, ReasonWitnessFound, profile,
+					"fake envelope only: every edge on this route is unverified", report),
+			}, nil
 		}
 	}
 	return RouteResult{Judgement: f.judgement(VerdictRejected, ReasonDisconnected, profile,
 		"no route under this moveset in this graph", report)}, nil
+}
+
+func validateFakeRouteQuery(ctx context.Context, query RouteQuery) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if query.Graph == nil {
+		return queryError("RouteQuery.Graph is nil")
+	}
+	if _, ok := query.Graph.Node(query.From); !ok {
+		return queryError("RouteQuery.From %d is not a node of the graph", query.From)
+	}
+	if _, ok := query.Graph.Node(query.To); !ok {
+		return queryError("RouteQuery.To %d is not a node of the graph", query.To)
+	}
+	return nil
+}
+
+func fakeRouteStep(query RouteQuery, current MotionNodeID, visited []bool, cameFrom []int, queue *[]MotionNodeID) bool {
+	for _, edge := range query.Graph.Edges {
+		if edge.From != current || !edge.Reachable(query.Abilities) || visited[edge.To] {
+			continue
+		}
+		visited[edge.To] = true
+		cameFrom[edge.To] = int(edge.ID)
+		if edge.To == query.To {
+			return true
+		}
+		*queue = append(*queue, edge.To)
+	}
+	return false
 }
 
 func (f *FakeOracle) rebuild(query RouteQuery, cameFrom []int) Route {

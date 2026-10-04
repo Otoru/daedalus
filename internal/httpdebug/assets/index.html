@@ -68,12 +68,20 @@
         <div class="tool-heading">Traversal graph</div>
         <div class="field-controls">
         <div class="toggle-row graph-controls">
-          <label class="centerline-toggle" for="show-jump-graph"><input id="show-jump-graph" type="checkbox" checked> Jump graph</label>
+          <label class="centerline-toggle" for="show-jump-graph"><input id="show-jump-graph" type="checkbox"> Surface connections</label>
           <label class="centerline-toggle" for="ability-dash"><input id="ability-dash" type="checkbox"> Dash</label>
           <label class="centerline-toggle" for="ability-double-jump"><input id="ability-double-jump" type="checkbox"> Double jump</label>
-          <label class="centerline-toggle" for="ability-wall-jump"><input id="ability-wall-jump" type="checkbox"> Wall-cling</label>
+          <label class="centerline-toggle" for="ability-wall-jump"><input id="ability-wall-jump" type="checkbox"> Wall cling / jump</label>
+          <label class="centerline-toggle" for="ability-climb"><input id="ability-climb" type="checkbox"> Climb rope / ladder</label>
         </div>
-        <p id="jump-graph-hint" class="click-hint">Select a platform surface to inspect its jumps.</p>
+        <p id="jump-graph-hint" class="click-hint">Enable connections, then click a platform, wall, or rope. Ability switches reveal links unlocked by each move; dashed arrows are not trajectories.</p>
+        <div class="graph-key" aria-label="Traversal connection colors">
+          <span><i class="graph-line jump"></i>Jump</span>
+          <span><i class="graph-line double-jump"></i>Double jump</span>
+          <span><i class="graph-line dash"></i>Dash</span>
+          <span><i class="graph-line wall"></i>Wall</span>
+          <span><i class="graph-line climb"></i>Climb</span>
+        </div>
         <div class="legend platform-legend" aria-label="Platform map legend">
           <span><i class="swatch solid"></i>Solid</span>
           <span><i class="swatch semi-solid"></i>Semi-solid</span>
@@ -145,14 +153,18 @@
       </div>
       <aside id="cell-inspector" class="inspector" aria-labelledby="inspector-title" hidden>
         <h3 id="inspector-title">Selected cell</h3>
-        <pre id="cell-details">No cell selected.</pre>
+        <p id="cell-summary">No cell selected.</p>
+        <details class="cell-technical">
+          <summary>Technical details</summary>
+          <pre id="cell-details">No cell selected.</pre>
+        </details>
       </aside>
       <div id="error-box" class="error-box" role="alert" hidden></div>
-    </div>
     <details class="json-reference">
       <summary><span id="response-title">Returned ProtoJSON</span><button id="copy-response" class="button secondary" type="button" disabled>Copy</button></summary>
       <pre id="response-viewer" class="response-viewer">The response will appear here.</pre>
     </details>
+    </div>
   </aside>
 
   <script src="ui-logic.js" defer></script>

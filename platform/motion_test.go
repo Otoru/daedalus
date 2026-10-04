@@ -195,7 +195,7 @@ func TestModellingCoyoteAsAnEnvelopeOffsetWouldCertifyAJumpThatDoesNotExist(t *t
 			best = got
 		}
 	}
-	if !(best < naive) {
+	if best >= naive {
 		t.Fatalf("the real coyote reach %v must fall short of the naive envelope %v", best, naive)
 	}
 	t.Logf("plain=%.4f real-coyote-max=%.4f naive-offset=%.4f", plain, best, naive)

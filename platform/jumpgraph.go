@@ -298,43 +298,27 @@ func (b *builder) occupiable(surface Surface, index int) bool {
 func (b *builder) seed() {
 	full := b.profile.FullResources()
 	for s := range b.geom.surfaces {
-		surface := b.geom.surfaces[s]
-		if surface.Kind == SurfaceKindClimbable {
-			if b.profile.Climb == nil || !b.abilities.Has(AbilityClimb) {
-				continue
-			}
-			for i := range surface.Intervals {
-				if surface.Intervals[i].Footing.IsEmpty() {
-					continue
-				}
-				for sample := range b.samples[s][i] {
-					b.intern(nodeKey{
-						surface:  surface.ID,
-						interval: uint32(i),
-						sample:   uint32(sample),
-						mode:     MotionModeClimbing,
-						res:      full,
-					})
-				}
-			}
+		b.seedSurface(s, full)
+	}
+}
+
+func (b *builder) seedSurface(s int, full Resources) {
+	surface := b.geom.surfaces[s]
+	mode := MotionModeGrounded
+	if surface.Kind == SurfaceKindClimbable {
+		if b.profile.Climb == nil || !b.abilities.Has(AbilityClimb) {
+			return
+		}
+		mode = MotionModeClimbing
+	} else if !surface.Kind.Supports() {
+		return
+	}
+	for i := range surface.Intervals {
+		if mode == MotionModeClimbing && surface.Intervals[i].Footing.IsEmpty() || mode == MotionModeGrounded && !b.occupiable(surface, i) {
 			continue
 		}
-		if !surface.Kind.Supports() {
-			continue
-		}
-		for i := range surface.Intervals {
-			if !b.occupiable(surface, i) {
-				continue
-			}
-			for sample := range b.samples[s][i] {
-				b.intern(nodeKey{
-					surface:  surface.ID,
-					interval: uint32(i),
-					sample:   uint32(sample),
-					mode:     MotionModeGrounded,
-					res:      full,
-				})
-			}
+		for sample := range b.samples[s][i] {
+			b.intern(nodeKey{surface: surface.ID, interval: uint32(i), sample: uint32(sample), mode: mode, res: full})
 		}
 	}
 }
@@ -420,34 +404,34 @@ func (b *builder) expand(ctx context.Context) bool {
 		record := b.records[cursor]
 		horizon := record.node.Height - b.budget.FallHorizon
 		b.geom.enumerate(record, b.abilities, b.budget, b.spent, func(plan launch) bool {
-			if !b.abilities.Contains(plan.requires) {
-				return true
-			}
-			if !b.spent.candidate() {
-				truncated = true
-				return false
-			}
-			// Candidates are flown WITHOUT recording. Nine in ten produce
-			// no edge, and allocating a phase list for each one dominated
-			// the build; the few that do produce an edge are replayed, and
-			// the replay is identical because the simulation is a pure
-			// function of the plan and the geometry.
-			result := b.geom.fly(b.abilities, plan, ceiling, horizon, false, b.spent)
-			if result.truncated {
-				truncated = true
-			}
-			if b.spent.exhausted {
-				truncated = true
-				return false
-			}
-			b.record(record, plan, result)
-			return true
+			return b.expandCandidate(record, plan, ceiling, horizon, &truncated)
 		})
 		if b.spent.exhausted {
 			return true
 		}
 	}
 	return truncated
+}
+
+func (b *builder) expandCandidate(record nodeRecord, plan launch, ceiling, horizon float64, truncated *bool) bool {
+	if !b.abilities.Contains(plan.requires) {
+		return true
+	}
+	if !b.spent.candidate() {
+		*truncated = true
+		return false
+	}
+	// Candidates are flown without recording; successful ones are replayed.
+	result := b.geom.fly(b.abilities, plan, ceiling, horizon, false, b.spent)
+	if result.truncated {
+		*truncated = true
+	}
+	if b.spent.exhausted {
+		*truncated = true
+		return false
+	}
+	b.record(record, plan, result)
+	return true
 }
 
 // record turns one flown candidate into an edge, when it ended somewhere the
@@ -760,15 +744,18 @@ func (b *builder) groundedByHeight() [][]MotionNodeID {
 	}
 	out := make([][]MotionNodeID, 0, len(buckets))
 	for _, group := range buckets {
-		ids := group.nodes
-		for i := 1; i < len(ids); i++ {
-			for j := i; j > 0 && b.nodes[ids[j]].Footing.Lo < b.nodes[ids[j-1]].Footing.Lo; j-- {
-				ids[j], ids[j-1] = ids[j-1], ids[j]
-			}
-		}
-		out = append(out, ids)
+		out = append(out, b.sortFootings(group.nodes))
 	}
 	return out
+}
+
+func (b *builder) sortFootings(ids []MotionNodeID) []MotionNodeID {
+	for i := 1; i < len(ids); i++ {
+		for j := i; j > 0 && b.nodes[ids[j]].Footing.Lo < b.nodes[ids[j-1]].Footing.Lo; j-- {
+			ids[j], ids[j-1] = ids[j-1], ids[j]
+		}
+	}
+	return ids
 }
 
 // climbEdges connects ladders and ropes: a grounded node beside one attaches
@@ -795,34 +782,31 @@ func (b *builder) climbEdges() {
 			if surface.Intervals[i].Footing.IsEmpty() {
 				continue
 			}
-			ladder := make([]MotionNodeID, 0, len(b.samples[s][i]))
-			for sample := range b.samples[s][i] {
-				id, ok := b.index[nodeKey{
-					surface:  surface.ID,
-					interval: uint32(i),
-					sample:   uint32(sample),
-					mode:     MotionModeClimbing,
-					res:      full,
-				}]
-				if !ok {
-					continue
-				}
-				ladder = append(ladder, id)
-			}
-			for k := 0; k+1 < len(ladder); k++ {
-				lower, upper := ladder[k], ladder[k+1]
-				rise := math.Abs(b.nodes[upper].Height - b.nodes[lower].Height)
-				duration := math.Inf(1)
-				if b.profile.Climb.Speed > 0 {
-					duration = rise / b.profile.Climb.Speed
-				}
-				b.climbPair(lower, upper, requires, duration)
-				b.climbPair(upper, lower, requires, duration)
-			}
-			for _, id := range ladder {
-				b.attachClimb(id, surface, capture, requires)
-			}
+			b.climbInterval(s, i, surface, full, capture, requires)
 		}
+	}
+}
+
+func (b *builder) climbInterval(s, i int, surface Surface, full Resources, capture float64, requires AbilitySet) {
+	ladder := make([]MotionNodeID, 0, len(b.samples[s][i]))
+	for sample := range b.samples[s][i] {
+		id, ok := b.index[nodeKey{surface: surface.ID, interval: uint32(i), sample: uint32(sample), mode: MotionModeClimbing, res: full}]
+		if ok {
+			ladder = append(ladder, id)
+		}
+	}
+	for k := 0; k+1 < len(ladder); k++ {
+		lower, upper := ladder[k], ladder[k+1]
+		rise := math.Abs(b.nodes[upper].Height - b.nodes[lower].Height)
+		duration := math.Inf(1)
+		if b.profile.Climb.Speed > 0 {
+			duration = rise / b.profile.Climb.Speed
+		}
+		b.climbPair(lower, upper, requires, duration)
+		b.climbPair(upper, lower, requires, duration)
+	}
+	for _, id := range ladder {
+		b.attachClimb(id, surface, capture, requires)
 	}
 }
 
@@ -914,24 +898,10 @@ func (b *builder) climbWitness(from, to MotionNodeID, duration float64) *Witness
 // not contain, which is why a caller comparing stages must compare graphs
 // built from the same geometry.
 func (o *M1Oracle) FindRoute(ctx context.Context, query RouteQuery) (RouteResult, error) {
-	if err := ctx.Err(); err != nil {
+	if err := validateRouteQuery(ctx, query); err != nil {
 		return RouteResult{}, err
 	}
-	if query.Graph == nil {
-		return RouteResult{}, queryError("route query has no graph")
-	}
 	graph := query.Graph
-	if int(query.From) >= len(graph.Nodes) {
-		return RouteResult{}, queryError("route starts at node %d of %d", query.From, len(graph.Nodes))
-	}
-	if int(query.To) >= len(graph.Nodes) {
-		return RouteResult{}, queryError("route ends at node %d of %d", query.To, len(graph.Nodes))
-	}
-	if !graph.Abilities.Contains(query.Abilities) && !query.Abilities.Contains(graph.Abilities) {
-		// The moveset must be comparable with the graph's own; a disjoint set
-		// would filter edges the graph was never built to hold.
-		return RouteResult{}, queryError("route moveset %s is not comparable with the graph's %s", query.Abilities, graph.Abilities)
-	}
 	budget := effectiveBudget(query.Budget)
 	spent := newSpend(budget)
 	profile := MovementProfile{Version: graph.ProfileVersion}
@@ -943,13 +913,7 @@ func (o *M1Oracle) FindRoute(ctx context.Context, query RouteQuery) (RouteResult
 		}, nil
 	}
 
-	adjacency := make([][]MotionEdgeID, len(graph.Nodes))
-	for _, edge := range graph.Edges {
-		if int(edge.From) >= len(adjacency) {
-			continue
-		}
-		adjacency[edge.From] = append(adjacency[edge.From], edge.ID)
-	}
+	adjacency := routeAdjacency(graph)
 
 	const unvisited = -1
 	cameFrom := make([]int, len(graph.Nodes))
@@ -968,26 +932,62 @@ func (o *M1Oracle) FindRoute(ctx context.Context, query RouteQuery) (RouteResult
 			return RouteResult{Judgement: o.judge(VerdictUnknown, ReasonBudgetExhausted, profile,
 				"the route search ran out of expansions", spent.report)}, nil
 		}
-		for _, id := range adjacency[current] {
-			edge := graph.Edges[id]
-			if !edge.Reachable(query.Abilities) {
-				continue
-			}
-			if cameFrom[edge.To] != unvisited {
-				continue
-			}
-			cameFrom[edge.To] = int(id)
-			if edge.To == query.To {
-				return RouteResult{
-					Route:     rebuildRoute(graph, cameFrom, query.From, query.To),
-					Judgement: o.judge(VerdictCertified, ReasonWitnessFound, profile, "route found", spent.report),
-				}, nil
-			}
-			queue = append(queue, edge.To)
+		if routeStep(graph, query, adjacency[current], cameFrom, &queue) {
+			return RouteResult{
+				Route:     rebuildRoute(graph, cameFrom, query.From, query.To),
+				Judgement: o.judge(VerdictCertified, ReasonWitnessFound, profile, "route found", spent.report),
+			}, nil
 		}
 	}
 	return RouteResult{Judgement: o.judge(VerdictRejected, ReasonDisconnected, profile,
 		"the graph holds no route between the two nodes under this moveset", spent.report)}, nil
+}
+
+func validateRouteQuery(ctx context.Context, query RouteQuery) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if query.Graph == nil {
+		return queryError("route query has no graph")
+	}
+	graph := query.Graph
+	if int(query.From) >= len(graph.Nodes) {
+		return queryError("route starts at node %d of %d", query.From, len(graph.Nodes))
+	}
+	if int(query.To) >= len(graph.Nodes) {
+		return queryError("route ends at node %d of %d", query.To, len(graph.Nodes))
+	}
+	// The moveset must be comparable with the graph's own.
+	if !graph.Abilities.Contains(query.Abilities) && !query.Abilities.Contains(graph.Abilities) {
+		return queryError("route moveset %s is not comparable with the graph's %s", query.Abilities, graph.Abilities)
+	}
+	return nil
+}
+
+func routeAdjacency(graph *JumpGraph) [][]MotionEdgeID {
+	adjacency := make([][]MotionEdgeID, len(graph.Nodes))
+	for _, edge := range graph.Edges {
+		if int(edge.From) < len(adjacency) {
+			adjacency[edge.From] = append(adjacency[edge.From], edge.ID)
+		}
+	}
+	return adjacency
+}
+
+func routeStep(graph *JumpGraph, query RouteQuery, edges []MotionEdgeID, cameFrom []int, queue *[]MotionNodeID) bool {
+	const unvisited = -1
+	for _, id := range edges {
+		edge := graph.Edges[id]
+		if !edge.Reachable(query.Abilities) || cameFrom[edge.To] != unvisited {
+			continue
+		}
+		cameFrom[edge.To] = int(id)
+		if edge.To == query.To {
+			return true
+		}
+		*queue = append(*queue, edge.To)
+	}
+	return false
 }
 
 // rebuildRoute walks the predecessor edges back to the start.

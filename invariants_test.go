@@ -316,33 +316,41 @@ func (state *layoutInvariantCheck) checkCorridorSeparationAndWidth() {
 	reported := make(map[corridorSeparationPair]struct{})
 	for corridorIndex, corridor := range state.layout.Corridors {
 		for _, cell := range corridor.Cells {
-			for dy := int32(-1); dy <= 1; dy++ {
-				for dx := int32(-1); dx <= 1; dx++ {
-					if dx == 0 && dy == 0 {
-						continue
-					}
-					neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
-					other, exists := owners[neighbor]
-					if !exists || other == corridor.ID {
-						continue
-					}
-					pair := corridorSeparationPair{low: corridor.ID, high: other}
-					if pair.low > pair.high {
-						pair.low, pair.high = pair.high, pair.low
-					}
-					if _, seen := reported[pair]; seen {
-						continue
-					}
-					reported[pair] = struct{}{}
-					state.fail(
-						fmt.Sprintf("Layout.Corridors[%d]", corridorIndex),
-						fmt.Sprintf("Chebyshev distance >= 2 from CorridorID %d", other),
-						fmt.Sprintf("Cell %v touches CorridorID %d", cell, other),
-					)
-				}
-			}
+			state.checkCorridorNeighbors(corridorIndex, corridor.ID, cell, owners, reported)
 		}
 	}
+}
+
+func (state *layoutInvariantCheck) checkCorridorNeighbors(corridorIndex int, corridorID CorridorID, cell Cell, owners map[Cell]CorridorID, reported map[corridorSeparationPair]struct{}) {
+	for dy := int32(-1); dy <= 1; dy++ {
+		for dx := int32(-1); dx <= 1; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
+			state.checkCorridorNeighbor(corridorIndex, corridorID, cell, neighbor, owners, reported)
+		}
+	}
+}
+
+func (state *layoutInvariantCheck) checkCorridorNeighbor(corridorIndex int, corridorID CorridorID, cell, neighbor Cell, owners map[Cell]CorridorID, reported map[corridorSeparationPair]struct{}) {
+	other, exists := owners[neighbor]
+	if !exists || other == corridorID {
+		return
+	}
+	pair := corridorSeparationPair{low: corridorID, high: other}
+	if pair.low > pair.high {
+		pair.low, pair.high = pair.high, pair.low
+	}
+	if _, seen := reported[pair]; seen {
+		return
+	}
+	reported[pair] = struct{}{}
+	state.fail(
+		fmt.Sprintf("Layout.Corridors[%d]", corridorIndex),
+		fmt.Sprintf("Chebyshev distance >= 2 from CorridorID %d", other),
+		fmt.Sprintf("Cell %v touches CorridorID %d", cell, other),
+	)
 }
 
 // checkRoomOpeningBudget records that no Room grew more Corridors than its

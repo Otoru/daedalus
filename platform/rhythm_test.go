@@ -25,37 +25,7 @@ func TestSpineRisesAndFalls(t *testing.T) {
 		lastMain = node.Column
 		sawMain = true
 	}
-	for _, edge := range spine.Edges {
-		if edge.Direction == SpineDirectionBranch || edge.Direction == SpineDirectionSecret {
-			continue
-		}
-		from, ok := spine.Node(edge.From)
-		to, okTo := spine.Node(edge.To)
-		if !ok || !okTo {
-			t.Fatalf("edge %d -> %d leaves the spine", edge.From, edge.To)
-		}
-		delta := to.Altitude - from.Altitude
-		switch edge.Direction {
-		case SpineDirectionUp:
-			up = true
-			if delta <= 0 {
-				t.Fatalf("up edge %d -> %d changes altitude by %d", edge.From, edge.To, delta)
-			}
-			upDelta = delta
-		case SpineDirectionDown:
-			down = true
-			if delta >= 0 {
-				t.Fatalf("down edge %d -> %d changes altitude by %d", edge.From, edge.To, delta)
-			}
-			downDelta = -delta
-		case SpineDirectionLateral:
-			if delta != 0 {
-				t.Fatalf("lateral edge %d -> %d changes altitude by %d", edge.From, edge.To, delta)
-			}
-		default:
-			t.Fatalf("main path has direction %s", edge.Direction)
-		}
-	}
+	up, upDelta, down, downDelta = checkMainSpineEdges(t, spine, up, upDelta, down, downDelta)
 	if !up || !down {
 		t.Fatal("spine only advanced sideways")
 	}
@@ -67,12 +37,63 @@ func TestSpineRisesAndFalls(t *testing.T) {
 	}
 }
 
+func checkMainSpineEdges(t *testing.T, spine Spine, up bool, upDelta int32, down bool, downDelta int32) (bool, int32, bool, int32) {
+	for _, edge := range spine.Edges {
+		if edge.Direction == SpineDirectionBranch || edge.Direction == SpineDirectionSecret {
+			continue
+		}
+		from, ok := spine.Node(edge.From)
+		to, okTo := spine.Node(edge.To)
+		if !ok || !okTo {
+			t.Fatalf("edge %d -> %d leaves the spine", edge.From, edge.To)
+		}
+		delta := to.Altitude - from.Altitude
+		checkMainEdgeDirection(t, edge, delta)
+		switch edge.Direction {
+		case SpineDirectionUp:
+			up = true
+			upDelta = delta
+		case SpineDirectionDown:
+			down = true
+			downDelta = -delta
+		}
+	}
+	return up, upDelta, down, downDelta
+}
+
+func checkMainEdgeDirection(t *testing.T, edge SpineEdge, delta int32) {
+	t.Helper()
+	switch edge.Direction {
+	case SpineDirectionUp:
+		if delta <= 0 {
+			t.Fatalf("up edge %d -> %d changes altitude by %d", edge.From, edge.To, delta)
+		}
+	case SpineDirectionDown:
+		if delta >= 0 {
+			t.Fatalf("down edge %d -> %d changes altitude by %d", edge.From, edge.To, delta)
+		}
+	case SpineDirectionLateral:
+		if delta != 0 {
+			t.Fatalf("lateral edge %d -> %d changes altitude by %d", edge.From, edge.To, delta)
+		}
+	default:
+		t.Fatalf("main path has direction %s", edge.Direction)
+	}
+}
+
 func TestSpineBranchesIntoASecret(t *testing.T) {
 	spine, err := GenerateSpine(context.Background(), rhythmConfig(), 0)
 	if err != nil {
 		t.Fatalf("GenerateSpine: %v", err)
 	}
 	var branch, secret bool
+	branch, secret = checkSpineBranchEdges(t, spine, branch, secret)
+	if !branch || !secret {
+		t.Fatalf("branch=%v secret=%v, want both a side path and a secret deviation", branch, secret)
+	}
+}
+
+func checkSpineBranchEdges(t *testing.T, spine Spine, branch bool, secret bool) (bool, bool) {
 	for _, edge := range spine.Edges {
 		from, ok := spine.Node(edge.From)
 		to, okTo := spine.Node(edge.To)
@@ -82,30 +103,38 @@ func TestSpineBranchesIntoASecret(t *testing.T) {
 		switch edge.Direction {
 		case SpineDirectionBranch:
 			branch = true
-			if from.Role != SpineRoleMain || to.Role != SpineRoleBranch {
-				t.Fatalf("branch %d -> %d joins %s to %s", edge.From, edge.To, from.Role, to.Role)
-			}
-			if to.Column == from.Column && to.Altitude == from.Altitude {
-				t.Fatal("branch did not leave its parent")
-			}
+			checkBranchEdge(t, edge, from, to)
 		case SpineDirectionSecret:
 			secret = true
-			if from.Role != SpineRoleMain || to.Role != SpineRoleSecret {
-				t.Fatalf("secret %d -> %d joins %s to %s", edge.From, edge.To, from.Role, to.Role)
-			}
-			if to.Kind != BeatKindSecret {
-				t.Fatalf("secret node kind = %s", to.Kind)
-			}
-			if to.Altitude == from.Altitude && to.Column == from.Column {
-				t.Fatal("secret did not deviate from the main path")
-			}
-			if to.Altitude >= from.Altitude {
-				t.Fatalf("secret altitude %d is not below its parent %d: a hidden drop is the free direction", to.Altitude, from.Altitude)
-			}
+			checkSecretEdge(t, edge, from, to)
 		}
 	}
-	if !branch || !secret {
-		t.Fatalf("branch=%v secret=%v, want both a side path and a secret deviation", branch, secret)
+	return branch, secret
+}
+
+func checkBranchEdge(t *testing.T, edge SpineEdge, from, to SpineNode) {
+	t.Helper()
+	if from.Role != SpineRoleMain || to.Role != SpineRoleBranch {
+		t.Fatalf("branch %d -> %d joins %s to %s", edge.From, edge.To, from.Role, to.Role)
+	}
+	if to.Column == from.Column && to.Altitude == from.Altitude {
+		t.Fatal("branch did not leave its parent")
+	}
+}
+
+func checkSecretEdge(t *testing.T, edge SpineEdge, from, to SpineNode) {
+	t.Helper()
+	if from.Role != SpineRoleMain || to.Role != SpineRoleSecret {
+		t.Fatalf("secret %d -> %d joins %s to %s", edge.From, edge.To, from.Role, to.Role)
+	}
+	if to.Kind != BeatKindSecret {
+		t.Fatalf("secret node kind = %s", to.Kind)
+	}
+	if to.Altitude == from.Altitude && to.Column == from.Column {
+		t.Fatal("secret did not deviate from the main path")
+	}
+	if to.Altitude >= from.Altitude {
+		t.Fatalf("secret altitude %d is not below its parent %d: a hidden drop is the free direction", to.Altitude, from.Altitude)
 	}
 }
 
@@ -180,31 +209,45 @@ func TestRealizationCertifiesClimbsAndFalls(t *testing.T) {
 		t.Fatalf("GenerateRhythm: %v", err)
 	}
 	var jump, fall bool
+	jump, fall = checkRealizedBeats(t, rhythm, jump, fall)
+	if !jump || !fall {
+		t.Fatalf("jump=%v fall=%v, want the oracle to certify both a climb and a drop", jump, fall)
+	}
+}
+
+func checkRealizedBeats(t *testing.T, rhythm Rhythm, jump bool, fall bool) (bool, bool) {
 	for _, beat := range rhythm.Beats {
-		if !beat.Judgement.Certified() {
-			t.Fatalf("beat %d -> %d (%s) judgement = %+v", beat.From, beat.To, beat.Direction, beat.Judgement)
-		}
-		if !beat.Departure.IsRest(rhythmConfig().Profile) {
-			t.Fatal("departure is not a rest state")
-		}
+		checkRealizedBeat(t, beat)
 		if beat.Direction == SpineDirectionUp {
 			jump = true
-			if beat.Arrival.Height <= beat.Departure.Height {
-				t.Fatalf("up beat %d -> %d did not gain height", beat.From, beat.To)
-			}
-			if beat.Maneuver.Kind != MotionEdgeKindJump {
-				t.Fatalf("up beat realized as %s", beat.Maneuver.Kind)
-			}
 		}
 		if beat.Arrival.Height < beat.Departure.Height {
 			fall = true
-			if beat.Maneuver.Kind != MotionEdgeKindFall {
-				t.Fatalf("drop realized as %s", beat.Maneuver.Kind)
-			}
 		}
 	}
-	if !jump || !fall {
-		t.Fatalf("jump=%v fall=%v, want the oracle to certify both a climb and a drop", jump, fall)
+	return jump, fall
+}
+
+func checkRealizedBeat(t *testing.T, beat RealizedBeat) {
+	t.Helper()
+	if !beat.Judgement.Certified() {
+		t.Fatalf("beat %d -> %d (%s) judgement = %+v", beat.From, beat.To, beat.Direction, beat.Judgement)
+	}
+	if !beat.Departure.IsRest(rhythmConfig().Profile) {
+		t.Fatal("departure is not a rest state")
+	}
+	if beat.Direction == SpineDirectionUp {
+		if beat.Arrival.Height <= beat.Departure.Height {
+			t.Fatalf("up beat %d -> %d did not gain height", beat.From, beat.To)
+		}
+		if beat.Maneuver.Kind != MotionEdgeKindJump {
+			t.Fatalf("up beat realized as %s", beat.Maneuver.Kind)
+		}
+	}
+	if beat.Arrival.Height < beat.Departure.Height {
+		if beat.Maneuver.Kind != MotionEdgeKindFall {
+			t.Fatalf("drop realized as %s", beat.Maneuver.Kind)
+		}
 	}
 }
 
@@ -239,6 +282,13 @@ func TestRejectedClimbIsRewritten(t *testing.T) {
 		}
 	}
 	var rewritten bool
+	rewritten = checkRewrittenClimbs(t, rhythm, rewritten)
+	if !rewritten {
+		t.Fatal("the spine did not rewrite a refused climb")
+	}
+}
+
+func checkRewrittenClimbs(t *testing.T, rhythm Rhythm, rewritten bool) bool {
 	for _, beat := range rhythm.Beats {
 		if beat.Reaction == BeatReactionRewritten && beat.Proposed == SpineDirectionUp && beat.Direction != SpineDirectionUp {
 			rewritten = true
@@ -247,9 +297,7 @@ func TestRejectedClimbIsRewritten(t *testing.T) {
 			}
 		}
 	}
-	if !rewritten {
-		t.Fatal("the spine did not rewrite a refused climb")
-	}
+	return rewritten
 }
 
 func rhythmConfig() Config {

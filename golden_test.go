@@ -393,21 +393,26 @@ func checkCorridorsStayApart(t *testing.T, layout Layout) {
 	}
 	for _, corridor := range layout.Corridors {
 		for _, cell := range corridor.Cells {
-			for dy := int32(-1); dy <= 1; dy++ {
-				for dx := int32(-1); dx <= 1; dx++ {
-					neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
-					other, exists := owners[neighbor]
-					if !exists || other == corridor.ID {
-						continue
-					}
-					assert.Fail(t, "corridors touch",
-						"Corridor %d at %v is within Chebyshev 1 of Corridor %d", corridor.ID, cell, other)
-				}
-			}
+			checkCorridorNeighbors(t, corridor.ID, cell, owners)
 		}
 	}
 	for _, state := range layout.Grid.Cells {
 		assert.LessOrEqual(t, len(state.CorridorIDs), 1, "Cell %v", state.At)
+	}
+}
+
+func checkCorridorNeighbors(t *testing.T, corridorID CorridorID, cell Cell, owners map[Cell]CorridorID) {
+	t.Helper()
+	for dy := int32(-1); dy <= 1; dy++ {
+		for dx := int32(-1); dx <= 1; dx++ {
+			neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
+			other, exists := owners[neighbor]
+			if !exists || other == corridorID {
+				continue
+			}
+			assert.Fail(t, "corridors touch",
+				"Corridor %d at %v is within Chebyshev 1 of Corridor %d", corridorID, cell, other)
+		}
 	}
 }
 

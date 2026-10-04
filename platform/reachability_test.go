@@ -316,20 +316,7 @@ func TestADashSpentWithNoRefillDoesNotCrossTheSecondGap(t *testing.T) {
 	c := nodeAt(t, graph, 26.4, 1)
 
 	// The first gap is crossed, and the edge says it costs the dash.
-	crossed := false
-	var spentNode MotionNodeID
-	for _, edge := range graph.Edges {
-		if edge.Kind != MotionEdgeKindDash {
-			continue
-		}
-		if graph.Nodes[edge.From].Footing.Lo <= 5.6 && graph.Nodes[edge.To].Footing.Lo >= 13.4 {
-			crossed = true
-			spentNode = edge.To
-			if !edge.Requires.Has(AbilityDash) {
-				t.Fatalf("a dash edge must declare the ability it needs, got %s", edge.Requires)
-			}
-		}
-	}
+	crossed, spentNode := findFirstDashCrossing(t, graph)
 	if !crossed {
 		t.Fatalf("the dash must cross the first gap")
 	}
@@ -344,15 +331,7 @@ func TestADashSpentWithNoRefillDoesNotCrossTheSecondGap(t *testing.T) {
 	// The builder seeds every platform with a rested state, so the middle
 	// platform also carries a node that still has its dash; what must not
 	// exist is an edge leaving the SPENT one.
-	for _, edge := range graph.Edges {
-		if graph.Nodes[edge.From].Resources.DashCharges != 0 {
-			continue
-		}
-		if graph.Nodes[edge.From].Footing.Lo >= 13.4 && graph.Nodes[edge.From].Footing.Lo <= 18.6 &&
-			graph.Nodes[edge.To].Footing.Lo >= 26.4 {
-			t.Fatalf("edge %d crosses the second gap with a dash that was already spent", edge.ID)
-		}
-	}
+	checkSpentDashCannotCrossSecondGap(t, graph)
 	route, err := NewM1Oracle().FindRoute(context.Background(), RouteQuery{
 		Graph: graph, From: a.ID, To: c.ID, Abilities: abilities,
 	})
@@ -368,6 +347,36 @@ func TestADashSpentWithNoRefillDoesNotCrossTheSecondGap(t *testing.T) {
 	if direct.Judgement.Verdict != VerdictRejected || direct.Judgement.Reason != ReasonResourceExhausted {
 		t.Fatalf("the rejection must name the spent charge: got %s/%s (%s)",
 			direct.Judgement.Verdict, direct.Judgement.Reason, direct.Judgement.Detail)
+	}
+}
+
+func findFirstDashCrossing(t *testing.T, graph *JumpGraph) (bool, MotionNodeID) {
+	crossed := false
+	var spentNode MotionNodeID
+	for _, edge := range graph.Edges {
+		if edge.Kind != MotionEdgeKindDash {
+			continue
+		}
+		if graph.Nodes[edge.From].Footing.Lo <= 5.6 && graph.Nodes[edge.To].Footing.Lo >= 13.4 {
+			crossed = true
+			spentNode = edge.To
+			if !edge.Requires.Has(AbilityDash) {
+				t.Fatalf("a dash edge must declare the ability it needs, got %s", edge.Requires)
+			}
+		}
+	}
+	return crossed, spentNode
+}
+
+func checkSpentDashCannotCrossSecondGap(t *testing.T, graph *JumpGraph) {
+	for _, edge := range graph.Edges {
+		if graph.Nodes[edge.From].Resources.DashCharges != 0 {
+			continue
+		}
+		if graph.Nodes[edge.From].Footing.Lo >= 13.4 && graph.Nodes[edge.From].Footing.Lo <= 18.6 &&
+			graph.Nodes[edge.To].Footing.Lo >= 26.4 {
+			t.Fatalf("edge %d crosses the second gap with a dash that was already spent", edge.ID)
+		}
 	}
 }
 

@@ -106,11 +106,11 @@ func TestDegradationWalksDeclaredWidthsOnly(t *testing.T) {
 		widths := []CorridorWidthWeight{{Width: 2, Weight: 1}, {Width: 4, Weight: 2}}
 		streams := newRNGStreams(Seed(11))
 		before := streams.corridorWidth
-		corridors, doors, err := routeCorridorsWithWidths(
-			context.Background(), 8, 6, CorridorOrderXThenY, rooms,
-			[]Connection{{FromRoomID: 0, ToRoomID: 1}},
-			widths, &streams.corridorWidth,
-		)
+		corridors, doors, err := routeCorridorsWithWidths(context.Background(), corridorRoutingRequest{
+			Width: 8, Height: 6, Order: CorridorOrderXThenY, Rooms: rooms,
+			Connections: []Connection{{FromRoomID: 0, ToRoomID: 1}},
+			CorridorWidths: widths, WidthStream: &streams.corridorWidth,
+		})
 		require.NoError(t, err)
 		require.Len(t, corridors, 1)
 		assert.Equal(t, uint32(2), doors[corridors[0].FromDoorID].Span)
@@ -133,11 +133,11 @@ func TestNilCorridorGeometryConsumesNoWidthDraw(t *testing.T) {
 	plantBefore := streams.corridorPlant
 	placementBefore := streams.placement
 
-	corridors, doors, err := routeCorridorsWithWidths(
-		context.Background(), 7, 5, CorridorOrderXThenY, rooms,
-		[]Connection{{FromRoomID: 0, ToRoomID: 1}},
-		nil, &streams.corridorWidth,
-	)
+	corridors, doors, err := routeCorridorsWithWidths(context.Background(), corridorRoutingRequest{
+		Width: 7, Height: 5, Order: CorridorOrderXThenY, Rooms: rooms,
+		Connections: []Connection{{FromRoomID: 0, ToRoomID: 1}},
+		WidthStream: &streams.corridorWidth,
+	})
 
 	require.NoError(t, err)
 	require.Len(t, corridors, 1)
@@ -162,11 +162,12 @@ func TestWideBFSDetoursWhenBothLRoutesAreBlocked(t *testing.T) {
 		placedRectangle(t, 2, Cell{X: 4, Y: 3}, 1, 5),
 	}
 	streams := newRNGStreams(Seed(3))
-	corridors, doors, err := routeCorridorsWithWidths(
-		context.Background(), 10, 9, CorridorOrderXThenY, rooms,
-		[]Connection{{FromRoomID: 0, ToRoomID: 1}},
-		[]CorridorWidthWeight{{Width: 2, Weight: 1}}, &streams.corridorWidth,
-	)
+	corridors, doors, err := routeCorridorsWithWidths(context.Background(), corridorRoutingRequest{
+		Width: 10, Height: 9, Order: CorridorOrderXThenY, Rooms: rooms,
+		Connections: []Connection{{FromRoomID: 0, ToRoomID: 1}},
+		CorridorWidths: []CorridorWidthWeight{{Width: 2, Weight: 1}},
+		WidthStream:    &streams.corridorWidth,
+	})
 	require.NoError(t, err)
 	require.Len(t, corridors, 1)
 	assert.Equal(t, uint32(2), doors[corridors[0].FromDoorID].Span)
@@ -291,11 +292,12 @@ func routeFixedWidth(t *testing.T, width, height uint32, rooms []PlacedRoom, cor
 func routeWidths(t *testing.T, width, height uint32, rooms []PlacedRoom, widths []CorridorWidthWeight, seed Seed) Corridor {
 	t.Helper()
 	streams := newRNGStreams(seed)
-	corridors, doors, err := routeCorridorsWithWidths(
-		context.Background(), width, height, CorridorOrderXThenY, rooms,
-		[]Connection{{FromRoomID: 0, ToRoomID: 1}},
-		widths, &streams.corridorWidth,
-	)
+	corridors, doors, err := routeCorridorsWithWidths(context.Background(), corridorRoutingRequest{
+		Width: width, Height: height, Order: CorridorOrderXThenY, Rooms: rooms,
+		Connections:    []Connection{{FromRoomID: 0, ToRoomID: 1}},
+		CorridorWidths: widths,
+		WidthStream:    &streams.corridorWidth,
+	})
 	require.NoError(t, err)
 	require.Len(t, corridors, 1)
 	require.NotEmpty(t, doors)

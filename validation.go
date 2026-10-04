@@ -214,6 +214,17 @@ func validateTerrainDistribution(source *TerrainDistribution, definitions map[Te
 	if source == nil {
 		return nil
 	}
+	if err := validateTerrainPatchRange(source); err != nil {
+		return err
+	}
+	seen, err := validateTerrainWeights(source, definitions)
+	if err != nil {
+		return err
+	}
+	return ensurePassableTerrainCandidate(source.NoneWeight, seen, definitions)
+}
+
+func validateTerrainPatchRange(source *TerrainDistribution) error {
 	if (source.MinPatchCells == 0) != (source.MaxPatchCells == 0) {
 		return fmt.Errorf("%w: TerrainDistribution patch range must set both bounds", ErrInvalidConfig)
 	}
@@ -223,44 +234,65 @@ func validateTerrainDistribution(source *TerrainDistribution, definitions map[Te
 	if source.MaxPatchCells > MaxCells {
 		return fmt.Errorf("%w: TerrainDistribution patch maximum exceeds %d", ErrLimitExceeded, MaxCells)
 	}
+	return nil
+}
+
+func validateTerrainWeights(
+	source *TerrainDistribution,
+	definitions map[TerrainID]TerrainDefinition,
+) (map[TerrainID]struct{}, error) {
 	seen := make(map[TerrainID]struct{}, len(source.Terrains))
 	total := uint64(source.NoneWeight)
 	for _, terrain := range source.Terrains {
-		if terrain.TerrainID == "" || !utf8.ValidString(string(terrain.TerrainID)) {
-			return fmt.Errorf("%w: TerrainID in weight must be non-empty UTF-8", ErrInvalidConfig)
-		}
-		_, exists := definitions[terrain.TerrainID]
-		if !exists {
-			return fmt.Errorf("%w: TerrainID %q is not declared", ErrInvalidConfig, terrain.TerrainID)
-		}
-		if _, exists := seen[terrain.TerrainID]; exists {
-			return fmt.Errorf("%w: duplicate TerrainID in TerrainDistribution", ErrInvalidConfig)
-		}
-		if terrain.Weight == 0 {
-			return fmt.Errorf("%w: Terrain weight must be positive", ErrInvalidConfig)
+		if err := validateTerrainWeightEntry(terrain, definitions, seen); err != nil {
+			return nil, err
 		}
 		if total > math.MaxUint64-uint64(terrain.Weight) {
-			return fmt.Errorf("%w: TerrainDistribution weight sum overflows uint64", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: TerrainDistribution weight sum overflows uint64", ErrInvalidConfig)
 		}
 		total += uint64(terrain.Weight)
 		seen[terrain.TerrainID] = struct{}{}
 	}
 	if total == 0 {
-		return fmt.Errorf("%w: TerrainDistribution total weight must be positive", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: TerrainDistribution total weight must be positive", ErrInvalidConfig)
 	}
-	if source.NoneWeight == 0 {
-		passable := false
-		for terrainID := range seen {
-			if definitions[terrainID].EntryCost != 0 {
-				passable = true
-				break
-			}
-		}
-		if !passable {
-			return fmt.Errorf("%w: TerrainDistribution has no passable candidate for the connectivity spine", ErrInvalidConfig)
-		}
+	return seen, nil
+}
+
+func validateTerrainWeightEntry(
+	terrain TerrainWeight,
+	definitions map[TerrainID]TerrainDefinition,
+	seen map[TerrainID]struct{},
+) error {
+	if terrain.TerrainID == "" || !utf8.ValidString(string(terrain.TerrainID)) {
+		return fmt.Errorf("%w: TerrainID in weight must be non-empty UTF-8", ErrInvalidConfig)
+	}
+	if _, exists := definitions[terrain.TerrainID]; !exists {
+		return fmt.Errorf("%w: TerrainID %q is not declared", ErrInvalidConfig, terrain.TerrainID)
+	}
+	if _, exists := seen[terrain.TerrainID]; exists {
+		return fmt.Errorf("%w: duplicate TerrainID in TerrainDistribution", ErrInvalidConfig)
+	}
+	if terrain.Weight == 0 {
+		return fmt.Errorf("%w: Terrain weight must be positive", ErrInvalidConfig)
 	}
 	return nil
+}
+
+func ensurePassableTerrainCandidate(
+	noneWeight uint32,
+	seen map[TerrainID]struct{},
+	definitions map[TerrainID]TerrainDefinition,
+) error {
+	if noneWeight != 0 {
+		return nil
+	}
+	for terrainID := range seen {
+		if definitions[terrainID].EntryCost != 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: TerrainDistribution has no passable candidate for the connectivity spine", ErrInvalidConfig)
 }
 
 func cloneTerrainDistribution(source *TerrainDistribution) *TerrainDistribution {

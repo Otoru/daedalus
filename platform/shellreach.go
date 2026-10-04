@@ -77,55 +77,64 @@ func shellOpeningCells(room Room, transition Transition) (borders, mouths []Cell
 }
 
 func shellPlayable(grid Grid, profile MovementProfile, abilities AbilitySet) map[Cell]bool {
+	// Movement is directed: a body can fall from a high ledge onto the floor,
+	// but the floor cannot climb that fall in reverse. Seeding the search from
+	// every standable cell and keeping the largest component therefore marks a
+	// high opening "reachable" when the search started on the ledge and fell,
+	// even though a character who spawns on the floor can never get there with
+	// the same moveset. Root the playable set at the lowest footing (largest
+	// Y) and flood only along directed shellMoves from there.
 	n := shellClearance(profile)
-	visitedStand := map[Cell]bool{}
-	var best map[Cell]bool
-	bestStands := -1
-	var bestMin Cell
+	roots := shellFloorRoots(grid, profile)
+	if len(roots) == 0 {
+		return map[Cell]bool{}
+	}
+	return shellFlood(grid, profile, abilities, n, roots)
+}
+
+func shellFloorRoots(grid Grid, profile MovementProfile) []Cell {
 	width := int32(grid.Width)
 	height := int32(grid.Height)
+	floorY := int32(-1)
+	var roots []Cell
 	for y := int32(0); y < height; y++ {
 		for x := int32(0); x < width; x++ {
-			start := Cell{X: x, Y: y}
-			if visitedStand[start] || !shellStandable(grid, x, y, profile) {
+			if !shellStandable(grid, x, y, profile) {
 				continue
 			}
-			comp := map[Cell]bool{}
-			stands := 0
-			minCell := start
-			queue := []Cell{start}
-			comp[start] = true
-			visitedStand[start] = true
-			stands++
-			for len(queue) > 0 {
-				cur := queue[0]
-				queue = queue[1:]
-				for _, next := range shellMoves(grid, cur, profile, abilities, n) {
-					if comp[next] {
-						continue
-					}
-					comp[next] = true
-					queue = append(queue, next)
-					if next.Y < minCell.Y || (next.Y == minCell.Y && next.X < minCell.X) {
-						minCell = next
-					}
-					if shellStandable(grid, next.X, next.Y, profile) {
-						visitedStand[next] = true
-						stands++
-					}
-				}
+			if y > floorY {
+				floorY = y
+				roots = roots[:0]
+				roots = append(roots, Cell{X: x, Y: y})
+				continue
 			}
-			if best == nil || stands > bestStands || (stands == bestStands && (minCell.Y < bestMin.Y || (minCell.Y == bestMin.Y && minCell.X < bestMin.X))) {
-				best = comp
-				bestStands = stands
-				bestMin = minCell
+			if y == floorY {
+				roots = append(roots, Cell{X: x, Y: y})
 			}
 		}
 	}
-	if best == nil {
-		return map[Cell]bool{}
+	return roots
+}
+
+func shellFlood(grid Grid, profile MovementProfile, abilities AbilitySet, n int32, roots []Cell) map[Cell]bool {
+	comp := map[Cell]bool{}
+	queue := make([]Cell, 0, len(roots))
+	for _, root := range roots {
+		comp[root] = true
+		queue = append(queue, root)
 	}
-	return best
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, next := range shellMoves(grid, cur, profile, abilities, n) {
+			if comp[next] {
+				continue
+			}
+			comp[next] = true
+			queue = append(queue, next)
+		}
+	}
+	return comp
 }
 
 func shellStandable(grid Grid, x, y int32, profile MovementProfile) bool {
@@ -173,21 +182,29 @@ func shellMoves(grid Grid, cur Cell, profile MovementProfile, abilities AbilityS
 	if shellBodyFits(grid, cur.X, cur.Y+1, n) {
 		out = append(out, Cell{X: cur.X, Y: cur.Y + 1})
 	}
-	if abilities.Has(AbilityClimb) && profile.Climb != nil {
-		kind, ok := grid.At(cur)
-		if ok && kind == CellKindClimbable {
-			for _, dy := range []int32{-1, 1} {
-				next := Cell{X: cur.X, Y: cur.Y + dy}
-				nk, nok := grid.At(next)
-				if nok && nk == CellKindClimbable && shellBodyFits(grid, next.X, next.Y, n) {
-					out = append(out, next)
-				}
-			}
-		}
-	}
+	out = append(out, shellClimbMoves(grid, cur, profile, abilities, n)...)
 	if abilities.Has(AbilityWallJump) && profile.WallJump != nil && shellBodyFits(grid, cur.X, cur.Y, n) {
 		if shellBesideWall(grid, cur) {
 			out = append(out, shellJumps(grid, cur, profile, abilities, n)...)
+		}
+	}
+	return out
+}
+
+func shellClimbMoves(grid Grid, cur Cell, profile MovementProfile, abilities AbilitySet, n int32) []Cell {
+	if !abilities.Has(AbilityClimb) || profile.Climb == nil {
+		return nil
+	}
+	kind, ok := grid.At(cur)
+	if !ok || kind != CellKindClimbable {
+		return nil
+	}
+	var out []Cell
+	for _, dy := range []int32{-1, 1} {
+		next := Cell{X: cur.X, Y: cur.Y + dy}
+		nk, nok := grid.At(next)
+		if nok && nk == CellKindClimbable && shellBodyFits(grid, next.X, next.Y, n) {
+			out = append(out, next)
 		}
 	}
 	return out
@@ -226,29 +243,68 @@ func shellJumps(grid Grid, cur Cell, profile MovementProfile, abilities AbilityS
 	peakCells := int32(math.Floor(maxPeak))
 	var out []Cell
 	for peak := int32(0); peak <= peakCells; peak++ {
+		top := cur.Y - peak
+		if !shellJumpAscentClear(grid, cur, top, n) {
+			continue
+		}
+		left, right := shellJumpRoof(grid, cur.X, top, n)
+		fallLimits := shellJumpFallLimits(grid, left, right, top, n)
 		for dy := -peak; dy <= int32(grid.Height); dy++ {
-			rise := float64(-dy)
-			reach := shellJumpReach(profile, float64(peak), rise)
-			if reach < 0 {
-				continue
-			}
-			maxDx := int32(math.Floor(reach))
-			for dx := -maxDx; dx <= maxDx; dx++ {
-				if dx == 0 && dy == 0 {
-					continue
-				}
-				if math.Abs(float64(dx)) > reach {
-					continue
-				}
-				tx, ty := cur.X+dx, cur.Y+dy
-				if !shellArcClear(grid, cur.X, cur.Y, tx, ty, cur.Y-peak, n) {
-					continue
-				}
-				out = append(out, Cell{X: tx, Y: ty})
-			}
+			out = append(out, shellJumpTargetsCached(cur, profile, peak, dy, left, right, fallLimits)...)
 		}
 	}
 	return out
+}
+
+func shellJumpTargetsCached(cur Cell, profile MovementProfile, peak, dy, left, right int32, fallLimits []int32) []Cell {
+	reach := shellJumpReach(profile, float64(peak), float64(-dy))
+	if reach < 0 {
+		return nil
+	}
+	maxDx := int32(math.Floor(reach))
+	var out []Cell
+	for dx := max(-maxDx, left-cur.X); dx <= min(maxDx, right-cur.X); dx++ {
+		if (dx == 0 && dy == 0) || math.Abs(float64(dx)) > reach {
+			continue
+		}
+		tx, ty := cur.X+dx, cur.Y+dy
+		if ty <= fallLimits[tx-left] {
+			out = append(out, Cell{X: tx, Y: ty})
+		}
+	}
+	return out
+}
+
+func shellJumpAscentClear(grid Grid, cur Cell, top, n int32) bool {
+	for y := cur.Y; y >= top; y-- {
+		if !shellBodyFits(grid, cur.X, y, n) {
+			return false
+		}
+	}
+	return true
+}
+
+func shellJumpRoof(grid Grid, x, top, n int32) (int32, int32) {
+	left, right := x, x
+	for left > 0 && shellBodyFits(grid, left-1, top, n) {
+		left--
+	}
+	for right+1 < int32(grid.Width) && shellBodyFits(grid, right+1, top, n) {
+		right++
+	}
+	return left, right
+}
+
+func shellJumpFallLimits(grid Grid, left, right, top, n int32) []int32 {
+	limits := make([]int32, right-left+1)
+	for x := left; x <= right; x++ {
+		last := top
+		for y := top + 1; y < int32(grid.Height) && shellBodyFits(grid, x, y, n); y++ {
+			last = y
+		}
+		limits[x-left] = last
+	}
+	return limits
 }
 
 func shellJumpReach(profile MovementProfile, peak, rise float64) float64 {
@@ -282,37 +338,4 @@ func shellJumpReach(profile MovementProfile, peak, rise float64) float64 {
 		tDown = math.Sqrt(quot)
 	}
 	return float64(profile.MaxRunSpeed * float64(tUp+tDown))
-}
-
-func shellArcClear(grid Grid, x, y, tx, ty, top, n int32) bool {
-	if ty < top {
-		top = ty
-	}
-	for yy := y; yy >= top; yy-- {
-		if !shellBodyFits(grid, x, yy, n) {
-			return false
-		}
-	}
-	step := int32(1)
-	if tx < x {
-		step = -1
-	}
-	for xx := x; xx != tx; xx += step {
-		if !shellBodyFits(grid, xx, top, n) {
-			return false
-		}
-	}
-	dir := int32(1)
-	if ty < top {
-		dir = -1
-	}
-	for yy := top; ; yy += dir {
-		if !shellBodyFits(grid, tx, yy, n) {
-			return false
-		}
-		if yy == ty {
-			break
-		}
-	}
-	return true
 }

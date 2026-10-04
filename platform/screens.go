@@ -62,6 +62,8 @@ type MacroConfig struct {
 	MaxWidth  uint32
 	MinHeight uint32
 	MaxHeight uint32
+	// Base is the moveset available from the starting room.
+	Base AbilitySet
 	// Steps is the grant order. Empty builds a map with no ability gates.
 	// Each step should grant one ability; a step that grants several gates
 	// one edge on the whole set.
@@ -160,7 +162,7 @@ func (c MacroConfig) Validate() error {
 	if err := decentPlane(cfg); err != nil {
 		return err
 	}
-	plan := ProgressionPlan{Steps: cfg.Steps}
+	plan := ProgressionPlan{Base: cfg.Base, Steps: cfg.Steps}
 	if err := plan.Validate(DefaultProfile()); err != nil {
 		return err
 	}
@@ -211,7 +213,7 @@ func GenerateMacro(ctx context.Context, cfg MacroConfig) (Macro, error) {
 	if err != nil {
 		return zero, err
 	}
-	macro, err := bindProgression(ctx, plane, asm, cfg.Steps, DefaultProfile())
+	macro, err := bindProgression(ctx, plane, asm, cfg.Base, cfg.Steps, DefaultProfile())
 	if err != nil {
 		return zero, err
 	}
@@ -504,15 +506,15 @@ func insidePlane(origin Cell, w, h uint32, cfg MacroConfig) bool {
 
 func overlapsAny(drafts []roomDraft, origin Cell, w, h uint32) bool {
 	for _, other := range drafts {
-		if rectsOverlap(origin.X, origin.Y, int32(w), int32(h), other.origin.X, other.origin.Y, int32(other.w), int32(other.h)) {
+		if rectsOverlap(origin, w, h, other.origin, other.w, other.h) {
 			return true
 		}
 	}
 	return false
 }
 
-func rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh int32) bool {
-	return ax < bx+bw && bx < ax+aw && ay < by+bh && by < ay+ah
+func rectsOverlap(a Cell, aw, ah uint32, b Cell, bw, bh uint32) bool {
+	return a.X < b.X+int32(bw) && b.X < a.X+int32(aw) && a.Y < b.Y+int32(bh) && b.Y < a.Y+int32(ah)
 }
 
 func sharedRun(p roomDraft, side TransitionSide, origin Cell, w, h uint32) int32 {
@@ -574,24 +576,8 @@ func ValidatePlane(plane Plane) error {
 		return limitError("plane has %d rooms, above the ceiling of %d", len(plane.Rooms), MaxRooms)
 	}
 	for i := range plane.Rooms {
-		room := plane.Rooms[i]
-		if room.ID != RoomID(i) {
-			return geometryError("room %d has id %d; ids are creation indices", i, room.ID)
-		}
-		if err := validateGrid(room.Grid); err != nil {
+		if err := validatePlaneRoom(plane, i); err != nil {
 			return err
-		}
-		if room.Origin.X < 0 || room.Origin.Y < 0 {
-			return geometryError("room %d origin %v is outside the plane", room.ID, room.Origin)
-		}
-		if uint32(room.Origin.X)+room.Grid.Width > plane.Width || uint32(room.Origin.Y)+room.Grid.Height > plane.Height {
-			return geometryError("room %d extends outside the plane", room.ID)
-		}
-		for j := 0; j < i; j++ {
-			other := plane.Rooms[j]
-			if rectsOverlap(room.Origin.X, room.Origin.Y, int32(room.Grid.Width), int32(room.Grid.Height), other.Origin.X, other.Origin.Y, int32(other.Grid.Width), int32(other.Grid.Height)) {
-				return geometryError("room %d overlaps room %d", room.ID, other.ID)
-			}
 		}
 	}
 	if err := anchorInside(plane, plane.Spawn, "spawn"); err != nil {
@@ -601,6 +587,29 @@ func ValidatePlane(plane Plane) error {
 		return err
 	}
 	return validateTransitions(plane)
+}
+
+func validatePlaneRoom(plane Plane, i int) error {
+	room := plane.Rooms[i]
+	if room.ID != RoomID(i) {
+		return geometryError("room %d has id %d; ids are creation indices", i, room.ID)
+	}
+	if err := validateGrid(room.Grid); err != nil {
+		return err
+	}
+	if room.Origin.X < 0 || room.Origin.Y < 0 {
+		return geometryError("room %d origin %v is outside the plane", room.ID, room.Origin)
+	}
+	if uint32(room.Origin.X)+room.Grid.Width > plane.Width || uint32(room.Origin.Y)+room.Grid.Height > plane.Height {
+		return geometryError("room %d extends outside the plane", room.ID)
+	}
+	for j := 0; j < i; j++ {
+		other := plane.Rooms[j]
+		if rectsOverlap(room.Origin, room.Grid.Width, room.Grid.Height, other.Origin, other.Grid.Width, other.Grid.Height) {
+			return geometryError("room %d overlaps room %d", room.ID, other.ID)
+		}
+	}
+	return nil
 }
 
 func anchorInside(plane Plane, anchor Anchor, name string) error {

@@ -348,16 +348,17 @@ func TestExtraEdgePhaseSkipsAnUnroutableShortcut(t *testing.T) {
 		{FromRoomID: 1, ToRoomID: 3},
 	}
 	var attempts []Connection
-	connections, err := addExtraConnections(
-		context.Background(), rooms, backbone, 1, 0, 0, 1, 0,
-		func(from, to RoomID) (bool, error) {
+	connections, err := addExtraConnections(context.Background(), extraConnectionsRequest{
+		Rooms: rooms, Backbone: backbone, ExtraEdgeCount: 1,
+		Constraints: roleGridConstraints{CorridorWidth: 1},
+		TryRoute: func(from, to RoomID) (bool, error) {
 			attempts = append(attempts, Connection{FromRoomID: from, ToRoomID: to})
 			if from == 2 && to == 3 {
 				return false, nil
 			}
 			return true, nil
 		},
-	)
+	})
 
 	require.NoError(t, err)
 	assert.Equal(t, []Connection{
@@ -384,7 +385,10 @@ func TestExtraEdgePhaseSkipsAShortcutThatOverfillsARoom(t *testing.T) {
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 	}
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1, 0, nil)
+	connections, err := addExtraConnections(context.Background(), extraConnectionsRequest{
+		Rooms: rooms, Backbone: backbone, ExtraEdgeCount: 2,
+		Constraints: roleGridConstraints{CorridorWidth: 1},
+	})
 
 	require.NoError(t, err)
 	assert.NotContains(t, connections, Connection{FromRoomID: 0, ToRoomID: 3})

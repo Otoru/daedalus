@@ -55,32 +55,37 @@ func TestBoundaryTraceListsEveryExitOnce(t *testing.T) {
 			if !ValidRoomShapeDimensions(shape, size, size) {
 				continue
 			}
-			cells := RoomShapeOffsets(shape, size, size)
-			slots := traceBoundarySlots(cells)
-			require.NotEmpty(t, slots, "%s %d", shape, size)
-			seen := make(map[boundarySlot]struct{}, len(slots))
-			for _, slot := range slots {
-				_, duplicate := seen[slot]
-				require.False(t, duplicate, "duplicate slot %v on %s %d", slot, shape, size)
-				seen[slot] = struct{}{}
-			}
-			occupied := footprintSet(cells)
-			exits := 0
-			for _, cell := range cells {
-				for direction := DirectionNorth; direction <= DirectionWest; direction++ {
-					delta := direction.Delta()
-					neighbor := Cell{X: cell.X + delta.X, Y: cell.Y + delta.Y}
-					if _, inside := occupied[neighbor]; inside {
-						continue
-					}
-					exits++
-					_, traced := seen[boundarySlot{cell: cell, out: direction}]
-					assert.True(t, traced, "missing %s exit %v %v", shape, cell, direction)
-				}
-			}
-			assert.Equal(t, exits, len(slots), "%s %d", shape, size)
+			checkBoundaryTrace(t, shape, size)
 		}
 	}
+}
+
+func checkBoundaryTrace(t *testing.T, shape RoomShape, size uint32) {
+	t.Helper()
+	cells := RoomShapeOffsets(shape, size, size)
+	slots := traceBoundarySlots(cells)
+	require.NotEmpty(t, slots, "%s %d", shape, size)
+	seen := make(map[boundarySlot]struct{}, len(slots))
+	for _, slot := range slots {
+		_, duplicate := seen[slot]
+		require.False(t, duplicate, "duplicate slot %v on %s %d", slot, shape, size)
+		seen[slot] = struct{}{}
+	}
+	occupied := footprintSet(cells)
+	exits := 0
+	for _, cell := range cells {
+		for direction := DirectionNorth; direction <= DirectionWest; direction++ {
+			delta := direction.Delta()
+			neighbor := Cell{X: cell.X + delta.X, Y: cell.Y + delta.Y}
+			if _, inside := occupied[neighbor]; inside {
+				continue
+			}
+			exits++
+			_, traced := seen[boundarySlot{cell: cell, out: direction}]
+			assert.True(t, traced, "missing %s exit %v %v", shape, cell, direction)
+		}
+	}
+	assert.Equal(t, exits, len(slots), "%s %d", shape, size)
 }
 
 func TestOpeningCapacityIsStableAcrossDefaultShapes(t *testing.T) {
@@ -102,20 +107,25 @@ func TestOpeningCapacityIsStableAcrossDefaultShapes(t *testing.T) {
 				for _, corridor := range []uint32{1, 2, 3} {
 					sum += roomOpeningCapacity(cells, 0, 0, corridor)
 					sum += roomOpeningCapacity(cells, 12, 12, corridor)
-					for _, grid := range []struct{ width, height uint32 }{{0, 0}, {12, 12}} {
-						slots := traceBoundarySlots(cells)
-						openings := doorwayOpenings(slots, corridor, grid.width, grid.height, footprintSet(cells))
-						if len(openings) == 0 || len(openings) > openingConflictWordBits {
-							continue
-						}
-						assert.Equal(t, maximumCompatibleOpeningsWide(openings), maximumCompatibleOpenings(openings),
-							"%s %dx%d corridor %d grid %dx%d openings %d", shape, width, height, corridor, grid.width, grid.height, len(openings))
-					}
+					checkOpeningSearchWidths(t, shape, width, height, corridor, cells)
 				}
 			}
 		}
 	}
 	assert.Equal(t, frozenOpeningCapacitySum, sum)
+}
+
+func checkOpeningSearchWidths(t *testing.T, shape RoomShape, width, height, corridor uint32, cells []Cell) {
+	t.Helper()
+	for _, grid := range []struct{ width, height uint32 }{{0, 0}, {12, 12}} {
+		slots := traceBoundarySlots(cells)
+		openings := doorwayOpenings(slots, corridor, grid.width, grid.height, footprintSet(cells))
+		if len(openings) == 0 || len(openings) > openingConflictWordBits {
+			continue
+		}
+		assert.Equal(t, maximumCompatibleOpeningsWide(openings), maximumCompatibleOpenings(openings),
+			"%s %dx%d corridor %d grid %dx%d openings %d", shape, width, height, corridor, grid.width, grid.height, len(openings))
+	}
 }
 
 func TestCircularPackingMatchesExactSearchOnSmallFootprints(t *testing.T) {

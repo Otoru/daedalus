@@ -133,23 +133,27 @@ func qualityWitnessError(layout PlatformLayout) string {
 		}
 	}
 	for index, edge := range graph.Edges {
-		if edge.ID != MotionEdgeID(index) {
-			return fmt.Sprintf("jump-graph edge index %d carries id %d", index, edge.ID)
-		}
-		if edge.Kind == MotionEdgeKindTransition {
-			return fmt.Sprintf("jump-graph edge %d is a transition; crossing a room boundary is not a certified edge", edge.ID)
-		}
-		if int(edge.From) >= len(graph.Nodes) || int(edge.To) >= len(graph.Nodes) {
-			return fmt.Sprintf("edge %d runs %d -> %d outside a graph of %d nodes", edge.ID, edge.From, edge.To, len(graph.Nodes))
-		}
-		if edge.Witness == nil {
-			return fmt.Sprintf("edge %d (%s) is certified without a witness", edge.ID, edge.Kind)
-		}
-		if msg := qualityReplay(graph, edge, layout.Config.Profile); msg != "" {
+		if msg := qualityWitnessEdgeError(graph, edge, index, layout.Config.Profile); msg != "" {
 			return msg
 		}
 	}
 	return ""
+}
+
+func qualityWitnessEdgeError(graph *JumpGraph, edge MotionEdge, index int, profile MovementProfile) string {
+	if edge.ID != MotionEdgeID(index) {
+		return fmt.Sprintf("jump-graph edge index %d carries id %d", index, edge.ID)
+	}
+	if edge.Kind == MotionEdgeKindTransition {
+		return fmt.Sprintf("jump-graph edge %d is a transition; crossing a room boundary is not a certified edge", edge.ID)
+	}
+	if int(edge.From) >= len(graph.Nodes) || int(edge.To) >= len(graph.Nodes) {
+		return fmt.Sprintf("edge %d runs %d -> %d outside a graph of %d nodes", edge.ID, edge.From, edge.To, len(graph.Nodes))
+	}
+	if edge.Witness == nil {
+		return fmt.Sprintf("edge %d (%s) is certified without a witness", edge.ID, edge.Kind)
+	}
+	return qualityReplay(graph, edge, profile)
 }
 
 func qualityReplay(graph *JumpGraph, edge MotionEdge, profile MovementProfile) string {
@@ -157,6 +161,17 @@ func qualityReplay(graph *JumpGraph, edge MotionEdge, profile MovementProfile) s
 	if len(phases) == 0 {
 		return fmt.Sprintf("edge %d (%s) has an empty witness", edge.ID, edge.Kind)
 	}
+	if msg := qualityReplayPhases(edge, profile); msg != "" {
+		return msg
+	}
+	if msg := qualityReplayCommands(edge); msg != "" {
+		return msg
+	}
+	return qualityReplayEndpoints(graph, edge)
+}
+
+func qualityReplayPhases(edge MotionEdge, profile MovementProfile) string {
+	phases := edge.Witness.Phases
 	var summed float64
 	for i, phase := range phases {
 		if phase.Duration < 0 {
@@ -181,6 +196,10 @@ func qualityReplay(graph *JumpGraph, edge MotionEdge, profile MovementProfile) s
 	if math.Abs(summed-edge.Duration) > qualityTol || math.Abs(summed-edge.Witness.Duration()) > qualityTol {
 		return fmt.Sprintf("edge %d duration %v does not match its witness %v", edge.ID, edge.Duration, summed)
 	}
+	return ""
+}
+
+func qualityReplayCommands(edge MotionEdge) string {
 	commands := edge.Witness.Commands
 	if len(commands) == 0 {
 		return fmt.Sprintf("edge %d (%s) witness has no commands, so the trajectory does not say what was held", edge.ID, edge.Kind)
@@ -193,6 +212,11 @@ func qualityReplay(graph *JumpGraph, edge MotionEdge, profile MovementProfile) s
 			return fmt.Sprintf("edge %d witness commands go backwards at index %d", edge.ID, i)
 		}
 	}
+	return ""
+}
+
+func qualityReplayEndpoints(graph *JumpGraph, edge MotionEdge) string {
+	phases := edge.Witness.Phases
 	start := phases[0].Start
 	end := phases[len(phases)-1].End
 	from, to := graph.Nodes[edge.From], graph.Nodes[edge.To]
@@ -361,64 +385,78 @@ func qualitySpanError(layout PlatformLayout) string {
 	graph := &layout.JumpGraph
 	body := layout.Config.Profile.BodyHeight
 	for _, node := range graph.Nodes {
-		if node.Footing.IsEmpty() || node.Velocity.IsEmpty() {
-			return fmt.Sprintf("node %d has an empty span (footing %s, velocity %s); an empty band does not name the states the node stands for",
-				node.ID, node.Footing, node.Velocity)
-		}
-		// A band is a universal claim. Span.Contains would accept it as soon
-		// as the witness's one sample sits inside, which is the optimistic
-		// reading: the sample has to be the whole band.
-		if node.Footing.Length() > qualityTol {
-			return fmt.Sprintf("node %d footing %s is a band; a claim on a span has to hold for every member, and one sample does not",
-				node.ID, node.Footing)
-		}
-		if node.Velocity.Length() > qualityTol {
-			return fmt.Sprintf("node %d velocity %s is a band; a claim on a span has to hold for every member, and one sample does not",
-				node.ID, node.Velocity)
-		}
-		surface, ok := graph.Surface(node.Surface)
-		if !ok {
-			return fmt.Sprintf("node %d names surface %d, which is not in the graph", node.ID, node.Surface)
-		}
-		if int(node.Interval) >= len(surface.Intervals) {
-			return fmt.Sprintf("node %d names interval %d of surface %d, which has %d",
-				node.ID, node.Interval, surface.ID, len(surface.Intervals))
-		}
-		interval := surface.Intervals[node.Interval]
-		if surface.Kind.Supports() {
-			// ContainsSpan is the universal reading. Overlaps would accept a
-			// footing that sticks out of the interval and only shares a point.
-			if !interval.Footing.ContainsSpan(node.Footing) {
-				return fmt.Sprintf("node %d footing %s is not contained in interval footing %s; overlap would accept a band the interval does not stand for",
-					node.ID, node.Footing, interval.Footing)
-			}
-			if math.Abs(node.Height-surface.At) > qualityTol {
-				return fmt.Sprintf("node %d height %v is not its surface height %v", node.ID, node.Height, surface.At)
-			}
-			if node.Mode == MotionModeGrounded && interval.Headroom+qualityTol < body {
-				return fmt.Sprintf("node %d stands in headroom %v, below the body %v, and that headroom belongs to the whole interval",
-					node.ID, interval.Headroom, body)
-			}
+		if msg := qualityNodeSpanError(graph, node, body); msg != "" {
+			return msg
 		}
 	}
 	for _, edge := range graph.Edges {
-		if edge.Witness == nil || len(edge.Witness.Phases) == 0 {
-			continue
+		if msg := qualityEdgeSpanError(graph, edge); msg != "" {
+			return msg
 		}
-		if int(edge.From) >= len(graph.Nodes) || int(edge.To) >= len(graph.Nodes) {
-			return fmt.Sprintf("edge %d runs %d -> %d outside the node list", edge.ID, edge.From, edge.To)
+	}
+	return ""
+}
+
+func qualityNodeSpanError(graph *JumpGraph, node MotionNode, body float64) string {
+	if node.Footing.IsEmpty() || node.Velocity.IsEmpty() {
+		return fmt.Sprintf("node %d has an empty span (footing %s, velocity %s); an empty band does not name the states the node stands for",
+			node.ID, node.Footing, node.Velocity)
+	}
+	// A band is a universal claim. Span.Contains would accept it as soon
+	// as the witness's one sample sits inside, which is the optimistic
+	// reading: the sample has to be the whole band.
+	if node.Footing.Length() > qualityTol {
+		return fmt.Sprintf("node %d footing %s is a band; a claim on a span has to hold for every member, and one sample does not",
+			node.ID, node.Footing)
+	}
+	if node.Velocity.Length() > qualityTol {
+		return fmt.Sprintf("node %d velocity %s is a band; a claim on a span has to hold for every member, and one sample does not",
+			node.ID, node.Velocity)
+	}
+	surface, ok := graph.Surface(node.Surface)
+	if !ok {
+		return fmt.Sprintf("node %d names surface %d, which is not in the graph", node.ID, node.Surface)
+	}
+	if int(node.Interval) >= len(surface.Intervals) {
+		return fmt.Sprintf("node %d names interval %d of surface %d, which has %d",
+			node.ID, node.Interval, surface.ID, len(surface.Intervals))
+	}
+	interval := surface.Intervals[node.Interval]
+	if surface.Kind.Supports() {
+		// ContainsSpan is the universal reading. Overlaps would accept a
+		// footing that sticks out of the interval and only shares a point.
+		if !interval.Footing.ContainsSpan(node.Footing) {
+			return fmt.Sprintf("node %d footing %s is not contained in interval footing %s; overlap would accept a band the interval does not stand for",
+				node.ID, node.Footing, interval.Footing)
 		}
-		start := edge.Witness.Phases[0].Start
-		end := edge.Witness.Phases[len(edge.Witness.Phases)-1].End
-		from, to := graph.Nodes[edge.From], graph.Nodes[edge.To]
-		if !qualitySpanIsTheSample(from.Footing, start.X) {
-			return fmt.Sprintf("edge %d leaves node %d whose footing %s is a band; the witness only establishes x=%v, and a claim on a span has to hold for every member",
-				edge.ID, from.ID, from.Footing, start.X)
+		if math.Abs(node.Height-surface.At) > qualityTol {
+			return fmt.Sprintf("node %d height %v is not its surface height %v", node.ID, node.Height, surface.At)
 		}
-		if !qualitySpanIsTheSample(to.Footing, end.X) || !qualitySpanIsTheSample(to.Velocity, end.VX) {
-			return fmt.Sprintf("edge %d arrives at node %d footing %s velocity %s but the witness ends at x=%v vx=%v; one sample does not cover a band",
-				edge.ID, to.ID, to.Footing, to.Velocity, end.X, end.VX)
+		if node.Mode == MotionModeGrounded && interval.Headroom+qualityTol < body {
+			return fmt.Sprintf("node %d stands in headroom %v, below the body %v, and that headroom belongs to the whole interval",
+				node.ID, interval.Headroom, body)
 		}
+	}
+	return ""
+}
+
+func qualityEdgeSpanError(graph *JumpGraph, edge MotionEdge) string {
+	if edge.Witness == nil || len(edge.Witness.Phases) == 0 {
+		return ""
+	}
+	if int(edge.From) >= len(graph.Nodes) || int(edge.To) >= len(graph.Nodes) {
+		return fmt.Sprintf("edge %d runs %d -> %d outside the node list", edge.ID, edge.From, edge.To)
+	}
+	start := edge.Witness.Phases[0].Start
+	end := edge.Witness.Phases[len(edge.Witness.Phases)-1].End
+	from, to := graph.Nodes[edge.From], graph.Nodes[edge.To]
+	if !qualitySpanIsTheSample(from.Footing, start.X) {
+		return fmt.Sprintf("edge %d leaves node %d whose footing %s is a band; the witness only establishes x=%v, and a claim on a span has to hold for every member",
+			edge.ID, from.ID, from.Footing, start.X)
+	}
+	if !qualitySpanIsTheSample(to.Footing, end.X) || !qualitySpanIsTheSample(to.Velocity, end.VX) {
+		return fmt.Sprintf("edge %d arrives at node %d footing %s velocity %s but the witness ends at x=%v vx=%v; one sample does not cover a band",
+			edge.ID, to.ID, to.Footing, to.Velocity, end.X, end.VX)
 	}
 	return ""
 }
@@ -445,26 +483,32 @@ func qualityStageError(layout PlatformLayout) string {
 		return fmt.Sprintf("final moveset %s does not reach goal room %d from spawn %d", final, goal, spawn)
 	}
 	for i, moveset := range stages {
-		objective := goal
-		what := "goal"
-		if i < len(layout.Grants) {
-			objective = int(layout.Grants[i].Room)
-			what = "grant"
+		if msg := qualityOneStageError(layout, graph, spawn, goal, i, moveset, final); msg != "" {
+			return msg
 		}
-		if objective < 0 || objective >= len(graph.Nodes) {
-			return fmt.Sprintf("stage %d %s room %d is outside the room graph", i, what, objective)
-		}
-		if qualityRoomReachable(graph, spawn, objective, moveset) {
-			continue
-		}
-		note := ""
-		if qualityRoomReachable(graph, spawn, objective, final) {
-			note = fmt.Sprintf("; the final moveset %s does reach it, so checking only the complete moveset would miss this", final)
-		}
-		return fmt.Sprintf("stage %d moveset %s does not reach %s room %d from spawn %d%s",
-			i, moveset, what, objective, spawn, note)
 	}
 	return ""
+}
+
+func qualityOneStageError(layout PlatformLayout, graph *JumpGraph, spawn, goal, stage int, moveset, final AbilitySet) string {
+	objective := goal
+	what := "goal"
+	if stage < len(layout.Grants) {
+		objective = int(layout.Grants[stage].Room)
+		what = "grant"
+	}
+	if objective < 0 || objective >= len(graph.Nodes) {
+		return fmt.Sprintf("stage %d %s room %d is outside the room graph", stage, what, objective)
+	}
+	if qualityRoomReachable(graph, spawn, objective, moveset) {
+		return ""
+	}
+	note := ""
+	if qualityRoomReachable(graph, spawn, objective, final) {
+		note = fmt.Sprintf("; the final moveset %s does reach it, so checking only the complete moveset would miss this", final)
+	}
+	return fmt.Sprintf("stage %d moveset %s does not reach %s room %d from spawn %d%s",
+		stage, moveset, what, objective, spawn, note)
 }
 
 // qualityRoomReachable is a flood of the authored room graph: transition and
@@ -482,13 +526,7 @@ func qualityRoomReachable(graph *JumpGraph, spawn, objective int, moveset Abilit
 		cur := queue[0]
 		queue = queue[1:]
 		for _, edge := range graph.Edges {
-			if int(edge.From) != cur || int(edge.To) >= len(reached) || reached[edge.To] {
-				continue
-			}
-			if edge.Kind != MotionEdgeKindTransition && edge.Kind != MotionEdgeKindFall {
-				continue
-			}
-			if !moveset.Contains(edge.Requires) {
+			if !qualityTraversable(edge, cur, reached, moveset) {
 				continue
 			}
 			reached[edge.To] = true
@@ -498,9 +536,25 @@ func qualityRoomReachable(graph *JumpGraph, spawn, objective int, moveset Abilit
 	return objective >= 0 && objective < len(reached) && reached[objective]
 }
 
+func qualityTraversable(edge MotionEdge, from int, reached []bool, moveset AbilitySet) bool {
+	return int(edge.From) == from && int(edge.To) < len(reached) && !reached[edge.To] &&
+		(edge.Kind == MotionEdgeKindTransition || edge.Kind == MotionEdgeKindFall) && moveset.Contains(edge.Requires)
+}
+
 type qualityRun struct {
 	row    int32
 	x0, x1 int32
+}
+
+type qualityDeparture struct {
+	run   qualityRun
+	valid bool
+}
+
+type qualityBody struct {
+	radius float64
+	height float64
+	inset  float64
 }
 
 func qualitySolidError(layout PlatformLayout) string {
@@ -513,31 +567,35 @@ func qualitySolidError(layout PlatformLayout) string {
 		blocks[room.ID] = qualityBlockingRuns(room.Grid)
 	}
 	for _, edge := range graph.Edges {
-		if edge.Witness == nil {
-			return fmt.Sprintf("edge %d (%s) is certified without a witness", edge.ID, edge.Kind)
-		}
-		if int(edge.From) >= len(graph.Nodes) || int(edge.To) >= len(graph.Nodes) {
-			return fmt.Sprintf("edge %d runs %d -> %d outside the node list", edge.ID, edge.From, edge.To)
-		}
-		fromSurface := graph.Nodes[edge.From].Surface
-		toSurface := graph.Nodes[edge.To].Surface
-		if int(fromSurface) >= len(graph.Surfaces) || int(toSurface) >= len(graph.Surfaces) {
-			return fmt.Sprintf("edge %d names a surface the graph does not have", edge.ID)
-		}
-		fromRoom := graph.Surfaces[fromSurface].Room
-		toRoom := graph.Surfaces[toSurface].Room
-		if fromRoom != toRoom {
-			return fmt.Sprintf("edge %d runs from room %d to room %d; a certified edge stays inside one room", edge.ID, fromRoom, toRoom)
-		}
-		grid, ok := grids[fromRoom]
-		if !ok {
-			return fmt.Sprintf("edge %d names room %d, which is not in the plane", edge.ID, fromRoom)
-		}
-		if msg := qualityEdgeHitsSolid(edge, graph.Nodes[edge.From], grid, blocks[fromRoom], profile); msg != "" {
+		if msg := qualitySolidEdgeError(graph, edge, grids, blocks, profile); msg != "" {
 			return msg
 		}
 	}
 	return ""
+}
+
+func qualitySolidEdgeError(graph *JumpGraph, edge MotionEdge, grids map[RoomID]Grid, blocks map[RoomID][]qualityRun, profile MovementProfile) string {
+	if edge.Witness == nil {
+		return fmt.Sprintf("edge %d (%s) is certified without a witness", edge.ID, edge.Kind)
+	}
+	if int(edge.From) >= len(graph.Nodes) || int(edge.To) >= len(graph.Nodes) {
+		return fmt.Sprintf("edge %d runs %d -> %d outside the node list", edge.ID, edge.From, edge.To)
+	}
+	fromSurface := graph.Nodes[edge.From].Surface
+	toSurface := graph.Nodes[edge.To].Surface
+	if int(fromSurface) >= len(graph.Surfaces) || int(toSurface) >= len(graph.Surfaces) {
+		return fmt.Sprintf("edge %d names a surface the graph does not have", edge.ID)
+	}
+	fromRoom := graph.Surfaces[fromSurface].Room
+	toRoom := graph.Surfaces[toSurface].Room
+	if fromRoom != toRoom {
+		return fmt.Sprintf("edge %d runs from room %d to room %d; a certified edge stays inside one room", edge.ID, fromRoom, toRoom)
+	}
+	grid, ok := grids[fromRoom]
+	if !ok {
+		return fmt.Sprintf("edge %d names room %d, which is not in the plane", edge.ID, fromRoom)
+	}
+	return qualityEdgeHitsSolid(edge, graph.Nodes[edge.From], grid, blocks[fromRoom], profile)
 }
 
 func qualityBlockingRuns(grid Grid) []qualityRun {
@@ -564,15 +622,14 @@ func qualityBlockingRuns(grid Grid) []qualityRun {
 }
 
 func qualityEdgeHitsSolid(edge MotionEdge, from MotionNode, grid Grid, runs []qualityRun, profile MovementProfile) string {
-	r := profile.BodyHalfWidth
-	h := profile.BodyHeight
-	inset := r + profile.Margin
-	departure, hasDeparture := qualityDepartureRun(from, grid, runs)
+	body := qualityBody{radius: profile.BodyHalfWidth, height: profile.BodyHeight, inset: profile.BodyHalfWidth + profile.Margin}
+	run, valid := qualityDepartureRun(from, grid, runs)
+	departure := qualityDeparture{run: run, valid: valid}
 	for phaseIndex, phase := range edge.Witness.Phases {
 		if phase.Duration <= timeEpsilon {
 			continue
 		}
-		if msg := qualityPhaseHitsSolid(edge, phaseIndex, phase, grid, runs, departure, hasDeparture, r, h, inset); msg != "" {
+		if msg := qualityPhaseHitsSolid(edge, phaseIndex, phase, grid, runs, departure, body); msg != "" {
 			return msg
 		}
 	}
@@ -600,47 +657,53 @@ func qualityDepartureRun(from MotionNode, grid Grid, runs []qualityRun) (quality
 	return qualityRun{}, false
 }
 
-func qualityPhaseHitsSolid(edge MotionEdge, phaseIndex int, phase Phase, grid Grid, runs []qualityRun, departure qualityRun, hasDeparture bool, r, h, inset float64) string {
-	xLo, xHi := qualityAxisRange(phase.Start.X, phase.Start.VX, phase.AccelX, phase.Duration)
-	yLo, yHi := qualityAxisRange(phase.Start.Y, phase.Start.VY, phase.AccelY, phase.Duration)
-	bodyX := Span{Lo: xLo - r, Hi: xHi + r}
-	bodyY := Span{Lo: yLo, Hi: yHi + h}
-	if msg := qualityLeavesRoom(edge, phaseIndex, phase, grid, r, h); msg != "" {
+func qualityPhaseHitsSolid(edge MotionEdge, phaseIndex int, phase Phase, grid Grid, runs []qualityRun, departure qualityDeparture, body qualityBody) string {
+	if msg := qualityLeavesRoom(edge, phaseIndex, phase, grid, body.radius, body.height); msg != "" {
 		return msg
 	}
 	for _, run := range runs {
-		top := WorldY(run.row, grid.Height)
-		bottom := WorldY(run.row+1, grid.Height)
-		cellX := Span{Lo: float64(run.x0), Hi: float64(run.x1) + 1}
-		if bodyX.Hi < cellX.Lo || bodyX.Lo > cellX.Hi || bodyY.Hi < bottom || bodyY.Lo > top {
-			continue
+		if msg := qualityRunHitError(edge, phaseIndex, phase, grid, run, departure, body); msg != "" {
+			return msg
 		}
-		boxX := Span{Lo: cellX.Lo - r, Hi: cellX.Hi + r}
-		boxY := Span{Lo: bottom - h, Hi: top}
-		// Leaving a ledge drops the feet through the platform they just stood
-		// on. Only that run is shrunk, and only down to the footing inset, so
-		// the interior of the platform still counts as solid.
-		sameRun := hasDeparture && run.row == departure.row && run.x0 == departure.x0 && run.x1 == departure.x1
-		if sameRun || (math.Abs(top-phase.Start.Y) <= qualityTol && phase.Start.X >= cellX.Lo-qualityTol && phase.Start.X <= cellX.Hi+qualityTol) {
-			boxX = Span{Lo: cellX.Lo + inset, Hi: cellX.Hi - inset}
-			if boxX.Hi-boxX.Lo <= contactEpsilon {
-				continue
-			}
-		}
-		xs := qualityInside(phase.Start.X, phase.Start.VX, phase.AccelX, boxX.Lo, boxX.Hi, phase.Duration)
-		if len(xs) == 0 {
-			continue
-		}
-		ys := qualityInside(phase.Start.Y, phase.Start.VY, phase.AccelY, boxY.Lo, boxY.Hi, phase.Duration)
-		hit, ok := qualityFirstOverlap(xs, ys)
-		if !ok {
-			continue
-		}
-		state := qualityStateAt(phase, hit)
-		return fmt.Sprintf("edge %d (%s) phase %d puts the body inside solid room row %d cols [%d,%d] at t=%v (feet %v, %v)",
-			edge.ID, edge.Kind, phaseIndex, run.row, run.x0, run.x1, hit, state.X, state.Y)
 	}
 	return ""
+}
+
+func qualityRunHitError(edge MotionEdge, phaseIndex int, phase Phase, grid Grid, run qualityRun, departure qualityDeparture, body qualityBody) string {
+	xLo, xHi := qualityAxisRange(phase.Start.X, phase.Start.VX, phase.AccelX, phase.Duration)
+	yLo, yHi := qualityAxisRange(phase.Start.Y, phase.Start.VY, phase.AccelY, phase.Duration)
+	bodyX := Span{Lo: xLo - body.radius, Hi: xHi + body.radius}
+	bodyY := Span{Lo: yLo, Hi: yHi + body.height}
+	top := WorldY(run.row, grid.Height)
+	bottom := WorldY(run.row+1, grid.Height)
+	cellX := Span{Lo: float64(run.x0), Hi: float64(run.x1) + 1}
+	if bodyX.Hi < cellX.Lo || bodyX.Lo > cellX.Hi || bodyY.Hi < bottom || bodyY.Lo > top {
+		return ""
+	}
+	boxX := Span{Lo: cellX.Lo - body.radius, Hi: cellX.Hi + body.radius}
+	boxY := Span{Lo: bottom - body.height, Hi: top}
+	// Leaving a ledge drops the feet through the platform they just stood
+	// on. Only that run is shrunk, and only down to the footing inset, so
+	// the interior of the platform still counts as solid.
+	sameRun := departure.valid && run.row == departure.run.row && run.x0 == departure.run.x0 && run.x1 == departure.run.x1
+	if sameRun || (math.Abs(top-phase.Start.Y) <= qualityTol && phase.Start.X >= cellX.Lo-qualityTol && phase.Start.X <= cellX.Hi+qualityTol) {
+		boxX = Span{Lo: cellX.Lo + body.inset, Hi: cellX.Hi - body.inset}
+		if boxX.Hi-boxX.Lo <= contactEpsilon {
+			return ""
+		}
+	}
+	xs := qualityInside(phase.Start.X, phase.Start.VX, phase.AccelX, boxX.Lo, boxX.Hi, phase.Duration)
+	if len(xs) == 0 {
+		return ""
+	}
+	ys := qualityInside(phase.Start.Y, phase.Start.VY, phase.AccelY, boxY.Lo, boxY.Hi, phase.Duration)
+	hit, ok := qualityFirstOverlap(xs, ys)
+	if !ok {
+		return ""
+	}
+	state := qualityStateAt(phase, hit)
+	return fmt.Sprintf("edge %d (%s) phase %d puts the body inside solid room row %d cols [%d,%d] at t=%v (feet %v, %v)",
+		edge.ID, edge.Kind, phaseIndex, run.row, run.x0, run.x1, hit, state.X, state.Y)
 }
 
 func qualityLeavesRoom(edge MotionEdge, phaseIndex int, phase Phase, grid Grid, r, h float64) string {
@@ -935,6 +998,10 @@ func exampleStandError(plane Plane, anchor Anchor, name string, profile Movement
 		}
 		return fmt.Sprintf("%s room %d cell (%d,%d) is not supported from below (cell beneath is %s)", name, anchor.Room, anchor.At.X, anchor.At.Y, got)
 	}
+	return exampleAnchorClearanceError(room, anchor, name, profile)
+}
+
+func exampleAnchorClearanceError(room Room, anchor Anchor, name string, profile MovementProfile) string {
 	n := exampleClearance(profile)
 	for i := int32(1); i < n; i++ {
 		at := Cell{X: anchor.At.X, Y: anchor.At.Y - i}
@@ -1009,51 +1076,64 @@ func exampleSideOpeningError(plane Plane) string {
 	}
 	var parts []string
 	for _, room := range plane.Rooms {
-		bySide := map[TransitionSide][]Transition{}
-		for _, transition := range room.Transitions {
-			if !transition.Side.IsCardinal() {
-				continue
-			}
+		parts = append(parts, exampleRoomSideOpeningErrors(room, index)...)
+	}
+	return joinParts(parts)
+}
+
+func exampleRoomSideOpeningErrors(room Room, index map[TransitionID]Transition) []string {
+	bySide := map[TransitionSide][]Transition{}
+	for _, transition := range room.Transitions {
+		if transition.Side.IsCardinal() {
 			bySide[transition.Side] = append(bySide[transition.Side], transition)
 		}
-		sides := make([]TransitionSide, 0, len(bySide))
-		for side := range bySide {
-			sides = append(sides, side)
-		}
-		sort.Slice(sides, func(i, j int) bool { return sides[i] < sides[j] })
-		for _, side := range sides {
-			group := bySide[side]
-			sort.Slice(group, func(i, j int) bool {
-				if group[i].Offset != group[j].Offset {
-					return group[i].Offset < group[j].Offset
-				}
-				return group[i].ID < group[j].ID
-			})
-			for i := 0; i < len(group); i++ {
-				for j := i + 1; j < len(group); j++ {
-					a, b := group[i], group[j]
-					if a.Offset > b.Offset {
-						a, b = b, a
-					}
-					partnerA, okA := index[a.To]
-					partnerB, okB := index[b.To]
-					if !okA || !okB {
-						parts = append(parts, fmt.Sprintf("room %d side %s openings %d and %d have no partner", room.ID, side, a.ID, b.ID))
-						continue
-					}
-					gap := int(b.Offset) - int(a.Offset+a.Extent)
-					sameRoom := partnerA.Room == partnerB.Room
-					tooClose := gap < OpeningExtent
-					if !sameRoom && !tooClose {
-						continue
-					}
-					parts = append(parts, fmt.Sprintf("room %d side %s openings %d and %d offsets %d and %d extents %d and %d partners %d and %d solid gap %d",
-						room.ID, side, a.ID, b.ID, a.Offset, b.Offset, a.Extent, b.Extent, partnerA.Room, partnerB.Room, gap))
-				}
+	}
+	sides := make([]TransitionSide, 0, len(bySide))
+	for side := range bySide {
+		sides = append(sides, side)
+	}
+	sort.Slice(sides, func(i, j int) bool { return sides[i] < sides[j] })
+	var parts []string
+	for _, side := range sides {
+		group := bySide[side]
+		sort.Slice(group, func(i, j int) bool {
+			if group[i].Offset != group[j].Offset {
+				return group[i].Offset < group[j].Offset
+			}
+			return group[i].ID < group[j].ID
+		})
+		parts = append(parts, exampleSideGroupErrors(room.ID, side, group, index)...)
+	}
+	return parts
+}
+
+func exampleSideGroupErrors(roomID RoomID, side TransitionSide, group []Transition, index map[TransitionID]Transition) []string {
+	var parts []string
+	for i := 0; i < len(group); i++ {
+		for j := i + 1; j < len(group); j++ {
+			if msg := exampleSideOpeningPairError(roomID, side, group[i], group[j], index); msg != "" {
+				parts = append(parts, msg)
 			}
 		}
 	}
-	return joinParts(parts)
+	return parts
+}
+
+func exampleSideOpeningPairError(roomID RoomID, side TransitionSide, a, b Transition, index map[TransitionID]Transition) string {
+	if a.Offset > b.Offset {
+		a, b = b, a
+	}
+	partnerA, okA := index[a.To]
+	partnerB, okB := index[b.To]
+	if !okA || !okB {
+		return fmt.Sprintf("room %d side %s openings %d and %d have no partner", roomID, side, a.ID, b.ID)
+	}
+	gap := int(b.Offset) - int(a.Offset+a.Extent)
+	if partnerA.Room != partnerB.Room && gap >= OpeningExtent {
+		return ""
+	}
+	return fmt.Sprintf("room %d side %s openings %d and %d offsets %d and %d extents %d and %d partners %d and %d solid gap %d",
+		roomID, side, a.ID, b.ID, a.Offset, b.Offset, a.Extent, b.Extent, partnerA.Room, partnerB.Room, gap)
 }
 
 func exampleOpeningReached(room Room, transition Transition, playable map[Cell]bool, profile MovementProfile) bool {
@@ -1116,55 +1196,60 @@ func exampleOpeningCells(room Room, transition Transition) (borders, mouths []Ce
 }
 
 func examplePlayable(grid Grid, profile MovementProfile, abilities AbilitySet) map[Cell]bool {
+	// Keep this parallel to shellPlayable: directed flood from the lowest
+	// footing, so a high ledge you can only fall from is not "playable" for a
+	// character standing on the floor.
 	n := exampleClearance(profile)
-	visitedStand := map[Cell]bool{}
-	var best map[Cell]bool
-	bestStands := -1
-	var bestMin Cell
+	roots := exampleFloorRoots(grid, profile)
+	if len(roots) == 0 {
+		return map[Cell]bool{}
+	}
+	return exampleFlood(grid, profile, abilities, n, roots)
+}
+
+func exampleFloorRoots(grid Grid, profile MovementProfile) []Cell {
 	width := int32(grid.Width)
 	height := int32(grid.Height)
+	floorY := int32(-1)
+	var roots []Cell
 	for y := int32(0); y < height; y++ {
 		for x := int32(0); x < width; x++ {
-			start := Cell{X: x, Y: y}
-			if visitedStand[start] || !exampleStandable(grid, x, y, profile) {
+			if !exampleStandable(grid, x, y, profile) {
 				continue
 			}
-			comp := map[Cell]bool{}
-			stands := 0
-			minCell := start
-			queue := []Cell{start}
-			comp[start] = true
-			visitedStand[start] = true
-			stands++
-			for len(queue) > 0 {
-				cur := queue[0]
-				queue = queue[1:]
-				for _, next := range exampleMoves(grid, cur, profile, abilities, n) {
-					if comp[next] {
-						continue
-					}
-					comp[next] = true
-					queue = append(queue, next)
-					if next.Y < minCell.Y || (next.Y == minCell.Y && next.X < minCell.X) {
-						minCell = next
-					}
-					if exampleStandable(grid, next.X, next.Y, profile) {
-						visitedStand[next] = true
-						stands++
-					}
-				}
+			if y > floorY {
+				floorY = y
+				roots = roots[:0]
+				roots = append(roots, Cell{X: x, Y: y})
+				continue
 			}
-			if best == nil || stands > bestStands || (stands == bestStands && (minCell.Y < bestMin.Y || (minCell.Y == bestMin.Y && minCell.X < bestMin.X))) {
-				best = comp
-				bestStands = stands
-				bestMin = minCell
+			if y == floorY {
+				roots = append(roots, Cell{X: x, Y: y})
 			}
 		}
 	}
-	if best == nil {
-		return map[Cell]bool{}
+	return roots
+}
+
+func exampleFlood(grid Grid, profile MovementProfile, abilities AbilitySet, n int32, roots []Cell) map[Cell]bool {
+	comp := map[Cell]bool{}
+	queue := make([]Cell, 0, len(roots))
+	for _, root := range roots {
+		comp[root] = true
+		queue = append(queue, root)
 	}
-	return best
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, next := range exampleMoves(grid, cur, profile, abilities, n) {
+			if comp[next] {
+				continue
+			}
+			comp[next] = true
+			queue = append(queue, next)
+		}
+	}
+	return comp
 }
 
 func exampleStandable(grid Grid, x, y int32, profile MovementProfile) bool {
@@ -1212,21 +1297,29 @@ func exampleMoves(grid Grid, cur Cell, profile MovementProfile, abilities Abilit
 	if exampleBodyFits(grid, cur.X, cur.Y+1, n) {
 		out = append(out, Cell{X: cur.X, Y: cur.Y + 1})
 	}
-	if abilities.Has(AbilityClimb) && profile.Climb != nil {
-		kind, ok := grid.At(cur)
-		if ok && kind == CellKindClimbable {
-			for _, dy := range []int32{-1, 1} {
-				next := Cell{X: cur.X, Y: cur.Y + dy}
-				nk, nok := grid.At(next)
-				if nok && nk == CellKindClimbable && exampleBodyFits(grid, next.X, next.Y, n) {
-					out = append(out, next)
-				}
-			}
-		}
-	}
+	out = append(out, exampleClimbMoves(grid, cur, profile, abilities, n)...)
 	if abilities.Has(AbilityWallJump) && profile.WallJump != nil && exampleBodyFits(grid, cur.X, cur.Y, n) {
 		if exampleBesideWall(grid, cur) {
 			out = append(out, exampleJumps(grid, cur, profile, abilities, n)...)
+		}
+	}
+	return out
+}
+
+func exampleClimbMoves(grid Grid, cur Cell, profile MovementProfile, abilities AbilitySet, n int32) []Cell {
+	if !abilities.Has(AbilityClimb) || profile.Climb == nil {
+		return nil
+	}
+	kind, ok := grid.At(cur)
+	if !ok || kind != CellKindClimbable {
+		return nil
+	}
+	var out []Cell
+	for _, dy := range []int32{-1, 1} {
+		next := Cell{X: cur.X, Y: cur.Y + dy}
+		nk, nok := grid.At(next)
+		if nok && nk == CellKindClimbable && exampleBodyFits(grid, next.X, next.Y, n) {
+			out = append(out, next)
 		}
 	}
 	return out
@@ -1266,25 +1359,26 @@ func exampleJumps(grid Grid, cur Cell, profile MovementProfile, abilities Abilit
 	var out []Cell
 	for peak := int32(0); peak <= peakCells; peak++ {
 		for dy := -peak; dy <= int32(grid.Height); dy++ {
-			rise := float64(-dy)
-			reach := exampleJumpReach(profile, float64(peak), rise)
-			if reach < 0 {
-				continue
-			}
-			maxDx := int32(math.Floor(reach))
-			for dx := -maxDx; dx <= maxDx; dx++ {
-				if dx == 0 && dy == 0 {
-					continue
-				}
-				if math.Abs(float64(dx)) > reach {
-					continue
-				}
-				tx, ty := cur.X+dx, cur.Y+dy
-				if !exampleArcClear(grid, cur.X, cur.Y, tx, ty, cur.Y-peak, n) {
-					continue
-				}
-				out = append(out, Cell{X: tx, Y: ty})
-			}
+			out = append(out, exampleJumpTargets(grid, cur, profile, n, peak, dy)...)
+		}
+	}
+	return out
+}
+
+func exampleJumpTargets(grid Grid, cur Cell, profile MovementProfile, n, peak, dy int32) []Cell {
+	reach := exampleJumpReach(profile, float64(peak), float64(-dy))
+	if reach < 0 {
+		return nil
+	}
+	maxDx := int32(math.Floor(reach))
+	var out []Cell
+	for dx := -maxDx; dx <= maxDx; dx++ {
+		if dx == 0 && dy == 0 || math.Abs(float64(dx)) > reach {
+			continue
+		}
+		tx, ty := cur.X+dx, cur.Y+dy
+		if exampleArcClear(grid, cur.X, cur.Y, tx, ty, cur.Y-peak, n) {
+			out = append(out, Cell{X: tx, Y: ty})
 		}
 	}
 	return out

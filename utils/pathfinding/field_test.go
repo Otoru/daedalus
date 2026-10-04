@@ -284,52 +284,58 @@ func checkFieldInvariants(reporter fieldReporter, grid pathfinding.CostGrid, sou
 	reachable := reachableCells(grid, sources)
 	for y := uint32(0); y < grid.Height; y++ {
 		for x := uint32(0); x < grid.Width; x++ {
-			at := cell(int32(x), int32(y))
-			index, _ := grid.Index(at)
-			distance := field.DistanceAt(at)
-			if grid.At(at) == pathfinding.CostImpassable || !reachable[index] {
-				if distance != pathfinding.Unreachable {
-					reporter.Errorf("unreachable %+v: got %d", at, distance)
-				}
-				continue
-			}
-			if distance == pathfinding.Unreachable {
-				reporter.Errorf("reachable %+v is unreachable", at)
-				continue
-			}
-			if _, source := sourceByIndex[index]; source {
-				continue
-			}
-
-			foundEquality := false
-			foundDescent := false
-			for _, neighbor := range cardinalNeighbors(grid, at) {
-				if grid.At(neighbor) == pathfinding.CostImpassable {
-					continue
-				}
-				neighborDistance := field.DistanceAt(neighbor)
-				if neighborDistance == pathfinding.Unreachable {
-					reporter.Errorf("reachable neighbours disagree at %+v and %+v", at, neighbor)
-					continue
-				}
-				bound := neighborDistance + pathfinding.Distance(grid.At(at))
-				if distance > bound {
-					reporter.Errorf("Bellman upper bound at %+v: %d > %d", at, distance, bound)
-				}
-				if distance == bound {
-					foundEquality = true
-				}
-				if neighborDistance < distance {
-					foundDescent = true
-				}
-			}
-			if !foundEquality {
-				reporter.Errorf("Bellman equality missing at %+v", at)
-			}
-			if !foundDescent {
-				reporter.Errorf("monotone descent missing at %+v", at)
-			}
+			checkFieldCell(reporter, grid, field, reachable, sourceByIndex, cell(int32(x), int32(y)))
 		}
+	}
+}
+
+func checkFieldCell(reporter fieldReporter, grid pathfinding.CostGrid, field pathfinding.Field, reachable map[int64]bool, sources map[int64]pathfinding.Distance, at daedalus.Cell) {
+	index, _ := grid.Index(at)
+	distance := field.DistanceAt(at)
+	if grid.At(at) == pathfinding.CostImpassable || !reachable[index] {
+		if distance != pathfinding.Unreachable {
+			reporter.Errorf("unreachable %+v: got %d", at, distance)
+		}
+		return
+	}
+	if distance == pathfinding.Unreachable {
+		reporter.Errorf("reachable %+v is unreachable", at)
+		return
+	}
+	if _, source := sources[index]; source {
+		return
+	}
+	checkFieldNeighbors(reporter, grid, field, at, distance)
+}
+
+func checkFieldNeighbors(reporter fieldReporter, grid pathfinding.CostGrid, field pathfinding.Field, at daedalus.Cell, distance pathfinding.Distance) {
+	foundEquality := false
+	foundDescent := false
+	for _, neighbor := range cardinalNeighbors(grid, at) {
+		if grid.At(neighbor) == pathfinding.CostImpassable {
+			continue
+		}
+		neighborDistance := field.DistanceAt(neighbor)
+		if neighborDistance == pathfinding.Unreachable {
+			reporter.Errorf("reachable neighbours disagree at %+v and %+v", at, neighbor)
+			continue
+		}
+		bound := neighborDistance + pathfinding.Distance(grid.At(at))
+		if distance > bound {
+			reporter.Errorf("Bellman upper bound at %+v: %d > %d", at, distance, bound)
+		}
+		if distance == bound {
+			foundEquality = true
+		}
+		if neighborDistance < distance {
+			foundDescent = true
+		}
+	}
+	if !foundEquality {
+		reporter.Errorf("Bellman equality missing at %+v", at)
+	}
+	if !foundDescent {
+		reporter.Errorf("monotone descent missing at %+v", at)
 	}
 }
 
@@ -371,26 +377,33 @@ func bellmanFord(grid pathfinding.CostGrid, sources []pathfinding.Source) []path
 		changed = false
 		for y := uint32(0); y < grid.Height; y++ {
 			for x := uint32(0); x < grid.Width; x++ {
-				at := cell(int32(x), int32(y))
-				index, _ := grid.Index(at)
-				if sourceIndexes[index] || grid.At(at) == pathfinding.CostImpassable {
-					continue
-				}
-				for _, neighbor := range cardinalNeighbors(grid, at) {
-					neighborDistance := distancesAt(grid, distances, neighbor)
-					if neighborDistance == pathfinding.Unreachable {
-						continue
-					}
-					candidate := neighborDistance + pathfinding.Distance(grid.At(at))
-					if distances[index] == pathfinding.Unreachable || candidate < distances[index] {
-						distances[index] = candidate
-						changed = true
-					}
+				if relaxBellmanCell(grid, distances, sourceIndexes, cell(int32(x), int32(y))) {
+					changed = true
 				}
 			}
 		}
 	}
 	return distances
+}
+
+func relaxBellmanCell(grid pathfinding.CostGrid, distances []pathfinding.Distance, sourceIndexes map[int64]bool, at daedalus.Cell) bool {
+	index, _ := grid.Index(at)
+	if sourceIndexes[index] || grid.At(at) == pathfinding.CostImpassable {
+		return false
+	}
+	changed := false
+	for _, neighbor := range cardinalNeighbors(grid, at) {
+		neighborDistance := distancesAt(grid, distances, neighbor)
+		if neighborDistance == pathfinding.Unreachable {
+			continue
+		}
+		candidate := neighborDistance + pathfinding.Distance(grid.At(at))
+		if distances[index] == pathfinding.Unreachable || candidate < distances[index] {
+			distances[index] = candidate
+			changed = true
+		}
+	}
+	return changed
 }
 
 func distancesAt(grid pathfinding.CostGrid, distances []pathfinding.Distance, at daedalus.Cell) pathfinding.Distance {

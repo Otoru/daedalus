@@ -86,9 +86,13 @@ func chooseTarget(g *graph, request Request) (daedalus.RoomID, error) {
 	if foundBoss >= 0 {
 		return daedalus.RoomID(foundBoss), nil
 	}
-	startBlock := g.blockOf[request.StartRoomID]
+	return chooseFarthestLeaf(g, request.StartRoomID)
+}
+
+func chooseFarthestLeaf(g *graph, startRoomID daedalus.RoomID) (daedalus.RoomID, error) {
+	startBlock := g.blockOf[startRoomID]
 	_, _, distance := rootedTree(g, startBlock)
-	bestRoom := int(request.StartRoomID)
+	bestRoom := int(startRoomID)
 	bestDistance := uint64(0)
 	for block, rooms := range g.blocks {
 		if block == startBlock {
@@ -156,25 +160,7 @@ func selectMain(g *graph, startBlock, targetBlock int, count uint32) ([]selected
 		total += edge.cost
 	}
 	for ordinal := uint32(1); ordinal <= count; ordinal++ {
-		product := uint64(ordinal) * total
-		threshold := product / uint64(count+1)
-		cumulative := uint64(0)
-		pick := -1
-		for i, edge := range path {
-			cumulative += edge.cost
-			if !used[i] && cumulative >= threshold {
-				pick = i
-				break
-			}
-		}
-		if pick < 0 {
-			for i := range path {
-				if !used[i] {
-					pick = i
-					break
-				}
-			}
-		}
+		pick := pickMainIndex(path, used, total, ordinal, count)
 		used[pick] = true
 		edge := path[pick]
 		door, ok := startSideDoor(g, edge)
@@ -187,6 +173,29 @@ func selectMain(g *graph, startBlock, targetBlock int, count uint32) ([]selected
 		return pathIndex(path, chosen[i].edge.corridor) < pathIndex(path, chosen[j].edge.corridor)
 	})
 	return chosen, nil
+}
+
+func pickMainIndex(path []treeEdge, used []bool, total uint64, ordinal, count uint32) int {
+	product := uint64(ordinal) * total
+	threshold := product / uint64(count+1)
+	cumulative := uint64(0)
+	pick := -1
+	for i, edge := range path {
+		cumulative += edge.cost
+		if !used[i] && cumulative >= threshold {
+			pick = i
+			break
+		}
+	}
+	if pick < 0 {
+		for i := range path {
+			if !used[i] {
+				pick = i
+				break
+			}
+		}
+	}
+	return pick
 }
 
 func targetPath(g *graph, startBlock, targetBlock int) ([]treeEdge, error) {
@@ -236,18 +245,36 @@ func startSideDoor(g *graph, edge treeEdge) (daedalus.DoorID, bool) {
 	return doorID, len(g.layout.Doors[doorID].CorridorIDs) == 1
 }
 
+type optionalCandidate struct {
+	gate     selectedGate
+	stage    int
+	far      uint64
+	treasure int
+}
+
 func selectOptional(g *graph, startBlock int, main []selectedGate, mainPath []treeEdge, count uint32) ([]selectedGate, error) {
 	if count == 0 {
 		return []selectedGate{}, nil
 	}
 	parent, _, distance := rootedTree(g, startBlock)
-	// Optional gates may close only side branches. Protect every bridge on the
-	// target path, including path edges not selected as main gates; closing one
-	// of those would cut the mandatory route before its intended stage.
 	mainCorridors := make([]int, 0, len(mainPath))
 	for _, edge := range mainPath {
 		mainCorridors = append(mainCorridors, edge.corridor)
 	}
+	mainStage := optionalStages(g, startBlock, main)
+	candidates := optionalCandidates(g, parent, distance, mainStage, mainCorridors)
+	sort.Slice(candidates, func(i, j int) bool { return optionalCandidateLess(candidates[i], candidates[j]) })
+	if len(candidates) < int(count) {
+		return nil, fmt.Errorf("%w: only %d treasure branches", daedalus.ErrInsufficientGates, len(candidates))
+	}
+	result := make([]selectedGate, count)
+	for i := range result {
+		result[i] = candidates[i].gate
+	}
+	return result, nil
+}
+
+func optionalStages(g *graph, startBlock int, main []selectedGate) []int {
 	mainStage := make([]int, len(g.blocks))
 	mainGateCorridors := make([]int, 0, len(main))
 	for _, gate := range main {
@@ -269,13 +296,11 @@ func selectOptional(g *graph, startBlock int, main []selectedGate, mainPath []tr
 			order = append(order, next.to)
 		}
 	}
-	type candidate struct {
-		gate     selectedGate
-		stage    int
-		far      uint64
-		treasure int
-	}
-	var candidates []candidate
+	return mainStage
+}
+
+func optionalCandidates(g *graph, parent []int, distance []uint64, mainStage []int, mainCorridors []int) []optionalCandidate {
+	var candidates []optionalCandidate
 	for _, edge := range allBridgeEdges(g) {
 		parentBlock := g.blockOf[edge.fromRoom]
 		childBlock := edge.to
@@ -297,31 +322,25 @@ func selectOptional(g *graph, startBlock int, main []selectedGate, mainPath []tr
 		if !ok {
 			continue
 		}
-		candidates = append(candidates, candidate{gate: selectedGate{kind: GateKindOptional, edge: edge, door: door, stage: mainStage[parentBlock]}, stage: mainStage[parentBlock], far: far + distance[parentBlock], treasure: treasure})
+		candidates = append(candidates, optionalCandidate{gate: selectedGate{kind: GateKindOptional, edge: edge, door: door, stage: mainStage[parentBlock]}, stage: mainStage[parentBlock], far: far + distance[parentBlock], treasure: treasure})
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].stage != candidates[j].stage {
-			return candidates[i].stage < candidates[j].stage
-		}
-		if candidates[i].far != candidates[j].far {
-			return candidates[i].far > candidates[j].far
-		}
-		if candidates[i].treasure != candidates[j].treasure {
-			return candidates[i].treasure < candidates[j].treasure
-		}
-		if candidates[i].gate.edge.corridor != candidates[j].gate.edge.corridor {
-			return candidates[i].gate.edge.corridor < candidates[j].gate.edge.corridor
-		}
-		return candidates[i].gate.door < candidates[j].gate.door
-	})
-	if len(candidates) < int(count) {
-		return nil, fmt.Errorf("%w: only %d treasure branches", daedalus.ErrInsufficientGates, len(candidates))
+	return candidates
+}
+
+func optionalCandidateLess(first, second optionalCandidate) bool {
+	if first.stage != second.stage {
+		return first.stage < second.stage
 	}
-	result := make([]selectedGate, count)
-	for i := range result {
-		result[i] = candidates[i].gate
+	if first.far != second.far {
+		return first.far > second.far
 	}
-	return result, nil
+	if first.treasure != second.treasure {
+		return first.treasure < second.treasure
+	}
+	if first.gate.edge.corridor != second.gate.edge.corridor {
+		return first.gate.edge.corridor < second.gate.edge.corridor
+	}
+	return first.gate.door < second.gate.door
 }
 
 func containsInt(values []int, wanted int) bool {

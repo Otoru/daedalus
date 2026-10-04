@@ -215,27 +215,7 @@ func buildSpine(config Config, abilities AbilitySet, shape, choice *core.SplitMi
 
 	climb := ascentQuantum(config.Profile, abilities)
 	drop := descentQuantum(climb)
-	altitudes := make([]int32, run)
-	columns := make([]int32, run)
-	peak := 0
-	if run >= 3 {
-		peak = 1
-		if run > 3 {
-			peak = int(shape.UniformInt(1, uint64(run-2)))
-		}
-		for index := 1; index < run; index++ {
-			if index <= peak {
-				altitudes[index] = altitudes[index-1] + climb
-				columns[index] = columns[index-1] + 1
-				continue
-			}
-			altitudes[index] = altitudes[index-1] - drop
-			columns[index] = columns[index-1] - 1
-		}
-	} else if run == 2 {
-		altitudes[1] = climb
-		columns[1] = 1
-	}
+	altitudes, columns := spineHeights(run, climb, drop, shape)
 
 	branches := config.Beats.Branches
 	if branches == nil {
@@ -310,6 +290,32 @@ func buildSpine(config Config, abilities AbilitySet, shape, choice *core.SplitMi
 		})
 	}
 	return Spine{Nodes: nodes, Edges: edges}, nil
+}
+
+func spineHeights(run int, climb, drop int32, shape *core.SplitMix64) ([]int32, []int32) {
+	altitudes := make([]int32, run)
+	columns := make([]int32, run)
+	peak := 0
+	if run >= 3 {
+		peak = 1
+		if run > 3 {
+			peak = int(shape.UniformInt(1, uint64(run-2)))
+		}
+		for index := 1; index < run; index++ {
+			if index <= peak {
+				altitudes[index] = altitudes[index-1] + climb
+				columns[index] = columns[index-1] + 1
+				continue
+			}
+			altitudes[index] = altitudes[index-1] - drop
+			columns[index] = columns[index-1] - 1
+		}
+	} else if run == 2 {
+		altitudes[1] = climb
+		columns[1] = 1
+	}
+
+	return altitudes, columns
 }
 
 func directionBetween(from, to int32) SpineDirection {

@@ -393,32 +393,9 @@ func AuditLocks(ctx context.Context, plane Plane, graph *JumpGraph, spawn RoomID
 	combined := graphAdj(graph, bypasses)
 	report := LockReport{Locks: make([]LockFinding, len(locks)), Held: true}
 	for i, lock := range locks {
-		if !lock.Ability.IsKnown() {
-			return zero, progressionError("lock %d requires %s, which is not a declared ability", i, lock.Ability)
-		}
-		without := final.Without(lock.Ability)
-		sealed, _, _ := bfs(authoredAdj, int(spawn), usable(without))
-		opened, _, _ := bfs(combined, int(spawn), usable(without))
-		finding := LockFinding{
-			Step: lock.Step, Ability: lock.Ability, Gate: lock.Gate, Rooms: lock.Rooms, Held: true,
-		}
-		if len(lock.Rooms) == 0 {
-			finding.Held = false
-		}
-		for _, room := range lock.Rooms {
-			if int(room) >= len(opened) {
-				return zero, queryError("lock %d names room %d, which is outside the graph", i, room)
-			}
-			if !opened[room] {
-				continue
-			}
-			finding.Leaked = append(finding.Leaked, room)
-			finding.Held = false
-			if sealed[room] {
-				finding.AuthoredLeak = true
-			} else {
-				finding.ViaGeometric = true
-			}
+		finding, err := auditLock(i, lock, final, authoredAdj, combined, spawn)
+		if err != nil {
+			return zero, err
 		}
 		if !finding.Held {
 			report.Held = false
@@ -426,6 +403,32 @@ func AuditLocks(ctx context.Context, plane Plane, graph *JumpGraph, spawn RoomID
 		report.Locks[i] = finding
 	}
 	return report, nil
+}
+
+func auditLock(index int, lock RegionLock, final AbilitySet, authoredAdj, combined [][]edgeRef, spawn RoomID) (LockFinding, error) {
+	if !lock.Ability.IsKnown() {
+		return LockFinding{}, progressionError("lock %d requires %s, which is not a declared ability", index, lock.Ability)
+	}
+	without := final.Without(lock.Ability)
+	sealed, _, _ := bfs(authoredAdj, int(spawn), usable(without))
+	opened, _, _ := bfs(combined, int(spawn), usable(without))
+	finding := LockFinding{Step: lock.Step, Ability: lock.Ability, Gate: lock.Gate, Rooms: lock.Rooms, Held: len(lock.Rooms) > 0}
+	for _, room := range lock.Rooms {
+		if int(room) >= len(opened) {
+			return LockFinding{}, queryError("lock %d names room %d, which is outside the graph", index, room)
+		}
+		if !opened[room] {
+			continue
+		}
+		finding.Leaked = append(finding.Leaked, room)
+		finding.Held = false
+		if sealed[room] {
+			finding.AuthoredLeak = true
+		} else {
+			finding.ViaGeometric = true
+		}
+	}
+	return finding, nil
 }
 
 // AuditSoftlocks walks every fall and every one-way edge that a stage can
@@ -450,26 +453,9 @@ func AuditSoftlocks(ctx context.Context, graph *JumpGraph, spawn, goal RoomID, p
 		if !isHazard(graph, edge) {
 			continue
 		}
-		stage, reached, ok := stageThatReaches(adj, stages, int(spawn), edge)
+		finding, ok := auditHazard(adj, stages, spawn, goal, edge)
 		if !ok {
 			continue
-		}
-		allow := authored(stage)
-		without, _, _ := bfs(adj, int(spawn), skipEdge(int(edge.ID), allow))
-		fromLanding, _, _ := bfs(adj, int(edge.To), allow)
-		finding := HazardFinding{
-			Edge:      edge.ID,
-			From:      edge.From,
-			To:        edge.To,
-			Kind:      edge.Kind,
-			Mandatory: reached[goal] && !without[goal],
-			CanWin:    fromLanding[goal],
-		}
-		for i := range fromLanding {
-			if fromLanding[i] && without[i] {
-				finding.CanReturn = true
-				break
-			}
 		}
 		if finding.Trapped() {
 			report.Clear = false
@@ -477,6 +463,25 @@ func AuditSoftlocks(ctx context.Context, graph *JumpGraph, spawn, goal RoomID, p
 		report.Hazards = append(report.Hazards, finding)
 	}
 	return report, nil
+}
+
+func auditHazard(adj [][]edgeRef, stages []AbilitySet, spawn, goal RoomID, edge MotionEdge) (HazardFinding, bool) {
+	stage, reached, ok := stageThatReaches(adj, stages, int(spawn), edge)
+	if !ok {
+		return HazardFinding{}, false
+	}
+	allow := authored(stage)
+	without, _, _ := bfs(adj, int(spawn), skipEdge(int(edge.ID), allow))
+	fromLanding, _, _ := bfs(adj, int(edge.To), allow)
+	finding := HazardFinding{Edge: edge.ID, From: edge.From, To: edge.To, Kind: edge.Kind,
+		Mandatory: reached[goal] && !without[goal], CanWin: fromLanding[goal]}
+	for i := range fromLanding {
+		if fromLanding[i] && without[i] {
+			finding.CanReturn = true
+			break
+		}
+	}
+	return finding, true
 }
 
 func stageThatReaches(adj [][]edgeRef, stages []AbilitySet, spawn int, edge MotionEdge) (AbilitySet, []bool, bool) {
@@ -589,23 +594,8 @@ func scanBoundary(dst *[]bypassRun, plane Plane, room Room, index map[Transition
 		cur = nil
 	}
 	for i := int32(0); i < length; i++ {
-		lx, ly, nx, ny, along := borderPoint(room, side, i)
-		kind, ok := room.Grid.At(Cell{X: lx, Y: ly})
-		if !ok || kind != CellKindEmpty {
-			flush()
-			continue
-		}
-		neighbor, local, ok := roomAt(plane, nx, ny)
-		if !ok || neighbor == room.ID {
-			flush()
-			continue
-		}
-		nk, nok := plane.Rooms[neighbor].Grid.At(local)
-		if !nok || nk != CellKindEmpty {
-			flush()
-			continue
-		}
-		if boundaryCovered(room, side, neighbor, along, index) {
+		neighbor, along, ok := uncoveredBoundaryPoint(plane, room, index, side, i)
+		if !ok {
 			flush()
 			continue
 		}
@@ -617,6 +607,23 @@ func scanBoundary(dst *[]bypassRun, plane Plane, room Room, index map[Transition
 		cur = &bypassRun{from: room.ID, neighbor: neighbor, side: side, along: along, length: 1}
 	}
 	flush()
+}
+
+func uncoveredBoundaryPoint(plane Plane, room Room, index map[TransitionID]Transition, side TransitionSide, i int32) (RoomID, int32, bool) {
+	lx, ly, nx, ny, along := borderPoint(room, side, i)
+	kind, ok := room.Grid.At(Cell{X: lx, Y: ly})
+	if !ok || kind != CellKindEmpty {
+		return 0, 0, false
+	}
+	neighbor, local, ok := roomAt(plane, nx, ny)
+	if !ok || neighbor == room.ID {
+		return 0, 0, false
+	}
+	nk, nok := plane.Rooms[neighbor].Grid.At(local)
+	if !nok || nk != CellKindEmpty || boundaryCovered(room, side, neighbor, along, index) {
+		return 0, 0, false
+	}
+	return neighbor, along, true
 }
 
 func borderPoint(room Room, side TransitionSide, i int32) (lx, ly, nx, ny, along int32) {
@@ -681,7 +688,7 @@ func transitionIndex(plane Plane) (map[TransitionID]Transition, error) {
 	return index, nil
 }
 
-func bindProgression(ctx context.Context, plane Plane, asm assembly, steps []ProgressionStep, profile MovementProfile) (Macro, error) {
+func bindProgression(ctx context.Context, plane Plane, asm assembly, base AbilitySet, steps []ProgressionStep, profile MovementProfile) (Macro, error) {
 	var zero Macro
 	if err := ctx.Err(); err != nil {
 		return zero, err
@@ -693,7 +700,7 @@ func bindProgression(ctx context.Context, plane Plane, asm assembly, steps []Pro
 		return zero, geometryError("goal room %d is outside the plane", asm.goal)
 	}
 	plane.Goal = Anchor{Room: asm.goal, At: standingCell(plane.Rooms[asm.goal])}
-	plan := ProgressionPlan{Steps: append([]ProgressionStep(nil), steps...)}
+	plan := ProgressionPlan{Base: base, Steps: append([]ProgressionStep(nil), steps...)}
 	grants, err := placeGrants(plane, plan)
 	if err != nil {
 		return zero, err
@@ -726,21 +733,7 @@ func placeGrants(plane Plane, plan ProgressionPlan) ([]AbilityGrant, error) {
 	for step := range plan.Steps {
 		moveset := stages[step]
 		reached, dist := linkFlood(adj, spawn, moveset)
-		best := -1
-		for room := range reached {
-			if !reached[room] {
-				continue
-			}
-			if best >= 0 && room == spawn {
-				continue
-			}
-			if best < 0 || dist[room] > dist[best] || (dist[room] == dist[best] && !used[room] && used[best]) || (dist[room] == dist[best] && used[room] == used[best] && room < best) {
-				if room == spawn && best >= 0 {
-					continue
-				}
-				best = room
-			}
-		}
+		best := bestGrantRoom(reached, dist, used, spawn)
 		if best < 0 {
 			return nil, progressionError("step %d has nowhere to put its grant", step)
 		}
@@ -749,15 +742,7 @@ func placeGrants(plane Plane, plan ProgressionPlan) ([]AbilityGrant, error) {
 		// farthest is used and some nearer room is free, keep the farthest:
 		// two grants may share a room only when nothing else is reachable.
 		if used[best] {
-			alt := -1
-			for room := range reached {
-				if !reached[room] || used[room] || room == spawn {
-					continue
-				}
-				if alt < 0 || dist[room] > dist[alt] || (dist[room] == dist[alt] && room < alt) {
-					alt = room
-				}
-			}
+			alt := unusedGrantRoom(reached, dist, used, spawn)
 			if alt >= 0 {
 				best = alt
 			}
@@ -766,6 +751,37 @@ func placeGrants(plane Plane, plan ProgressionPlan) ([]AbilityGrant, error) {
 		grants[step] = AbilityGrant{Step: step, Room: RoomID(best), Grants: plan.Steps[step].Grants}
 	}
 	return grants, nil
+}
+
+func bestGrantRoom(reached []bool, dist []int, used []bool, spawn int) int {
+	best := -1
+	for room := range reached {
+		if !reached[room] || best >= 0 && room == spawn {
+			continue
+		}
+		if best < 0 || betterGrantRoom(room, best, dist, used) {
+			best = room
+		}
+	}
+	return best
+}
+
+func betterGrantRoom(room, best int, dist []int, used []bool) bool {
+	return dist[room] > dist[best] || (dist[room] == dist[best] && !used[room] && used[best]) ||
+		(dist[room] == dist[best] && used[room] == used[best] && room < best)
+}
+
+func unusedGrantRoom(reached []bool, dist []int, used []bool, spawn int) int {
+	alt := -1
+	for room := range reached {
+		if !reached[room] || used[room] || room == spawn {
+			continue
+		}
+		if alt < 0 || dist[room] > dist[alt] || (dist[room] == dist[alt] && room < alt) {
+			alt = room
+		}
+	}
+	return alt
 }
 
 type roomLink struct {
@@ -843,8 +859,19 @@ func beyond(plane Plane, block roomPair, forward, spawn RoomID) ([]RoomID, error
 	if err != nil {
 		return nil, err
 	}
-	n := len(plane.Rooms)
-	adj := make([][]int, n)
+	adj := beyondAdjacency(plane, index, block)
+	if int(forward) >= len(adj) {
+		return nil, geometryError("gate forward room %d is outside the plane", forward)
+	}
+	rooms := floodRooms(adj, forward)
+	if containsRoom(rooms, spawn) {
+		return nil, progressionError("closing the gate still leaves the spawn inside the locked region")
+	}
+	return rooms, nil
+}
+
+func beyondAdjacency(plane Plane, index map[TransitionID]Transition, block roomPair) [][]int {
+	adj := make([][]int, len(plane.Rooms))
 	for ri := range plane.Rooms {
 		for _, t := range plane.Rooms[ri].Transitions {
 			partner, ok := index[t.To]
@@ -863,10 +890,11 @@ func beyond(plane Plane, block roomPair, forward, spawn RoomID) ([]RoomID, error
 	for i := range adj {
 		sort.Ints(adj[i])
 	}
-	if int(forward) >= n {
-		return nil, geometryError("gate forward room %d is outside the plane", forward)
-	}
-	seen := make([]bool, n)
+	return adj
+}
+
+func floodRooms(adj [][]int, forward RoomID) []RoomID {
+	seen := make([]bool, len(adj))
 	var rooms []RoomID
 	queue := []int{int(forward)}
 	seen[forward] = true
@@ -883,10 +911,7 @@ func beyond(plane Plane, block roomPair, forward, spawn RoomID) ([]RoomID, error
 		}
 	}
 	sort.Slice(rooms, func(i, j int) bool { return rooms[i] < rooms[j] })
-	if containsRoom(rooms, spawn) {
-		return nil, progressionError("closing the gate still leaves the spawn inside the locked region")
-	}
-	return rooms, nil
+	return rooms
 }
 
 func containsRoom(rooms []RoomID, id RoomID) bool {
@@ -903,6 +928,23 @@ func macroGraph(plane Plane, profile MovementProfile, abilities AbilitySet) (Jum
 	if err != nil {
 		return JumpGraph{}, err
 	}
+	nodes, err := macroNodes(plane, profile)
+	if err != nil {
+		return JumpGraph{}, err
+	}
+	passage, err := macroPassages(plane, index)
+	if err != nil {
+		return JumpGraph{}, err
+	}
+	edges, err := macroEdges(plane, index, passage)
+	if err != nil {
+		return JumpGraph{}, err
+	}
+	return JumpGraph{Model: "daedalus/platform/macro", ProfileVersion: profile.Version, Abilities: abilities,
+		Discipline: NodeDisciplineRestOnly, Nodes: nodes, Edges: edges}, nil
+}
+
+func macroNodes(plane Plane, profile MovementProfile) ([]MotionNode, error) {
 	full := profile.FullResources()
 	nodes := make([]MotionNode, len(plane.Rooms))
 	for i, room := range plane.Rooms {
@@ -915,9 +957,13 @@ func macroGraph(plane Plane, profile MovementProfile, abilities AbilitySet) (Jum
 			Resources: full,
 		}
 		if !nodes[i].IsRest(profile) {
-			return JumpGraph{}, geometryError("room %d did not become a rest node", i)
+			return nil, geometryError("room %d did not become a rest node", i)
 		}
 	}
+	return nodes, nil
+}
+
+func macroPassages(plane Plane, index map[TransitionID]Transition) ([]PassageID, error) {
 	count := 0
 	for _, room := range plane.Rooms {
 		count += len(room.Transitions)
@@ -930,15 +976,19 @@ func macroGraph(plane Plane, profile MovementProfile, abilities AbilitySet) (Jum
 		}
 		t, ok := index[TransitionID(id)]
 		if !ok {
-			return JumpGraph{}, geometryError("transition ids skip %d", id)
+			return nil, geometryError("transition ids skip %d", id)
 		}
 		if int(t.To) >= count {
-			return JumpGraph{}, geometryError("transition %d pairs outside the id range", t.ID)
+			return nil, geometryError("transition %d pairs outside the id range", t.ID)
 		}
 		passage[id] = nextPassage
 		passage[t.To] = nextPassage
 		nextPassage++
 	}
+	return passage, nil
+}
+
+func macroEdges(plane Plane, index map[TransitionID]Transition, passage []PassageID) ([]MotionEdge, error) {
 	var edges []MotionEdge
 	for ri := range plane.Rooms {
 		for _, t := range plane.Rooms[ri].Transitions {
@@ -947,7 +997,7 @@ func macroGraph(plane Plane, profile MovementProfile, abilities AbilitySet) (Jum
 			}
 			partner, ok := index[t.To]
 			if !ok {
-				return JumpGraph{}, geometryError("transition %d has no partner", t.ID)
+				return nil, geometryError("transition %d has no partner", t.ID)
 			}
 			kind := MotionEdgeKindTransition
 			if t.Inbound == nil && t.Side == TransitionSideBottom {
@@ -964,12 +1014,5 @@ func macroGraph(plane Plane, profile MovementProfile, abilities AbilitySet) (Jum
 			})
 		}
 	}
-	return JumpGraph{
-		Model:          "daedalus/platform/macro",
-		ProfileVersion: profile.Version,
-		Abilities:      abilities,
-		Discipline:     NodeDisciplineRestOnly,
-		Nodes:          nodes,
-		Edges:          edges,
-	}, nil
+	return edges, nil
 }

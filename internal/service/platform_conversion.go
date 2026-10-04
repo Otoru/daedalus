@@ -174,7 +174,18 @@ func platformCellKindToProto(kind platform.CellKind) daedalusv1.PlatformCellKind
 	return daedalusv1.PlatformCellKind(kind + 1)
 }
 func platformJudgementToProto(j platform.Judgement) *daedalusv1.PlatformJudgement {
-	return &daedalusv1.PlatformJudgement{Verdict: daedalusv1.PlatformVerdict(j.Verdict), Reason: daedalusv1.PlatformVerdictReason(j.Reason), Detail: j.Detail, Model: j.Model, ProfileVersion: j.ProfileVersion, Budget: &daedalusv1.PlatformBudgetReport{CandidateEdges: j.Budget.CandidateEdges, ExpandedNodes: j.Budget.ExpandedNodes, CollisionTests: j.Budget.CollisionTests, Exhausted: j.Budget.Exhausted}}
+	return &daedalusv1.PlatformJudgement{Verdict: platformVerdictToProto(j.Verdict), Reason: daedalusv1.PlatformVerdictReason(j.Reason), Detail: j.Detail, Model: j.Model, ProfileVersion: j.ProfileVersion, Budget: &daedalusv1.PlatformBudgetReport{CandidateEdges: j.Budget.CandidateEdges, ExpandedNodes: j.Budget.ExpandedNodes, CollisionTests: j.Budget.CollisionTests, Exhausted: j.Budget.Exhausted}}
+}
+
+func platformVerdictToProto(verdict platform.Verdict) daedalusv1.PlatformVerdict {
+	switch verdict {
+	case platform.VerdictCertified:
+		return daedalusv1.PlatformVerdict_PLATFORM_VERDICT_CERTIFIED
+	case platform.VerdictRejected:
+		return daedalusv1.PlatformVerdict_PLATFORM_VERDICT_REJECTED
+	default:
+		return daedalusv1.PlatformVerdict_PLATFORM_VERDICT_UNKNOWN
+	}
 }
 func platformJumpGraphToProto(graph platform.JumpGraph) *daedalusv1.PlatformJumpGraph {
 	result := &daedalusv1.PlatformJumpGraph{Model: graph.Model, ProfileVersion: graph.ProfileVersion, Abilities: uint32(graph.Abilities), Nodes: make([]*daedalusv1.PlatformMotionNode, len(graph.Nodes)), Edges: make([]*daedalusv1.PlatformMotionEdge, len(graph.Edges))}

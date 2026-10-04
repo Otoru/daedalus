@@ -25,6 +25,7 @@ go.work.sum
 .scannerwork/
 .sonarlint/
 .golangci-lint-cache/
+.research/
 # Local scanner configuration, deliberately not published.
 sonar-project.properties
 

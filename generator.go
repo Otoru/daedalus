@@ -271,11 +271,16 @@ func applyGeneratorTopologyOptions(
 	minimumEdges := len(rooms) - topologyNextRoomOffset
 	existingExtraEdges := len(connections) - minimumEdges
 	if existingExtraEdges == 0 {
-		return applyTopologyOptions(
-			ctx, rooms, connections, effective.roomRoleRequests, effective.extraEdgeCount,
-			effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths),
-			effective.maxRoomEdges, tryRoute,
-		)
+		return applyTopologyOptions(ctx, topologyOptionsRequest{
+			Rooms: rooms, Backbone: connections, Requests: effective.roomRoleRequests,
+			ExtraEdgeCount: effective.extraEdgeCount,
+			Constraints: roleGridConstraints{
+				Width: effective.width, Height: effective.height,
+				CorridorWidth: narrowestDeclaredCorridorWidth(effective.corridorWidths),
+				MaxRoomEdges: effective.maxRoomEdges,
+			},
+			TryRoute: tryRoute,
+		})
 	}
 
 	// A custom Connector may return up to n-1+ExtraEdgeCount edges. Roles are
@@ -283,17 +288,21 @@ func applyGeneratorTopologyOptions(
 	// the first edges that reach every Room form that tree, and edges that close
 	// a cycle already consume the shortcut budget.
 	roleBackbone := connectorSpanningTree(len(rooms), connections)
-	roles, err := assignRoomRolesWithDegreeConnections(ctx, rooms, roleBackbone, connections, effective.roomRoleRequests, effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths), effective.maxRoomEdges)
+	constraints := roleGridConstraints{
+		Width: effective.width, Height: effective.height,
+		CorridorWidth: narrowestDeclaredCorridorWidth(effective.corridorWidths),
+		MaxRoomEdges: effective.maxRoomEdges,
+	}
+	roles, err := assignRoomRolesWithDegreeConnections(ctx, rooms, roleBackbone, connections, effective.roomRoleRequests, constraints)
 	if err != nil {
 		return nil, nil, err
 	}
 	remainingExtraEdges := effective.extraEdgeCount - uint32(existingExtraEdges)
-	roleCeilings := roleCeilingsForAssignedRooms(rooms, roles, effective.roomRoleRequests, effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths), effective.maxRoomEdges)
-	finalConnections, err := addExtraConnectionsWithRoleCeilings(
-		ctx, rooms, connections, remainingExtraEdges,
-		effective.width, effective.height, narrowestDeclaredCorridorWidth(effective.corridorWidths),
-		effective.maxRoomEdges, tryRoute, roleCeilings,
-	)
+	roleCeilings := roleCeilingsForAssignedRooms(rooms, roles, effective.roomRoleRequests, constraints)
+	finalConnections, err := addExtraConnectionsWithRoleCeilings(ctx, extraConnectionsRequest{
+		Rooms: rooms, Backbone: connections, ExtraEdgeCount: remainingExtraEdges,
+		Constraints: constraints, TryRoute: tryRoute, RoleCeilings: roleCeilings,
+	})
 	if err != nil {
 		return nil, nil, err
 	}

@@ -227,31 +227,7 @@ func TestEveryGenerationPackageIsPoliced(t *testing.T) {
 	}
 	var missing []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() {
-			return nil
-		}
-		name := entry.Name()
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if rel != "." && (strings.HasPrefix(name, ".") || name == "testdata" || name == "vendor" || name == "bin") {
-			return filepath.SkipDir
-		}
-		if rel == "cmd" || rel == "internal" || strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) || strings.HasPrefix(rel, "internal"+string(filepath.Separator)) {
-			return filepath.SkipDir
-		}
-		if !directoryHasProductionGo(path) {
-			return nil
-		}
-		key := rel
-		if !listed[key] {
-			missing = append(missing, key)
-		}
-		return nil
+		return checkGenerationDirectory(root, path, entry, walkErr, listed, &missing)
 	})
 	if err != nil {
 		t.Fatalf("walk generation packages: %v", err)
@@ -259,6 +235,30 @@ func TestEveryGenerationPackageIsPoliced(t *testing.T) {
 	if len(missing) > 0 {
 		t.Fatalf("production packages with no purePackages entry (the purity test checks nothing there): %s", strings.Join(missing, ", "))
 	}
+}
+
+func checkGenerationDirectory(root, path string, entry os.DirEntry, walkErr error, listed map[string]bool, missing *[]string) error {
+	if walkErr != nil {
+		return walkErr
+	}
+	if !entry.IsDir() {
+		return nil
+	}
+	name := entry.Name()
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+	if rel != "." && (strings.HasPrefix(name, ".") || name == "testdata" || name == "vendor" || name == "bin") {
+		return filepath.SkipDir
+	}
+	if rel == "cmd" || rel == "internal" || strings.HasPrefix(rel, "cmd"+string(filepath.Separator)) || strings.HasPrefix(rel, "internal"+string(filepath.Separator)) {
+		return filepath.SkipDir
+	}
+	if directoryHasProductionGo(path) && !listed[rel] {
+		*missing = append(*missing, rel)
+	}
+	return nil
 }
 
 func directoryHasProductionGo(directory string) bool {

@@ -70,22 +70,11 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 		target.RoomGeometry = geometry
 	}
 
-	if source.CorridorGeometry != nil {
-		geometry := source.CorridorGeometry
-		target.CorridorGeometry = &daedalus.CorridorGeometry{
-			Widths: make([]daedalus.CorridorWidthWeight, len(geometry.Widths)),
-		}
-		for index, weight := range geometry.Widths {
-			if weight == nil {
-				return daedalus.Config{}, fmt.Errorf(
-					"%w: corridor_geometry.widths[%d] missing", daedalus.ErrInvalidConfig, index,
-				)
-			}
-			target.CorridorGeometry.Widths[index] = daedalus.CorridorWidthWeight{
-				Width: weight.Width, Weight: weight.Weight,
-			}
-		}
+	geometry, err := corridorGeometryFromProto(source.CorridorGeometry)
+	if err != nil {
+		return daedalus.Config{}, err
 	}
+	target.CorridorGeometry = geometry
 
 	if source.PlantCatalog != nil {
 		catalog, err := plantCatalogFromProto(source.PlantCatalog)
@@ -93,6 +82,20 @@ func ConfigFromProto(source *daedalusv1.Config) (daedalus.Config, error) {
 			return daedalus.Config{}, err
 		}
 		target.PlantCatalog = catalog
+	}
+	return target, nil
+}
+
+func corridorGeometryFromProto(source *daedalusv1.CorridorGeometry) (*daedalus.CorridorGeometry, error) {
+	if source == nil {
+		return nil, nil
+	}
+	target := &daedalus.CorridorGeometry{Widths: make([]daedalus.CorridorWidthWeight, len(source.Widths))}
+	for index, weight := range source.Widths {
+		if weight == nil {
+			return nil, fmt.Errorf("%w: corridor_geometry.widths[%d] missing", daedalus.ErrInvalidConfig, index)
+		}
+		target.Widths[index] = daedalus.CorridorWidthWeight{Width: weight.Width, Weight: weight.Weight}
 	}
 	return target, nil
 }
@@ -583,23 +586,46 @@ func layoutFromProto(source *daedalusv1.Layout) (daedalus.Layout, error) {
 		Width: source.Grid.Width, Height: source.Grid.Height, CellSize: source.Grid.CellSize,
 		Cells: make([]daedalus.CellState, len(source.Grid.Cells)),
 	}, Rooms: make([]daedalus.Room, len(source.Rooms)), Corridors: make([]daedalus.Corridor, len(source.Corridors)), Doors: make([]daedalus.Door, len(source.Doors))}
+	if err := layoutTerrainFromProto(source, &target); err != nil {
+		return daedalus.Layout{}, err
+	}
+	if err := layoutCellsFromProto(source, &target); err != nil {
+		return daedalus.Layout{}, err
+	}
+	if err := layoutRoomsFromProto(source, &target); err != nil {
+		return daedalus.Layout{}, err
+	}
+	if err := layoutCorridorsFromProto(source, &target); err != nil {
+		return daedalus.Layout{}, err
+	}
+	if err := layoutDoorsFromProto(source, &target); err != nil {
+		return daedalus.Layout{}, err
+	}
+	return target, nil
+}
+
+func layoutTerrainFromProto(source *daedalusv1.Layout, target *daedalus.Layout) error {
 	if source.Grid.Terrain != nil {
 		terrain := source.Grid.Terrain
 		target.Grid.Terrain = &daedalus.TerrainLayer{Indices: append([]byte(nil), terrain.Indices...), Palette: make([]daedalus.TerrainDefinition, len(terrain.Palette))}
 		for i, definition := range terrain.Palette {
 			if definition == nil {
-				return daedalus.Layout{}, fmt.Errorf("%w: terrain palette[%d] missing", daedalus.ErrInvalidGating, i)
+				return fmt.Errorf("%w: terrain palette[%d] missing", daedalus.ErrInvalidGating, i)
 			}
 			target.Grid.Terrain.Palette[i] = daedalus.TerrainDefinition{ID: daedalus.TerrainID(definition.Id), EntryCost: uint8(definition.EntryCost), Transparent: definition.Transparent}
 		}
 	}
+	return nil
+}
+
+func layoutCellsFromProto(source *daedalusv1.Layout, target *daedalus.Layout) error {
 	for i, cell := range source.Grid.Cells {
 		if cell == nil || cell.At == nil {
-			return daedalus.Layout{}, fmt.Errorf("%w: grid cell %d missing", daedalus.ErrInvalidGating, i)
+			return fmt.Errorf("%w: grid cell %d missing", daedalus.ErrInvalidGating, i)
 		}
 		kind, err := mapCellKind(cell.Kind)
 		if err != nil {
-			return daedalus.Layout{}, err
+			return err
 		}
 		target.Grid.Cells[i] = daedalus.CellState{At: cellFromProto(cell.At), Kind: kind, CorridorIDs: make([]daedalus.CorridorID, len(cell.CorridorIds))}
 		if cell.RoomId != nil {
@@ -610,9 +636,13 @@ func layoutFromProto(source *daedalusv1.Layout) (daedalus.Layout, error) {
 			target.Grid.Cells[i].CorridorIDs[j] = daedalus.CorridorID(id)
 		}
 	}
+	return nil
+}
+
+func layoutRoomsFromProto(source *daedalusv1.Layout, target *daedalus.Layout) error {
 	for i, room := range source.Rooms {
 		if room == nil || room.At == nil || room.Origin == nil {
-			return daedalus.Layout{}, fmt.Errorf("%w: room %d is incomplete", daedalus.ErrInvalidGating, i)
+			return fmt.Errorf("%w: room %d is incomplete", daedalus.ErrInvalidGating, i)
 		}
 		target.Rooms[i] = daedalus.Room{ID: daedalus.RoomID(room.Id), At: cellFromProto(room.At), PlantID: daedalus.PlantID(room.PlantId), Tags: append([]string(nil), room.Tags...), DoorIDs: make([]daedalus.DoorID, len(room.DoorIds)), Shape: mapRoomShape(room.Shape), Origin: cellFromProto(room.Origin), Width: room.Width, Height: room.Height, Cells: make([]daedalus.Cell, len(room.Cells))}
 		if room.Role != nil {
@@ -624,39 +654,47 @@ func layoutFromProto(source *daedalusv1.Layout) (daedalus.Layout, error) {
 		}
 		for j, cell := range room.Cells {
 			if cell == nil {
-				return daedalus.Layout{}, fmt.Errorf("%w: room %d cell %d missing", daedalus.ErrInvalidGating, i, j)
+				return fmt.Errorf("%w: room %d cell %d missing", daedalus.ErrInvalidGating, i, j)
 			}
 			target.Rooms[i].Cells[j] = cellFromProto(cell)
 		}
 	}
+	return nil
+}
+
+func layoutCorridorsFromProto(source *daedalusv1.Layout, target *daedalus.Layout) error {
 	for i, corridor := range source.Corridors {
 		if corridor == nil {
-			return daedalus.Layout{}, fmt.Errorf("%w: corridor %d missing", daedalus.ErrInvalidGating, i)
+			return fmt.Errorf("%w: corridor %d missing", daedalus.ErrInvalidGating, i)
 		}
 		target.Corridors[i] = daedalus.Corridor{ID: daedalus.CorridorID(corridor.Id), FromRoomID: daedalus.RoomID(corridor.FromRoomId), ToRoomID: daedalus.RoomID(corridor.ToRoomId), FromDoorID: daedalus.DoorID(corridor.FromDoorId), ToDoorID: daedalus.DoorID(corridor.ToDoorId), PlantID: daedalus.PlantID(corridor.PlantId), Tags: append([]string(nil), corridor.Tags...), Cells: make([]daedalus.Cell, len(corridor.Cells)), Centerline: make([]daedalus.Cell, len(corridor.Centerline))}
 		for j, cell := range corridor.Cells {
 			if cell == nil {
-				return daedalus.Layout{}, fmt.Errorf("%w: corridor %d cell %d missing", daedalus.ErrInvalidGating, i, j)
+				return fmt.Errorf("%w: corridor %d cell %d missing", daedalus.ErrInvalidGating, i, j)
 			}
 			target.Corridors[i].Cells[j] = cellFromProto(cell)
 		}
 		for j, cell := range corridor.Centerline {
 			if cell == nil {
-				return daedalus.Layout{}, fmt.Errorf("%w: corridor %d centerline %d missing", daedalus.ErrInvalidGating, i, j)
+				return fmt.Errorf("%w: corridor %d centerline %d missing", daedalus.ErrInvalidGating, i, j)
 			}
 			target.Corridors[i].Centerline[j] = cellFromProto(cell)
 		}
 	}
+	return nil
+}
+
+func layoutDoorsFromProto(source *daedalusv1.Layout, target *daedalus.Layout) error {
 	for i, door := range source.Doors {
 		if door == nil || door.At == nil {
-			return daedalus.Layout{}, fmt.Errorf("%w: door %d is incomplete", daedalus.ErrInvalidGating, i)
+			return fmt.Errorf("%w: door %d is incomplete", daedalus.ErrInvalidGating, i)
 		}
 		target.Doors[i] = daedalus.Door{ID: daedalus.DoorID(door.Id), RoomID: daedalus.RoomID(door.RoomId), At: cellFromProto(door.At), Direction: mapDirection(door.Direction), Span: door.Span, CorridorIDs: make([]daedalus.CorridorID, len(door.CorridorIds))}
 		for j, id := range door.CorridorIds {
 			target.Doors[i].CorridorIDs[j] = daedalus.CorridorID(id)
 		}
 	}
-	return target, nil
+	return nil
 }
 
 func mapCellKind(source daedalusv1.CellKind) (daedalus.CellKind, error) {

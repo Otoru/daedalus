@@ -288,7 +288,7 @@ func stampBeat(kind BeatKind, span uint32, rise int32) Grid {
 	fillPlatform(cells, width, height, span+platformGap, span, toFeet)
 	switch kind {
 	case BeatKindHazard:
-		paintGap(cells, width, height, span, platformGap, toFeet, fromFeet, CellKindHazard)
+		paintGap(cells, width, height, span, toFeet, fromFeet, CellKindHazard)
 	case BeatKindClimb, BeatKindShaft:
 		if rise != 0 {
 			paintClimb(cells, width, height, span, fromFeet, toFeet)
@@ -320,7 +320,7 @@ func fillPlatform(cells []CellKind, width, height, x0, span uint32, feet int32) 
 	}
 }
 
-func paintGap(cells []CellKind, width, height, span, gap uint32, toFeet, fromFeet int32, kind CellKind) {
+func paintGap(cells []CellKind, width, height, span uint32, toFeet, fromFeet int32, kind CellKind) {
 	lower := toFeet
 	if fromFeet < lower {
 		lower = fromFeet
@@ -329,7 +329,7 @@ func paintGap(cells []CellKind, width, height, span, gap uint32, toFeet, fromFee
 	if row < 0 || uint32(row) >= height {
 		return
 	}
-	for x := span; x < span+gap && x < width; x++ {
+	for x := span; x < span+platformGap && x < width; x++ {
 		cells[uint32(row)*width+x] = kind
 	}
 }

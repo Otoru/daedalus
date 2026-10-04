@@ -83,11 +83,7 @@ func NewOpacityGridFunc(layout daedalus.Layout, rule OpacityRule) OpacityGrid {
 			if !ok {
 				continue
 			}
-			var state daedalus.CellState
-			if int(index) < len(cells) {
-				state = cells[int(index)]
-			}
-			if rule(state) {
+			if rule(opacityCellState(cells, index)) {
 				setTransparentBit(bits, index)
 			}
 		}
@@ -125,23 +121,30 @@ func NewTerrainOpacityGridFunc(layout daedalus.Layout, rule LayoutOpacityRule) O
 	cells := layout.Grid.Cells
 	for y := uint32(0); y < grid.Height; y++ {
 		for x := uint32(0); x < grid.Width; x++ {
-			at := daedalus.Cell{X: int32(x), Y: int32(y)}
-			index, ok := grid.Index(at)
-			if !ok {
-				continue
-			}
-			var state daedalus.CellState
-			if int(index) < len(cells) {
-				state = cells[int(index)]
-			}
-			terrain, _ := layout.Grid.TerrainAt(at)
-			if rule(state, terrain) {
-				setTransparentBit(bits, index)
-			}
+			setTerrainOpacityBit(bits, grid, layout, cells, rule, x, y)
 		}
 	}
 	grid.Transparent = bits
 	return grid
+}
+
+func opacityCellState(cells []daedalus.CellState, index int64) daedalus.CellState {
+	if int(index) < len(cells) {
+		return cells[int(index)]
+	}
+	return daedalus.CellState{}
+}
+
+func setTerrainOpacityBit(bits []byte, grid OpacityGrid, layout daedalus.Layout, cells []daedalus.CellState, rule LayoutOpacityRule, x, y uint32) {
+	at := daedalus.Cell{X: int32(x), Y: int32(y)}
+	index, ok := grid.Index(at)
+	if !ok {
+		return
+	}
+	terrain, _ := layout.Grid.TerrainAt(at)
+	if rule(opacityCellState(cells, index), terrain) {
+		setTransparentBit(bits, index)
+	}
 }
 
 // Index reports the row-major position of at and whether at lies inside the

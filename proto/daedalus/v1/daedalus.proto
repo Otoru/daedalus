@@ -221,9 +221,10 @@ enum PlatformCellKind {
 }
 
 enum PlatformVerdict {
-  PLATFORM_VERDICT_UNKNOWN = 0;
+  PLATFORM_VERDICT_UNSPECIFIED = 0;
   PLATFORM_VERDICT_CERTIFIED = 1;
   PLATFORM_VERDICT_REJECTED = 2;
+  PLATFORM_VERDICT_UNKNOWN = 3;
 }
 
 enum PlatformVerdictReason {

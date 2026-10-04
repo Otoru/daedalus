@@ -37,6 +37,17 @@ func checkGatingLimits(request *daedalusv1.BuildGatingPlanRequest) error {
 	if len(layout.Grid.Cells) > daedalus.MaxCells {
 		return fmt.Errorf("%w: grid cell count exceeds the v1 maximum", daedalus.ErrLimitExceeded)
 	}
+	if err := checkGatingPayloadLimits(layout); err != nil {
+		return err
+	}
+	count := uint64(request.Request.MainGateCount) + uint64(request.Request.OptionalGateCount)
+	if count > uint64(gating.MaxGates) {
+		return fmt.Errorf("%w: gate count exceeds %d", daedalus.ErrLimitExceeded, gating.MaxGates)
+	}
+	return nil
+}
+
+func checkGatingPayloadLimits(layout *daedalusv1.Layout) error {
 	for _, room := range layout.Rooms {
 		if room != nil && len(room.Cells) > daedalus.MaxCells {
 			return fmt.Errorf("%w: room footprint exceeds the v1 maximum", daedalus.ErrLimitExceeded)
@@ -46,10 +57,6 @@ func checkGatingLimits(request *daedalusv1.BuildGatingPlanRequest) error {
 		if corridor != nil && (len(corridor.Cells) > daedalus.MaxCells || len(corridor.Centerline) > daedalus.MaxCells) {
 			return fmt.Errorf("%w: corridor payload exceeds the v1 maximum", daedalus.ErrLimitExceeded)
 		}
-	}
-	count := uint64(request.Request.MainGateCount) + uint64(request.Request.OptionalGateCount)
-	if count > uint64(gating.MaxGates) {
-		return fmt.Errorf("%w: gate count exceeds %d", daedalus.ErrLimitExceeded, gating.MaxGates)
 	}
 	return nil
 }

@@ -71,20 +71,7 @@ func TestBucketQueueEnsureCoversPartialChunks(t *testing.T) {
 	}
 	counts := make([]int, buckets)
 	left := entries
-	for index := 0; index < buckets && left > 0; index++ {
-		counts[index] = 1
-		left--
-	}
-	for left > 0 {
-		for index := 0; index < buckets && left > 0; index++ {
-			add := bucketChunkCap
-			if add > left {
-				add = left
-			}
-			counts[index] += add
-			left -= add
-		}
-	}
+	fillBucketCounts(buckets, left, counts)
 
 	var queue bucketQueue
 	queue.ensure(entries)
@@ -111,6 +98,23 @@ func TestBucketQueueEnsureCoversPartialChunks(t *testing.T) {
 		got++
 	}
 	assert.Equal(t, entries, got)
+}
+
+func fillBucketCounts(buckets int, left int, counts []int) {
+	for index := 0; index < buckets && left > 0; index++ {
+		counts[index] = 1
+		left--
+	}
+	for left > 0 {
+		for index := 0; index < buckets && left > 0; index++ {
+			add := bucketChunkCap
+			if add > left {
+				add = left
+			}
+			counts[index] += add
+			left -= add
+		}
+	}
 }
 
 func TestBucketQueuePopsInStableDistanceOrder(t *testing.T) {

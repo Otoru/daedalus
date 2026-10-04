@@ -277,7 +277,10 @@ func TestShortcutsKeepGraphConnectedAndAddCycles(t *testing.T) {
 		{FromRoomID: 0, ToRoomID: 2},
 		{FromRoomID: 1, ToRoomID: 3},
 	}
-	connections, err := addExtraConnections(context.Background(), rooms, backbone, 2, 0, 0, 1, 0, nil)
+	connections, err := addExtraConnections(context.Background(), extraConnectionsRequest{
+		Rooms: rooms, Backbone: backbone, ExtraEdgeCount: 2,
+		Constraints: roleGridConstraints{CorridorWidth: 1},
+	})
 	require.NoError(t, err)
 	assert.Equal(t, []Connection{
 		{FromRoomID: 0, ToRoomID: 1},

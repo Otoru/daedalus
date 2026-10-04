@@ -216,22 +216,26 @@ h3 {
   background: var(--door-cell);
 }
 
-.swatch.solid { background: #697586; }
+.swatch.solid { background: #465569; border-top-color: #b2c8d9; }
 .swatch.semi-solid { background: repeating-linear-gradient(135deg, #d8a657 0 3px, #5d4526 3px 6px); }
 .swatch.climbable { background: repeating-linear-gradient(90deg, #9a7b4f 0 2px, #2c251d 2px 5px); }
 .swatch.hazard { background: repeating-linear-gradient(135deg, #dc5f5f 0 3px, #481d24 3px 6px); }
 
 .platform-verdict {
   display: block;
-  padding: 6px 8px;
-  border: 2px solid var(--text);
+  padding: 0;
+  border: 0;
   color: var(--text);
+  font-family: system-ui, sans-serif;
+  font-size: 1rem;
   font-weight: 700;
+  line-height: 1.25;
 }
 
-.platform-verdict.rejected { border-color: #e06c75; color: #ff9ba3; }
-.platform-verdict.unknown { border-color: #e5c07b; color: #f5d08b; }
-.platform-verdict.certified { border-color: #98c379; color: #b8e28e; }
+.platform-verdict::first-line { font-weight: 750; }
+.platform-verdict.certified { color: #b8e28e; }
+.platform-verdict.rejected { color: #ff9ba3; }
+.platform-verdict.unknown { color: #f5d08b; }
 
 .role-mark {
   display: inline-block;
@@ -440,10 +444,8 @@ input:focus-visible {
 }
 
 .inspector {
-  max-height: 220px;
-  margin: 0 8px 8px;
-  overflow: auto;
-  padding: 6px 8px;
+  margin: 20px 12px 0;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 2px;
   background: #161616;
@@ -455,12 +457,20 @@ input:focus-visible {
 }
 
 .inspector pre {
+  max-height: 180px;
+  overflow: auto;
   margin: 0;
   color: var(--code);
   font-size: 0.72rem;
   line-height: 1.4;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+
+#cell-summary { margin: 8px 0 0; line-height: 1.6; white-space: pre-line; }
+.cell-technical { margin-top: 12px; }
+.cell-technical summary { cursor: pointer; color: var(--muted); font-size: .75rem; padding: 4px 0; }
+.cell-technical[open] summary { margin-bottom: 8px; }
 
 .side-panel {
   display: flex;
@@ -487,15 +497,16 @@ input:focus-visible {
 }
 
 .view-controls {
-  flex: 0 1 auto;
-  max-height: 55%;
+  flex: 1 1 0;
   min-height: 0;
   overflow: auto;
+  padding-bottom: 16px;
+  scrollbar-gutter: stable;
 }
 
-/* A stable, mode-specific workspace avoids both dead controls and a panel
-   that jumps when the loaded map changes family. */
-.view-controls { min-height: 200px; }
+/* Controls scroll in their own remaining space; the JSON footer never
+   competes with the legend, even when the viewport is short. */
+.side-panel-right > .panel-header { flex-shrink: 0; }
 
 .map-tools,
 .view-empty,
@@ -578,7 +589,9 @@ input:focus-visible {
 	padding: 3px 28px 3px 8px;
 	border: 1px solid var(--border);
 	border-radius: 2px;
-	background: var(--background) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23b8b8b8' d='m1 1 4 4 4-4z'/%3E%3C/svg%3E") no-repeat right 9px center / 10px 6px;
+	background: linear-gradient(45deg, transparent 50%, #b8b8b8 50%) right 13px center / 4px 4px no-repeat,
+	  linear-gradient(135deg, #b8b8b8 50%, transparent 50%) right 9px center / 4px 4px no-repeat,
+	  var(--background);
 	color: var(--text);
 	font-size: 0.72rem;
 	font-weight: 600;
@@ -612,37 +625,31 @@ input:focus-visible {
 }
 
 .platform-summary-tools { margin-top: 14px; }
-.platform-verdict {
-  padding: 0;
-  border: 0;
-  color: var(--text);
-  font-family: system-ui, sans-serif;
-  font-size: 1rem;
-  line-height: 1.25;
-}
-.platform-verdict::first-line { font-weight: 750; }
-.platform-verdict.certified { color: #b8e28e; }
-.platform-verdict.rejected { color: #ff9ba3; }
-.platform-verdict.unknown { color: #f5d08b; }
 .graph-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
 .platform-legend { margin: 2px 0 0; padding: 0; }
+.graph-key { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: .7rem; }
+.graph-key span { display: inline-flex; align-items: center; gap: 4px; }
+.graph-line { width: 14px; border-top: 2px dashed currentColor; }
+.graph-line.jump { color: #7dd3fc; }
+.graph-line.double-jump { color: #c4b5fd; }
+.graph-line.dash { color: #fb7185; }
+.graph-line.wall { color: #fbbf24; }
+.graph-line.climb { color: #eac087; }
 
 .json-reference {
-  flex: 0 0 auto;
-  max-height: 180px;
-  overflow: auto;
+  margin: 20px 12px 0;
   border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 .json-reference summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 8px;
+  display: list-item;
+  padding: 12px 0;
   color: var(--muted);
   cursor: pointer;
   font-size: .75rem;
 }
-.json-reference .response-viewer { max-height: 140px; overflow: auto; }
+.json-reference summary .button { float: right; margin-top: -5px; }
+.json-reference .response-viewer { max-height: 240px; overflow: auto; overflow-wrap: anywhere; }
 
 .error-box {
   margin: 8px 8px 0;

@@ -181,34 +181,30 @@ func doorwayOpenings(
 	}
 	openings := make([]doorway, 0)
 	for start := 0; start+span <= len(slots); start++ {
-		direction := slots[start].out
-		spanCells := make([]Cell, 0, span)
-		outside := make([]Cell, 0, span)
-		fits := true
-		for offset := 0; offset < span; offset++ {
-			slot := slots[start+offset]
-			if slot.out != direction {
-				fits = false
-				break
-			}
-			if offset > 0 && !boundarySlotsAdjacent(slots[start+offset-1], slot) {
-				fits = false
-				break
-			}
-			step := direction.Delta()
-			cell := Cell{X: slot.cell.X + step.X, Y: slot.cell.Y + step.Y}
-			if _, inside := occupied[cell]; inside || !openingCellInGrid(cell, gridWidth, gridHeight) {
-				fits = false
-				break
-			}
-			spanCells = append(spanCells, slot.cell)
-			outside = append(outside, cell)
-		}
-		if fits {
-			openings = append(openings, doorway{out: direction, span: spanCells, outside: outside})
+		if opening, fits := doorwayAt(slots, start, span, gridWidth, gridHeight, occupied); fits {
+			openings = append(openings, opening)
 		}
 	}
 	return openings
+}
+
+func doorwayAt(slots []boundarySlot, start, span int, gridWidth, gridHeight uint32, occupied map[Cell]struct{}) (doorway, bool) {
+	direction := slots[start].out
+	opening := doorway{out: direction, span: make([]Cell, 0, span), outside: make([]Cell, 0, span)}
+	for offset := 0; offset < span; offset++ {
+		slot := slots[start+offset]
+		if slot.out != direction || (offset > 0 && !boundarySlotsAdjacent(slots[start+offset-1], slot)) {
+			return doorway{}, false
+		}
+		step := direction.Delta()
+		cell := Cell{X: slot.cell.X + step.X, Y: slot.cell.Y + step.Y}
+		if _, inside := occupied[cell]; inside || !openingCellInGrid(cell, gridWidth, gridHeight) {
+			return doorway{}, false
+		}
+		opening.span = append(opening.span, slot.cell)
+		opening.outside = append(opening.outside, cell)
+	}
+	return opening, true
 }
 
 func boundarySlotsAdjacent(first, second boundarySlot) bool {
@@ -324,6 +320,20 @@ func maximumCompatibleOpenings(openings []doorway) int {
 		return maximumCompatibleOpeningsWide(openings)
 	}
 	conflictBits := make([]uint64, count)
+	window := doorwayConflictBits(openings, conflictBits)
+	if window == 0 {
+		return count
+	}
+	if window <= doorwayWindowLimit && count >= window*2 {
+		return circularDoorwayMIS(count, window, conflictBits)
+	}
+	return exactDoorwayMIS(count, func(left, right int) bool {
+		return conflictBits[left]&(1<<uint(right)) != 0
+	})
+}
+
+func doorwayConflictBits(openings []doorway, conflictBits []uint64) int {
+	count := len(openings)
 	window := 0
 	for left := 0; left < count; left++ {
 		for right := left + 1; right < count; right++ {
@@ -342,15 +352,7 @@ func maximumCompatibleOpenings(openings []doorway) int {
 			}
 		}
 	}
-	if window == 0 {
-		return count
-	}
-	if window <= doorwayWindowLimit && count >= window*2 {
-		return circularDoorwayMIS(count, window, conflictBits)
-	}
-	return exactDoorwayMIS(count, func(left, right int) bool {
-		return conflictBits[left]&(1<<uint(right)) != 0
-	})
+	return window
 }
 
 func maximumCompatibleOpeningsWide(openings []doorway) int {
@@ -390,7 +392,33 @@ func maximumCompatibleOpeningsWide(openings []doorway) int {
 // is what made Typical spend most of its time here.
 func circularDoorwayMIS(count, window int, conflictBits []uint64) int {
 	states := 1 << window
-	maskLimit := states - 1
+	shiftConflict := doorwayShiftConflicts(count, window, conflictBits)
+	search := doorwayBitsSearch{
+		count: count, window: window, conflicts: conflictBits, shiftConflict: shiftConflict,
+		scoreA: make([]int, states), scoreB: make([]int, states),
+		stamp: make([]int, states), liveA: make([]int, 0, states), liveB: make([]int, 0, states),
+	}
+	best := 0
+	for prefix := 0; prefix < states; prefix++ {
+		if !prefixConsistentBits(prefix, window, conflictBits) {
+			continue
+		}
+		if value := search.runPrefix(prefix); value > best {
+			best = value
+		}
+	}
+	return best
+}
+
+type doorwayBitsSearch struct {
+	count, window, generation int
+	conflicts                 []uint64
+	shiftConflict             []int
+	scoreA, scoreB, stamp     []int
+	liveA, liveB              []int
+}
+
+func doorwayShiftConflicts(count, window int, conflictBits []uint64) []int {
 	shiftConflict := make([]int, count)
 	for pos := 0; pos < count; pos++ {
 		bits := 0
@@ -405,69 +433,59 @@ func circularDoorwayMIS(count, window int, conflictBits []uint64) int {
 		}
 		shiftConflict[pos] = bits
 	}
+	return shiftConflict
+}
 
-	scoreA := make([]int, states)
-	scoreB := make([]int, states)
-	// stamp records the generation that last wrote each mask of the buffer
-	// currently being filled. Generations only increase, so a stale write from
-	// the other buffer cannot be mistaken for this step.
-	stamp := make([]int, states)
-	liveA := make([]int, 0, states)
-	liveB := make([]int, 0, states)
-	generation := 0
+func (search *doorwayBitsSearch) runPrefix(prefix int) int {
+	start := encodeRecentMask(prefix, search.window)
+	search.scoreA[start] = 0
+	search.liveA = append(search.liveA[:0], start)
+	curScore, nextScore := search.scoreA, search.scoreB
+	curLive, nextLive := search.liveA, search.liveB
+	for pos := search.window; pos < search.count; pos++ {
+		search.generation++
+		nextLive = nextLive[:0]
+		nextLive = search.advanceBits(pos, curScore, nextScore, curLive, nextLive)
+		curScore, nextScore = nextScore, curScore
+		curLive, nextLive = nextLive, curLive
+	}
 	best := 0
-
-	for prefix := 0; prefix < states; prefix++ {
-		if !prefixConsistentBits(prefix, window, conflictBits) {
+	prefixCount := bitCount(prefix)
+	for _, mask := range curLive {
+		if !suffixAgreesBits(mask, prefix, search.count, search.window, search.conflicts) {
 			continue
 		}
-		start := encodeRecentMask(prefix, window)
-		scoreA[start] = 0
-		liveA = append(liveA[:0], start)
-
-		curScore, nextScore := scoreA, scoreB
-		curLive, nextLive := liveA, liveB
-		for pos := window; pos < count; pos++ {
-			generation++
-			nextLive = nextLive[:0]
-			for _, mask := range curLive {
-				base := curScore[mask]
-				skipped := (mask << 1) & maskLimit
-				if stamp[skipped] != generation {
-					stamp[skipped] = generation
-					nextScore[skipped] = base
-					nextLive = append(nextLive, skipped)
-				} else if base > nextScore[skipped] {
-					nextScore[skipped] = base
-				}
-				if mask&shiftConflict[pos] == 0 {
-					taken := skipped | 1
-					value := base + 1
-					if stamp[taken] != generation {
-						stamp[taken] = generation
-						nextScore[taken] = value
-						nextLive = append(nextLive, taken)
-					} else if value > nextScore[taken] {
-						nextScore[taken] = value
-					}
-				}
-			}
-			curScore, nextScore = nextScore, curScore
-			curLive, nextLive = nextLive, curLive
-		}
-
-		prefixCount := bitCount(prefix)
-		for _, mask := range curLive {
-			if !suffixAgreesBits(mask, prefix, count, window, conflictBits) {
-				continue
-			}
-			total := curScore[mask] + prefixCount
-			if total > best {
-				best = total
-			}
+		if total := curScore[mask] + prefixCount; total > best {
+			best = total
 		}
 	}
+	search.liveA, search.liveB = curLive, nextLive
 	return best
+}
+
+func (search *doorwayBitsSearch) advanceBits(pos int, curScore, nextScore, curLive, nextLive []int) []int {
+	maskLimit := (1 << search.window) - 1
+	for _, mask := range curLive {
+		base := curScore[mask]
+		skipped := (mask << 1) & maskLimit
+		nextLive = search.recordBits(nextScore, nextLive, skipped, base)
+		if mask&search.shiftConflict[pos] == 0 {
+			nextLive = search.recordBits(nextScore, nextLive, skipped|1, base+1)
+		}
+	}
+	return nextLive
+}
+
+func (search *doorwayBitsSearch) recordBits(scores, live []int, mask, value int) []int {
+	if search.stamp[mask] != search.generation {
+		search.stamp[mask] = search.generation
+		scores[mask] = value
+		return append(live, mask)
+	}
+	if value > scores[mask] {
+		scores[mask] = value
+	}
+	return live
 }
 
 func prefixConsistentBits(prefix, window int, conflictBits []uint64) bool {
@@ -506,49 +524,55 @@ func circularDoorwayMISWide(count, window int, conflict func(int, int) bool) int
 		if !prefixConsistent(prefix, window, conflict) {
 			continue
 		}
-		for index := range current {
-			current[index] = -1
-		}
-		current[encodeRecentMask(prefix, window)] = 0
-		for pos := window; pos < count; pos++ {
-			for index := range next {
-				next[index] = -1
-			}
-			maskLimit := states - 1
-			for mask := 0; mask < states; mask++ {
-				base := current[mask]
-				if base < 0 {
-					continue
-				}
-				skipped := (mask << 1) & maskLimit
-				if base > next[skipped] {
-					next[skipped] = base
-				}
-				if doorwayCanTake(mask, pos, window, conflict) {
-					taken := skipped | 1
-					value := base + 1
-					if value > next[taken] {
-						next[taken] = value
-					}
-				}
-			}
-			current, next = next, current
-		}
-		prefixCount := bitCount(prefix)
-		for mask := 0; mask < states; mask++ {
-			if current[mask] < 0 {
-				continue
-			}
-			if !suffixAgrees(mask, prefix, count, window, conflict) {
-				continue
-			}
-			total := current[mask] + prefixCount
-			if total > best {
-				best = total
-			}
+		if value := doorwayWidePrefix(prefix, count, window, conflict, current, next); value > best {
+			best = value
 		}
 	}
 	return best
+}
+
+func doorwayWidePrefix(prefix, count, window int, conflict func(int, int) bool, current, next []int) int {
+	for index := range current {
+		current[index] = -1
+	}
+	current[encodeRecentMask(prefix, window)] = 0
+	for pos := window; pos < count; pos++ {
+		for index := range next {
+			next[index] = -1
+		}
+		advanceDoorwayWide(pos, window, conflict, current, next)
+		current, next = next, current
+	}
+	best := 0
+	prefixCount := bitCount(prefix)
+	for mask, value := range current {
+		if value < 0 || !suffixAgrees(mask, prefix, count, window, conflict) {
+			continue
+		}
+		if total := value + prefixCount; total > best {
+			best = total
+		}
+	}
+	return best
+}
+
+func advanceDoorwayWide(pos, window int, conflict func(int, int) bool, current, next []int) {
+	maskLimit := len(current) - 1
+	for mask, base := range current {
+		if base < 0 {
+			continue
+		}
+		skipped := (mask << 1) & maskLimit
+		if base > next[skipped] {
+			next[skipped] = base
+		}
+		if doorwayCanTake(mask, pos, window, conflict) {
+			taken := skipped | 1
+			if value := base + 1; value > next[taken] {
+				next[taken] = value
+			}
+		}
+	}
 }
 
 func prefixConsistent(prefix, window int, conflict func(int, int) bool) bool {
@@ -621,16 +645,7 @@ func bitCount(value int) int {
 }
 
 func exactDoorwayMIS(count int, conflict func(int, int) bool) int {
-	conflicts := make([][]int, count)
-	for left := 0; left < count; left++ {
-		for right := left + 1; right < count; right++ {
-			if !conflict(left, right) {
-				continue
-			}
-			conflicts[left] = append(conflicts[left], right)
-			conflicts[right] = append(conflicts[right], left)
-		}
-	}
+	conflicts := buildDoorwayConflicts(count, conflict)
 	best := 0
 	used := make([]bool, count)
 	var search func(index, taken int)
@@ -654,4 +669,18 @@ func exactDoorwayMIS(count int, conflict func(int, int) bool) int {
 	}
 	search(0, 0)
 	return best
+}
+
+func buildDoorwayConflicts(count int, conflict func(int, int) bool) [][]int {
+	conflicts := make([][]int, count)
+	for left := 0; left < count; left++ {
+		for right := left + 1; right < count; right++ {
+			if !conflict(left, right) {
+				continue
+			}
+			conflicts[left] = append(conflicts[left], right)
+			conflicts[right] = append(conflicts[right], left)
+		}
+	}
+	return conflicts
 }

@@ -79,6 +79,18 @@ func (connector loopRoomsConnector) Connect(req ConnectionRequest) ([]Connection
 	if width == 0 {
 		width = 1
 	}
+	probe := loopRouteProbe(ctx, req)
+	ring, err := selectLoopRing(ctx, req, target, probe)
+	if err != nil {
+		return nil, err
+	}
+	if err := commitLoopRing(req, ring); err != nil {
+		return nil, err
+	}
+	return loopGrowBranches(ctx, req, ring.Edges, ring.Vertices, width)
+}
+
+func loopRouteProbe(ctx context.Context, req ConnectionRequest) func([]Connection) bool {
 	probe := func(edges []Connection) bool { return true }
 	if req.TryRoute != nil {
 		probe = func(edges []Connection) bool {
@@ -95,22 +107,22 @@ func (connector loopRoomsConnector) Connect(req ConnectionRequest) ([]Connection
 			return true
 		}
 	}
-	ring, err := selectLoopRing(ctx, req, target, probe)
-	if err != nil {
-		return nil, err
-	}
+	return probe
+}
+
+func commitLoopRing(req ConnectionRequest, ring loopRing) error {
 	if req.TryRoute != nil {
 		for _, edge := range ring.Edges {
 			ok, routeErr := req.TryRoute(edge.FromRoomID, edge.ToRoomID)
 			if routeErr != nil {
-				return nil, routeErr
+				return routeErr
 			}
 			if !ok {
-				return nil, ErrUnconnectablePlacement
+				return ErrUnconnectablePlacement
 			}
 		}
 	}
-	return loopGrowBranches(ctx, req, ring.Edges, ring.Vertices, width)
+	return nil
 }
 
 func loopGrowBranches(ctx context.Context, req ConnectionRequest, ringEdges []Connection, ringRooms []PlacedRoom, corridorWidth uint32) ([]Connection, error) {
@@ -123,22 +135,8 @@ func loopGrowBranches(ctx context.Context, req ConnectionRequest, ringEdges []Co
 	degree := make([]int, roomCount)
 	ringPairs := make([]bool, roomCount*roomCount)
 	result := append([]Connection(nil), ringEdges...)
-	for _, room := range ringRooms {
-		index := roomIndexByID(req.Rooms, room.ID)
-		if index >= 0 {
-			visited[index] = true
-		}
-	}
-	for _, edge := range ringEdges {
-		from := roomIndexByID(req.Rooms, edge.FromRoomID)
-		to := roomIndexByID(req.Rooms, edge.ToRoomID)
-		if from < 0 || to < 0 {
-			return nil, errTopologyUnknownRoom
-		}
-		degree[from]++
-		degree[to]++
-		ringPairs[from*roomCount+to] = true
-		ringPairs[to*roomCount+from] = true
+	if err := initializeLoopRing(req.Rooms, ringRooms, ringEdges, visited, degree, ringPairs); err != nil {
+		return nil, err
 	}
 	rejected := make([]bool, roomCount*roomCount)
 	for len(result) < roomCount {
@@ -176,12 +174,31 @@ func loopGrowBranches(ctx context.Context, req ConnectionRequest, ringEdges []Co
 	return result, nil
 }
 
+func initializeLoopRing(rooms []PlacedRoom, ringRooms []PlacedRoom, ringEdges []Connection, visited []bool, degree []int, ringPairs []bool) error {
+	roomCount := len(rooms)
+	for _, room := range ringRooms {
+		index := roomIndexByID(rooms, room.ID)
+		if index >= 0 {
+			visited[index] = true
+		}
+	}
+	for _, edge := range ringEdges {
+		from := roomIndexByID(rooms, edge.FromRoomID)
+		to := roomIndexByID(rooms, edge.ToRoomID)
+		if from < 0 || to < 0 {
+			return errTopologyUnknownRoom
+		}
+		degree[from]++
+		degree[to]++
+		ringPairs[from*roomCount+to] = true
+		ringPairs[to*roomCount+from] = true
+	}
+	return nil
+}
+
 func loopBestBranch(rooms []PlacedRoom, visited []bool, degree, capacity []int, rejected []bool, centers []loopCenter) (Connection, int, int, bool) {
 	if centers == nil {
-		centers = make([]loopCenter, len(rooms))
-		for index, room := range rooms {
-			centers[index] = loopDoubledCenter(room)
-		}
+		centers = loopRoomCenters(rooms)
 	}
 	roomCount := len(rooms)
 	var selected Connection
@@ -193,12 +210,12 @@ func loopBestBranch(rooms []PlacedRoom, visited []bool, degree, capacity []int, 
 			continue
 		}
 		for to := range rooms {
-			if visited[to] || degree[to] >= capacity[to] || rejected[from*roomCount+to] {
+			if !loopBranchAllowed(visited, degree, capacity, rejected, roomCount, from, to) {
 				continue
 			}
 			candidate := Connection{FromRoomID: rooms[from].ID, ToRoomID: rooms[to].ID}
 			weight := loopSquaredDistance(centers, from, to)
-			if !found || weight < selectedWeight || (weight == selectedWeight && loopConnectionLess(candidate, selected)) {
+			if loopBranchBetter(found, weight, selectedWeight, candidate, selected) {
 				selected, fromIndex, toIndex, selectedWeight, found = candidate, from, to, weight, true
 			}
 		}
@@ -206,42 +223,78 @@ func loopBestBranch(rooms []PlacedRoom, visited []bool, degree, capacity []int, 
 	return selected, fromIndex, toIndex, found
 }
 
+func loopRoomCenters(rooms []PlacedRoom) []loopCenter {
+	centers := make([]loopCenter, len(rooms))
+	for index, room := range rooms {
+		centers[index] = loopDoubledCenter(room)
+	}
+	return centers
+}
+
+func loopBranchBetter(found bool, weight, selectedWeight int64, candidate, selected Connection) bool {
+	return !found || weight < selectedWeight || (weight == selectedWeight && loopConnectionLess(candidate, selected))
+}
+
+func loopBranchAllowed(visited []bool, degree, capacity []int, rejected []bool, roomCount, from, to int) bool {
+	return !visited[to] && degree[to] < capacity[to] && !rejected[from*roomCount+to]
+}
+
 func loopSpliceBranch(ctx context.Context, req ConnectionRequest, edges []Connection, visited []bool, degree, capacity []int, ringPairs []bool) (bool, []Connection, error) {
-	roomCount := len(req.Rooms)
+	state := loopSpliceState{ctx: ctx, req: req, edges: edges, visited: visited, degree: degree, capacity: capacity, ringPairs: ringPairs}
 	for stranded := range req.Rooms {
 		if visited[stranded] || capacity[stranded] < 2 {
 			continue
 		}
 		for edgeIndex, old := range edges {
-			from := roomIndexByID(req.Rooms, old.FromRoomID)
-			to := roomIndexByID(req.Rooms, old.ToRoomID)
-			if from < 0 || to < 0 || ringPairs[from*roomCount+to] || degree[from] >= capacity[from] || degree[to] >= capacity[to] {
-				continue
-			}
-			if err := ctx.Err(); err != nil {
+			updated, ok, err := state.trySplice(edgeIndex, old, stranded)
+			if err != nil {
 				return false, nil, err
 			}
-			first := Connection{FromRoomID: req.Rooms[from].ID, ToRoomID: req.Rooms[stranded].ID}
-			second := Connection{FromRoomID: req.Rooms[to].ID, ToRoomID: req.Rooms[stranded].ID}
-			if req.RewireRoute != nil {
-				ok, err := req.RewireRoute(old, first, second)
-				if err != nil {
-					return false, nil, err
-				}
-				if !ok {
-					continue
-				}
+			if ok {
+				return true, updated, nil
 			}
-			updated := make([]Connection, 0, len(edges)+1)
-			updated = append(updated, edges[:edgeIndex]...)
-			updated = append(updated, first, second)
-			updated = append(updated, edges[edgeIndex+1:]...)
-			visited[stranded] = true
-			degree[stranded] = 2
-			return true, updated, nil
 		}
 	}
 	return false, nil, nil
+}
+
+type loopSpliceState struct {
+	ctx              context.Context
+	req              ConnectionRequest
+	edges            []Connection
+	visited          []bool
+	degree, capacity []int
+	ringPairs        []bool
+}
+
+func (state *loopSpliceState) trySplice(edgeIndex int, old Connection, stranded int) ([]Connection, bool, error) {
+	roomCount := len(state.req.Rooms)
+	from := roomIndexByID(state.req.Rooms, old.FromRoomID)
+	to := roomIndexByID(state.req.Rooms, old.ToRoomID)
+	if from < 0 || to < 0 || state.ringPairs[from*roomCount+to] || state.degree[from] >= state.capacity[from] || state.degree[to] >= state.capacity[to] {
+		return nil, false, nil
+	}
+	if err := state.ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	first := Connection{FromRoomID: state.req.Rooms[from].ID, ToRoomID: state.req.Rooms[stranded].ID}
+	second := Connection{FromRoomID: state.req.Rooms[to].ID, ToRoomID: state.req.Rooms[stranded].ID}
+	if state.req.RewireRoute != nil {
+		ok, err := state.req.RewireRoute(old, first, second)
+		if err != nil {
+			return nil, false, err
+		}
+		if !ok {
+			return nil, false, nil
+		}
+	}
+	updated := make([]Connection, 0, len(state.edges)+1)
+	updated = append(updated, state.edges[:edgeIndex]...)
+	updated = append(updated, first, second)
+	updated = append(updated, state.edges[edgeIndex+1:]...)
+	state.visited[stranded] = true
+	state.degree[stranded] = 2
+	return updated, true, nil
 }
 
 func loopAutomaticTarget(roomCount int) int {
@@ -328,28 +381,7 @@ func loopScaffold(ctx context.Context, rooms []PlacedRoom, centers []loopCenter)
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		bestFrom, bestTo := -1, -1
-		var bestWeight int64
-		found := false
-		for from := range rooms {
-			if !visited[from] {
-				continue
-			}
-			for to := range rooms {
-				if visited[to] {
-					continue
-				}
-				weight := loopSquaredDistance(centers, from, to)
-				candidate := Connection{FromRoomID: rooms[from].ID, ToRoomID: rooms[to].ID}
-				best := Connection{}
-				if bestFrom >= 0 {
-					best = Connection{FromRoomID: rooms[bestFrom].ID, ToRoomID: rooms[bestTo].ID}
-				}
-				if !found || weight < bestWeight || (weight == bestWeight && loopConnectionLess(candidate, best)) {
-					bestFrom, bestTo, bestWeight, found = from, to, weight, true
-				}
-			}
-		}
+		bestFrom, bestTo, found := loopScaffoldEdge(rooms, centers, visited)
 		if !found {
 			return nil, nil, ErrUnconnectablePlacement
 		}
@@ -365,7 +397,48 @@ func loopScaffold(ctx context.Context, rooms []PlacedRoom, centers []loopCenter)
 	return neighbors, treePairs, nil
 }
 
+func loopScaffoldEdge(rooms []PlacedRoom, centers []loopCenter, visited []bool) (bestFrom, bestTo int, found bool) {
+	bestFrom, bestTo = -1, -1
+	var bestWeight int64
+	found = false
+	for from := range rooms {
+		if !visited[from] {
+			continue
+		}
+		for to := range rooms {
+			if visited[to] {
+				continue
+			}
+			weight := loopSquaredDistance(centers, from, to)
+			candidate := Connection{FromRoomID: rooms[from].ID, ToRoomID: rooms[to].ID}
+			if loopScaffoldBetter(rooms, candidate, weight, bestFrom, bestTo, bestWeight, found) {
+				bestFrom, bestTo, bestWeight, found = from, to, weight, true
+			}
+		}
+	}
+	return bestFrom, bestTo, found
+}
+
+func loopScaffoldBetter(rooms []PlacedRoom, candidate Connection, weight int64, bestFrom, bestTo int, bestWeight int64, found bool) bool {
+	if !found || weight < bestWeight {
+		return true
+	}
+	if weight != bestWeight {
+		return false
+	}
+	best := Connection{FromRoomID: rooms[bestFrom].ID, ToRoomID: rooms[bestTo].ID}
+	return loopConnectionLess(candidate, best)
+}
+
 func loopCandidates(ctx context.Context, rooms []PlacedRoom, centers []loopCenter, neighbors [][]int, treePairs []bool, capacity []int, target int) ([]loopRingCandidate, error) {
+	candidates, err := collectLoopCandidates(ctx, rooms, centers, neighbors, treePairs, capacity)
+	if err != nil {
+		return nil, err
+	}
+	return closestLoopBand(rooms, candidates, target), nil
+}
+
+func collectLoopCandidates(ctx context.Context, rooms []PlacedRoom, centers []loopCenter, neighbors [][]int, treePairs []bool, capacity []int) ([]loopRingCandidate, error) {
 	n := len(rooms)
 	candidates := make([]loopRingCandidate, 0)
 	for first := 0; first < n; first++ {
@@ -373,35 +446,20 @@ func loopCandidates(ctx context.Context, rooms []PlacedRoom, centers []loopCente
 			if treePairs[first*n+second] {
 				continue
 			}
-			path, err := loopTreePath(ctx, neighbors, first, second)
+			candidate, ok, err := loopCandidateForPair(ctx, rooms, centers, neighbors, capacity, first, second)
 			if err != nil {
 				return nil, err
 			}
-			if len(path) < 3 || !loopPathEligible(path, capacity, n) {
-				continue
+			if ok {
+				candidates = append(candidates, candidate)
 			}
-			maxScaffold, totalScaffold := int64(0), int64(0)
-			pathEdges := make([]Connection, 0, len(path))
-			for index := 0; index+1 < len(path); index++ {
-				weight := loopSquaredDistance(centers, path[index], path[index+1])
-				totalScaffold += weight
-				if weight > maxScaffold {
-					maxScaffold = weight
-				}
-				pathEdges = append(pathEdges, Connection{FromRoomID: rooms[path[index]].ID, ToRoomID: rooms[path[index+1]].ID})
-			}
-			sort.SliceStable(pathEdges, func(left, right int) bool {
-				leftWeight := loopEdgeWeight(rooms, centers, pathEdges[left])
-				rightWeight := loopEdgeWeight(rooms, centers, pathEdges[right])
-				if leftWeight != rightWeight {
-					return leftWeight > rightWeight
-				}
-				return loopConnectionLess(pathEdges[left], pathEdges[right])
-			})
-			pathEdges = append(pathEdges, Connection{FromRoomID: rooms[first].ID, ToRoomID: rooms[second].ID})
-			candidates = append(candidates, loopRingCandidate{vertices: path, edges: pathEdges, closingSquared: loopSquaredDistance(centers, first, second), maxScaffold: maxScaffold, totalScaffold: totalScaffold})
 		}
 	}
+	return candidates, nil
+}
+
+func closestLoopBand(rooms []PlacedRoom, candidates []loopRingCandidate, target int) []loopRingCandidate {
+	n := len(rooms)
 	for radius := 0; radius <= n; radius++ {
 		lower, upper := target-radius, target+radius
 		if lower < 3 {
@@ -420,9 +478,39 @@ func loopCandidates(ctx context.Context, rooms []PlacedRoom, centers []loopCente
 			continue
 		}
 		sort.SliceStable(band, func(left, right int) bool { return loopCandidateLess(rooms, band[left], band[right], target) })
-		return band, nil
+		return band
 	}
-	return nil, nil
+	return nil
+}
+
+func loopCandidateForPair(ctx context.Context, rooms []PlacedRoom, centers []loopCenter, neighbors [][]int, capacity []int, first, second int) (loopRingCandidate, bool, error) {
+	path, err := loopTreePath(ctx, neighbors, first, second)
+	if err != nil {
+		return loopRingCandidate{}, false, err
+	}
+	if len(path) < 3 || !loopPathEligible(path, capacity, len(rooms)) {
+		return loopRingCandidate{}, false, nil
+	}
+	maxScaffold, totalScaffold := int64(0), int64(0)
+	pathEdges := make([]Connection, 0, len(path))
+	for index := 0; index+1 < len(path); index++ {
+		weight := loopSquaredDistance(centers, path[index], path[index+1])
+		totalScaffold += weight
+		if weight > maxScaffold {
+			maxScaffold = weight
+		}
+		pathEdges = append(pathEdges, Connection{FromRoomID: rooms[path[index]].ID, ToRoomID: rooms[path[index+1]].ID})
+	}
+	sort.SliceStable(pathEdges, func(left, right int) bool {
+		leftWeight := loopEdgeWeight(rooms, centers, pathEdges[left])
+		rightWeight := loopEdgeWeight(rooms, centers, pathEdges[right])
+		if leftWeight != rightWeight {
+			return leftWeight > rightWeight
+		}
+		return loopConnectionLess(pathEdges[left], pathEdges[right])
+	})
+	pathEdges = append(pathEdges, Connection{FromRoomID: rooms[first].ID, ToRoomID: rooms[second].ID})
+	return loopRingCandidate{vertices: path, edges: pathEdges, closingSquared: loopSquaredDistance(centers, first, second), maxScaffold: maxScaffold, totalScaffold: totalScaffold}, true, nil
 }
 
 func loopPathEligible(path []int, capacity []int, roomCount int) bool {
@@ -490,17 +578,30 @@ func loopTreePath(ctx context.Context, neighbors [][]int, from, to int) ([]int, 
 		if current == to {
 			break
 		}
-		for _, next := range neighbors[current] {
-			if parent[next] >= 0 {
-				continue
-			}
-			parent[next] = current
-			queue = append(queue, next)
-		}
+		queue = appendUnvisitedLoopNeighbors(queue, parent, neighbors[current], current)
 	}
 	if parent[to] < 0 {
 		return nil, nil
 	}
+	path := loopParentPath(parent, from, to)
+	if req := ctx.Err(); req != nil {
+		return nil, req
+	}
+	return path, nil
+}
+
+func appendUnvisitedLoopNeighbors(queue, parent, neighbors []int, current int) []int {
+	for _, next := range neighbors {
+		if parent[next] >= 0 {
+			continue
+		}
+		parent[next] = current
+		queue = append(queue, next)
+	}
+	return queue
+}
+
+func loopParentPath(parent []int, from, to int) []int {
 	path := []int{to}
 	for path[len(path)-1] != from {
 		path = append(path, parent[path[len(path)-1]])
@@ -508,10 +609,7 @@ func loopTreePath(ctx context.Context, neighbors [][]int, from, to int) ([]int, 
 	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
 		path[left], path[right] = path[right], path[left]
 	}
-	if req := ctx.Err(); req != nil {
-		return nil, req
-	}
-	return path, nil
+	return path
 }
 
 func loopEdgeWeight(rooms []PlacedRoom, centers []loopCenter, edge Connection) int64 {

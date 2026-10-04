@@ -350,24 +350,10 @@ func (g *geometry) splitRun(row, from, to int32) []SurfaceInterval {
 		if hi-lo <= contactEpsilon {
 			continue
 		}
-		middle := float64((lo + hi) / 2)
-		leftEdge := float64(middle - inset)
-		rightEdge := float64(middle + inset)
-		headroom := math.Inf(1)
-		hazard := false
-		touched := false
-		for column := from; column <= to; column++ {
-			if float64(column) >= rightEdge || float64(float64(column)+1) <= leftEdge {
-				continue
-			}
-			touched = true
-			headroom = math.Min(headroom, g.headroomAt(column, row))
-			hazard = hazard || g.standHazardAt(column, row)
-		}
-		if !touched {
+		piece, ok := g.runPiece(row, from, to, inset, lo, hi)
+		if !ok {
 			continue
 		}
-		piece := SurfaceInterval{Footing: Span{Lo: lo, Hi: hi}, Headroom: headroom, Hazard: hazard}
 		if n := len(out); n > 0 && out[n-1].Headroom == piece.Headroom && out[n-1].Hazard == piece.Hazard {
 			out[n-1].Footing.Hi = hi
 			continue
@@ -375,6 +361,24 @@ func (g *geometry) splitRun(row, from, to int32) []SurfaceInterval {
 		out = append(out, piece)
 	}
 	return out
+}
+
+func (g *geometry) runPiece(row, from, to int32, inset, lo, hi float64) (SurfaceInterval, bool) {
+	middle := float64((lo + hi) / 2)
+	leftEdge := float64(middle - inset)
+	rightEdge := float64(middle + inset)
+	headroom := math.Inf(1)
+	hazard := false
+	touched := false
+	for column := from; column <= to; column++ {
+		if float64(column) >= rightEdge || float64(column)+1 <= leftEdge {
+			continue
+		}
+		touched = true
+		headroom = math.Min(headroom, g.headroomAt(column, row))
+		hazard = hazard || g.standHazardAt(column, row)
+	}
+	return SurfaceInterval{Footing: Span{Lo: lo, Hi: hi}, Headroom: headroom, Hazard: hazard}, touched
 }
 
 // sortedUnique returns the cuts inside the span, in ascending order, with the
@@ -786,7 +790,6 @@ func (g *geometry) sweep(a arc, exempt departure, ignoreSemi SurfaceID, ignoreSe
 	if a.span <= timeEpsilon {
 		return contact{kind: contactNone}
 	}
-
 	// A landing and the collision box of the platform it lands on fire at the
 	// SAME instant: the feet cross the top edge, which is both the legal
 	// contact and the boundary of the forbidden box. The two are therefore
@@ -794,15 +797,6 @@ func (g *geometry) sweep(a arc, exempt departure, ignoreSemi SurfaceID, ignoreSe
 	// own platform: the full-support footing stops r+eps short of the edge,
 	// so a landing that is legal is never simultaneous with entering a
 	// different run's expanded box.
-	blocked := contact{kind: contactNone, at: math.Inf(1)}
-	landing := contact{kind: contactNone, at: math.Inf(1)}
-	note := func(c contact) {
-		if c.kind == contactNone || c.at >= blocked.at {
-			return
-		}
-		blocked = c
-	}
-
 	r := g.profile.BodyHalfWidth + g.profile.Margin
 	xRange := axisBounds(a.x0, a.vx, a.ax, a.span)
 	yRange := axisBounds(a.y0, a.vy, a.ay, a.span)
@@ -816,69 +810,111 @@ func (g *geometry) sweep(a arc, exempt departure, ignoreSemi SurfaceID, ignoreSe
 	topRow--
 	bottomRow++
 
-	// Leaving the room is a collision with the surround.
-	note(g.surroundContact(a, bodyX, bodyY, spent))
-
 	hazardImmune := phaseMode == MotionModeDashing &&
 		g.profile.Dash != nil && g.profile.Dash.ShadowPassesHazard &&
 		abilities.Has(AbilityShadowDash)
-
+	state := sweepState{
+		g: g, a: a, exempt: exempt, ignoreSemi: ignoreSemi, ignoreSemiActive: ignoreSemiActive,
+		hazardImmune: hazardImmune, spent: spent, bodyX: bodyX, xRange: xRange,
+		blocked: contact{kind: contactNone, at: math.Inf(1)}, landing: contact{kind: contactNone, at: math.Inf(1)},
+	}
+	// Leaving the room is a collision with the surround.
+	state.note(g.surroundContact(a, bodyX, bodyY, spent))
 	for row := maxInt32(topRow, 0); row <= minInt32(bottomRow, int32(g.grid.Height)-1); row++ {
-		for _, run := range g.blocking[row] {
-			if !overlapsOpen(bodyX, run.span()) {
-				continue
-			}
-			box, ok := g.departureBox(row, run, exempt)
-			if !ok {
-				continue
-			}
-			if !spent.collision() {
-				return contact{kind: contactNone}
-			}
-			if at, hit := g.boxTimes(a, box).first(); hit {
-				side, face := g.wallContact(a, at, box)
-				note(contact{kind: contactBlocked, at: at, wallSide: side, wallFace: face})
-			}
-		}
-		if !hazardImmune {
-			for _, run := range g.hazards[row] {
-				if !overlapsOpen(bodyX, run.span()) {
-					continue
-				}
-				if !spent.collision() {
-					return contact{kind: contactNone}
-				}
-				// A hazard's top edge IS expanded: there is no legal contact
-				// with a spike, so standing on one is death, not a landing.
-				box := g.obstacleBox(row, run)
-				box.Y.Hi += g.profile.Margin
-				if at, ok := g.boxTimes(a, box).first(); ok {
-					note(contact{kind: contactHazard, at: at})
-				}
-			}
-		}
-		for _, site := range g.landings[row] {
-			if site.semi && ignoreSemiActive && site.surface == ignoreSemi {
-				continue
-			}
-			if !overlapsOpen(xRange, site.footing) {
-				continue
-			}
-			at, ok := g.landingTime(a, site)
-			if !ok || at >= landing.at {
-				continue
-			}
-			landing = contact{kind: contactLanding, at: at, site: site}
+		if !state.scanRow(row) {
+			return contact{kind: contactNone}
 		}
 	}
-
 	switch {
-	case landing.kind != contactNone && landing.at <= blocked.at+contactEpsilon:
-		return landing
-	case blocked.kind != contactNone && !math.IsInf(blocked.at, 1):
-		return blocked
+	case state.landing.kind != contactNone && state.landing.at <= state.blocked.at+contactEpsilon:
+		return state.landing
+	case state.blocked.kind != contactNone && !math.IsInf(state.blocked.at, 1):
+		return state.blocked
 	default:
 		return contact{kind: contactNone}
+	}
+}
+
+type sweepState struct {
+	g                *geometry
+	a                arc
+	exempt           departure
+	ignoreSemi       SurfaceID
+	ignoreSemiActive bool
+	hazardImmune     bool
+	spent            *spend
+	bodyX, xRange    Span
+	blocked, landing contact
+}
+
+func (s *sweepState) note(c contact) {
+	if c.kind != contactNone && c.at < s.blocked.at {
+		s.blocked = c
+	}
+}
+
+func (s *sweepState) scanRow(row int32) bool {
+	if !s.scanBlocking(row) || !s.scanHazards(row) {
+		return false
+	}
+	s.scanLandings(row)
+	return true
+}
+
+func (s *sweepState) scanBlocking(row int32) bool {
+	for _, run := range s.g.blocking[row] {
+		if !overlapsOpen(s.bodyX, run.span()) {
+			continue
+		}
+		box, ok := s.g.departureBox(row, run, s.exempt)
+		if !ok {
+			continue
+		}
+		if !s.spent.collision() {
+			return false
+		}
+		if at, hit := s.g.boxTimes(s.a, box).first(); hit {
+			side, face := s.g.wallContact(s.a, at, box)
+			s.note(contact{kind: contactBlocked, at: at, wallSide: side, wallFace: face})
+		}
+	}
+	return true
+}
+
+func (s *sweepState) scanHazards(row int32) bool {
+	if s.hazardImmune {
+		return true
+	}
+	for _, run := range s.g.hazards[row] {
+		if !overlapsOpen(s.bodyX, run.span()) {
+			continue
+		}
+		if !s.spent.collision() {
+			return false
+		}
+		// A hazard's top edge is expanded: standing on a spike is not a landing.
+		box := s.g.obstacleBox(row, run)
+		box.Y.Hi += s.g.profile.Margin
+		if at, ok := s.g.boxTimes(s.a, box).first(); ok {
+			s.note(contact{kind: contactHazard, at: at})
+		}
+	}
+	return true
+}
+
+func (s *sweepState) scanLandings(row int32) {
+	for _, site := range s.g.landings[row] {
+		if site.semi && s.ignoreSemiActive && site.surface == s.ignoreSemi {
+			continue
+		}
+		if !overlapsOpen(s.xRange, site.footing) {
+			continue
+		}
+		at, ok := s.g.landingTime(s.a, site)
+		if !ok || at >= s.landing.at {
+			continue
+		}
+		s.landing = contact{kind: contactLanding, at: at, site: site}
 	}
 }
 

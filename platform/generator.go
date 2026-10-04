@@ -307,28 +307,11 @@ func synthesizeOnce(ctx context.Context, oracle Oracle, config Config, seed Seed
 		if err := ctx.Err(); err != nil {
 			return zero, err
 		}
-		room := &macro.Plane.Rooms[index]
-		abilities := stages[index]
-
-		roomConfig := config
-		roomConfig.Seed = Seed(streams.rhythm.Next())
-		rhythm, err := GenerateRhythm(ctx, oracle, roomConfig, abilities)
+		synthesis, err := synthesizeRoom(ctx, oracle, config, &macro.Plane.Rooms[index], stages[index], &streams)
 		if err != nil {
 			return zero, err
 		}
-
-		placements, dropped, err := placeRhythm(room, rhythm, &streams.placement)
-		if err != nil {
-			return zero, err
-		}
-
-		rooms[index] = RoomSynthesis{
-			Room:       room.ID,
-			Abilities:  abilities,
-			Rhythm:     rhythm,
-			Placements: placements,
-			Dropped:    dropped,
-		}
+		rooms[index] = synthesis
 	}
 
 	// Openings and anchors were chosen on the empty shell. The stamp writes
@@ -427,6 +410,28 @@ func synthesizeOnce(ctx context.Context, oracle Oracle, config Config, seed Seed
 		return zero, err
 	}
 	return layout, nil
+}
+
+func synthesizeRoom(ctx context.Context, oracle Oracle, config Config, room *Room, abilities AbilitySet, streams *synthStreams) (RoomSynthesis, error) {
+	roomConfig := config
+	roomConfig.Seed = Seed(streams.rhythm.Next())
+	rhythm, err := GenerateRhythm(ctx, oracle, roomConfig, abilities)
+	if err != nil {
+		return RoomSynthesis{}, err
+	}
+	placements, dropped, err := placeRhythm(room, rhythm, &streams.placement)
+	if err != nil {
+		return RoomSynthesis{}, err
+	}
+	addUpperGallery(room, config.Profile)
+	if abilities.Has(AbilityWallJump) {
+		addWallChimney(room, config.Profile)
+	}
+	if abilities.Has(AbilityClimb) {
+		addLadderMotif(room, config.Profile)
+	}
+	addTerraces(room, config.Profile)
+	return RoomSynthesis{Room: room.ID, Abilities: abilities, Rhythm: rhythm, Placements: placements, Dropped: dropped}, nil
 }
 
 // judgeLayout folds every room's two judgements and the macro audit into one.
@@ -585,6 +590,11 @@ func groundedNodeAt(graph *JumpGraph, x, height float64) (MotionNodeID, bool) {
 			continue
 		}
 		distance := distanceToSpan(node.Footing, x)
+		// A platform removed while seating an opening cannot be replaced by
+		// some unrelated surface at the same height elsewhere in the room.
+		if distance > 0.5 {
+			continue
+		}
 		if !found || distance < bestDistance {
 			best, bestDistance, found = node.ID, distance, true
 		}
@@ -655,19 +665,7 @@ func mergeRoomGraphs(graphs []JumpGraph, model string, config Config) (JumpGraph
 			node.Surface += SurfaceID(surfaceBase)
 			merged.Nodes = append(merged.Nodes, node)
 		}
-		var highestPassage uint64
-		for _, edge := range graph.Edges {
-			if uint64(edge.Passage) > highestPassage {
-				highestPassage = uint64(edge.Passage)
-			}
-			edge.ID += MotionEdgeID(edgeBase)
-			edge.From += MotionNodeID(nodeBase)
-			edge.To += MotionNodeID(nodeBase)
-			if edge.Passage != 0 {
-				edge.Passage += PassageID(passageBase)
-			}
-			merged.Edges = append(merged.Edges, edge)
-		}
+		highestPassage := appendRoomEdges(&merged, graph.Edges, edgeBase, nodeBase, passageBase)
 
 		surfaceBase += uint64(len(graph.Surfaces))
 		nodeBase += uint64(len(graph.Nodes))
@@ -682,6 +680,23 @@ func mergeRoomGraphs(graphs []JumpGraph, model string, config Config) (JumpGraph
 		}
 	}
 	return merged, spans, nil
+}
+
+func appendRoomEdges(merged *JumpGraph, edges []MotionEdge, edgeBase, nodeBase, passageBase uint64) uint64 {
+	var highestPassage uint64
+	for _, edge := range edges {
+		if uint64(edge.Passage) > highestPassage {
+			highestPassage = uint64(edge.Passage)
+		}
+		edge.ID += MotionEdgeID(edgeBase)
+		edge.From += MotionNodeID(nodeBase)
+		edge.To += MotionNodeID(nodeBase)
+		if edge.Passage != 0 {
+			edge.Passage += PassageID(passageBase)
+		}
+		merged.Edges = append(merged.Edges, edge)
+	}
+	return highestPassage
 }
 
 // macroConfigFor maps a platform Config onto the macro front's input.
@@ -724,6 +739,7 @@ func macroConfigFor(config Config, seed Seed) MacroConfig {
 		MaxWidth:  maxWidth,
 		MinHeight: minHeight,
 		MaxHeight: maxHeight,
+		Base:      config.Progression.Base,
 		Steps:     config.Progression.Steps,
 	}
 }

@@ -71,43 +71,7 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		selected, feasible, selectErr := search.selectFeasibleEdge()
-		if selectErr != nil {
-			return nil, selectErr
-		}
-		if !feasible {
-			if search.req.TryRoute != nil && search.req.RewireRoute == nil {
-				return nil, search.unconnectableRoom()
-			}
-			spliced, spliceErr := search.spliceStranded(&edges)
-			if spliceErr != nil {
-				return nil, spliceErr
-			}
-			if !spliced {
-				if search.req.TryRoute != nil {
-					return nil, search.unconnectableRoom()
-				}
-				return nil, ErrUnconnectablePlacement
-			}
-			continue
-		}
-		if search.req.TryRoute != nil {
-			ok, routeErr := search.req.TryRoute(selected.connection.FromRoomID, selected.connection.ToRoomID)
-			if routeErr != nil {
-				return nil, routeErr
-			}
-			if !ok {
-				search.rejectPair(selected.fromIndex, selected.toIndex)
-				continue
-			}
-		}
-		edges = append(edges, selected.connection)
-		search.used[selected.fromIndex]++
-		search.used[selected.toIndex]++
-		search.visited[selected.toIndex] = true
-		search.hasKey[selected.toIndex] = false
-		search.linkRooms(selected.fromIndex, selected.toIndex)
-		if err := search.updateKeys(selected.toIndex); err != nil {
+		if err := search.advance(&edges); err != nil {
 			return nil, err
 		}
 	}
@@ -115,6 +79,61 @@ func (primRoomsConnector) Connect(req ConnectionRequest) ([]Connection, error) {
 		return nil, err
 	}
 	return edges, nil
+}
+
+func (search *primSearch) advance(edges *[]Connection) error {
+	selected, feasible, err := search.selectFeasibleEdge()
+	if err != nil {
+		return err
+	}
+	if !feasible {
+		return search.spliceOrFail(edges)
+	}
+	accepted, err := search.routeCandidate(selected)
+	if err != nil {
+		return err
+	}
+	if !accepted {
+		return nil
+	}
+	*edges = append(*edges, selected.connection)
+	search.used[selected.fromIndex]++
+	search.used[selected.toIndex]++
+	search.visited[selected.toIndex] = true
+	search.hasKey[selected.toIndex] = false
+	search.linkRooms(selected.fromIndex, selected.toIndex)
+	return search.updateKeys(selected.toIndex)
+}
+
+func (search *primSearch) spliceOrFail(edges *[]Connection) error {
+	if search.req.TryRoute != nil && search.req.RewireRoute == nil {
+		return search.unconnectableRoom()
+	}
+	spliced, err := search.spliceStranded(edges)
+	if err != nil {
+		return err
+	}
+	if spliced {
+		return nil
+	}
+	if search.req.TryRoute != nil {
+		return search.unconnectableRoom()
+	}
+	return ErrUnconnectablePlacement
+}
+
+func (search *primSearch) routeCandidate(selected primEdgeCandidate) (bool, error) {
+	if search.req.TryRoute == nil {
+		return true, nil
+	}
+	ok, err := search.req.TryRoute(selected.connection.FromRoomID, selected.connection.ToRoomID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		search.rejectPair(selected.fromIndex, selected.toIndex)
+	}
+	return ok, nil
 }
 
 // primSearch holds the growing tree of one prim_rooms_v1 Connect call.
@@ -184,12 +203,9 @@ func (search *primSearch) updateKeys(fromIndex int) error {
 		if search.visited[toIndex] {
 			continue
 		}
-		if search.keyUpdates%primCancellationUpdateInterval == 0 {
-			if err := search.ctx.Err(); err != nil {
-				return err
-			}
+		if err := search.tickKeyUpdate(); err != nil {
+			return err
 		}
-		search.keyUpdates++
 
 		if search.used[toIndex] >= search.capacity[toIndex] {
 			continue
@@ -250,8 +266,7 @@ func (search *primSearch) ensureFeasibleKey(toIndex int) (bool, error) {
 	}
 	if search.hasKey[toIndex] {
 		fromIndex := search.bestKeys[toIndex].fromIndex
-		if search.visited[fromIndex] && search.used[fromIndex] < search.capacity[fromIndex] &&
-			!search.pairRejected(fromIndex, toIndex) {
+		if search.canUseKey(fromIndex, toIndex) {
 			return true, nil
 		}
 	}
@@ -263,12 +278,9 @@ func (search *primSearch) ensureFeasibleKey(toIndex int) (bool, error) {
 		if search.pairRejected(fromIndex, toIndex) {
 			continue
 		}
-		if search.keyUpdates%primCancellationUpdateInterval == 0 {
-			if err := search.ctx.Err(); err != nil {
-				return false, err
-			}
+		if err := search.tickKeyUpdate(); err != nil {
+			return false, err
 		}
-		search.keyUpdates++
 		candidate := primEdgeCandidate{
 			connection:    Connection{FromRoomID: from.ID, ToRoomID: search.req.Rooms[toIndex].ID},
 			fromIndex:     fromIndex,
@@ -282,6 +294,20 @@ func (search *primSearch) ensureFeasibleKey(toIndex int) (bool, error) {
 		}
 	}
 	return search.hasKey[toIndex], nil
+}
+
+func (search *primSearch) canUseKey(fromIndex, toIndex int) bool {
+	return search.visited[fromIndex] && search.used[fromIndex] < search.capacity[fromIndex] && !search.pairRejected(fromIndex, toIndex)
+}
+
+func (search *primSearch) tickKeyUpdate() error {
+	if search.keyUpdates%primCancellationUpdateInterval == 0 {
+		if err := search.ctx.Err(); err != nil {
+			return err
+		}
+	}
+	search.keyUpdates++
+	return nil
 }
 
 func (search *primSearch) pairRejected(from, to int) bool {
@@ -325,32 +351,16 @@ func (search *primSearch) spliceStranded(edges *[]Connection) (bool, error) {
 	if search.req.RewireRoute != nil {
 		return search.spliceStrandedAgainstRouter(edges)
 	}
-	bestStranded := -1
-	bestRoom := -1
-	bestNeighbor := -1
+	candidates, err := search.spliceCandidates()
+	if err != nil {
+		return false, err
+	}
+	bestStranded, bestRoom, bestNeighbor := -1, -1, -1
 	var bestEdge primEdgeCandidate
 	found := false
-	for stranded := range search.req.Rooms {
-		if search.visited[stranded] || search.capacity[stranded] < 2 {
-			continue
-		}
-		if err := search.ctx.Err(); err != nil {
-			return false, err
-		}
-		nearest, nearestEdge, ok := search.nearestTreeRoom(stranded)
-		if !ok {
-			continue
-		}
-		neighbor, neighborOK := search.neighborToMove(stranded, nearest)
-		if !neighborOK {
-			continue
-		}
-		if !found || primEdgeLess(nearestEdge, bestEdge) {
-			found = true
-			bestStranded = stranded
-			bestRoom = nearest
-			bestNeighbor = neighbor
-			bestEdge = nearestEdge
+	for _, candidate := range candidates {
+		if !found || primEdgeLess(candidate.nearest, bestEdge) {
+			bestStranded, bestRoom, bestNeighbor, bestEdge, found = candidate.stranded, candidate.room, candidate.neighbor, candidate.nearest, true
 		}
 	}
 	if !found || !search.rewireTreeEdge(edges, bestRoom, bestNeighbor, bestStranded) {
@@ -375,14 +385,14 @@ type primSplice struct {
 // spliceStrandedAgainstRouter tries splices in the same order as the
 // opening-budget splice, cheapest nearest edge first. A splice whose two new
 // corridors do not reserve is skipped. The first one that reserves is kept.
-func (search *primSearch) spliceStrandedAgainstRouter(edges *[]Connection) (bool, error) {
+func (search *primSearch) spliceCandidates() ([]primSplice, error) {
 	candidates := make([]primSplice, 0)
 	for stranded := range search.req.Rooms {
 		if search.visited[stranded] || search.capacity[stranded] < 2 {
 			continue
 		}
 		if err := search.ctx.Err(); err != nil {
-			return false, err
+			return nil, err
 		}
 		nearest, nearestEdge, ok := search.nearestTreeRoom(stranded)
 		if !ok {
@@ -396,6 +406,14 @@ func (search *primSearch) spliceStrandedAgainstRouter(edges *[]Connection) (bool
 			stranded: stranded, room: nearest, neighbor: neighbor, nearest: nearestEdge,
 		})
 	}
+	return candidates, nil
+}
+
+func (search *primSearch) spliceStrandedAgainstRouter(edges *[]Connection) (bool, error) {
+	candidates, err := search.spliceCandidates()
+	if err != nil {
+		return false, err
+	}
 	sort.Slice(candidates, func(left, right int) bool {
 		if primEdgeLess(candidates[left].nearest, candidates[right].nearest) {
 			return true
@@ -406,36 +424,46 @@ func (search *primSearch) spliceStrandedAgainstRouter(edges *[]Connection) (bool
 		return candidates[left].stranded < candidates[right].stranded
 	})
 	for _, candidate := range candidates {
-		roomID := search.req.Rooms[candidate.room].ID
-		neighborID := search.req.Rooms[candidate.neighbor].ID
-		strandedID := search.req.Rooms[candidate.stranded].ID
-		if !search.treeEdgePresent(edges, roomID, neighborID) {
-			continue
-		}
-		ok, err := search.req.RewireRoute(
-			Connection{FromRoomID: roomID, ToRoomID: neighborID},
-			Connection{FromRoomID: roomID, ToRoomID: strandedID},
-			Connection{FromRoomID: neighborID, ToRoomID: strandedID},
-		)
+		spliced, err := search.tryRouterSplice(edges, candidate)
 		if err != nil {
 			return false, err
 		}
-		if !ok {
-			continue
+		if spliced {
+			return true, nil
 		}
-		if !search.rewireTreeEdge(edges, candidate.room, candidate.neighbor, candidate.stranded) {
-			return false, errGeneratorInvariant
-		}
-		search.used[candidate.stranded] += 2
-		search.visited[candidate.stranded] = true
-		search.hasKey[candidate.stranded] = false
-		clear(search.infeasible)
-		if err := search.updateKeys(candidate.stranded); err != nil {
-			return false, err
-		}
-		return true, nil
 	}
 	return false, nil
+}
+
+func (search *primSearch) tryRouterSplice(edges *[]Connection, candidate primSplice) (bool, error) {
+	roomID := search.req.Rooms[candidate.room].ID
+	neighborID := search.req.Rooms[candidate.neighbor].ID
+	strandedID := search.req.Rooms[candidate.stranded].ID
+	if !search.treeEdgePresent(edges, roomID, neighborID) {
+		return false, nil
+	}
+	ok, err := search.req.RewireRoute(
+		Connection{FromRoomID: roomID, ToRoomID: neighborID},
+		Connection{FromRoomID: roomID, ToRoomID: strandedID},
+		Connection{FromRoomID: neighborID, ToRoomID: strandedID},
+	)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	if !search.rewireTreeEdge(edges, candidate.room, candidate.neighbor, candidate.stranded) {
+		return false, errGeneratorInvariant
+	}
+	search.used[candidate.stranded] += 2
+	search.visited[candidate.stranded] = true
+	search.hasKey[candidate.stranded] = false
+	clear(search.infeasible)
+	if err := search.updateKeys(candidate.stranded); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (search *primSearch) treeEdgePresent(edges *[]Connection, left, right RoomID) bool {

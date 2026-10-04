@@ -169,11 +169,17 @@ func TestExtraEdgePhaseHonorsACallerCeiling(t *testing.T) {
 		{FromRoomID: 1, ToRoomID: 2},
 		{FromRoomID: 2, ToRoomID: 3},
 	}
-	uncapped, err := addExtraConnections(context.Background(), rooms, backbone, 10, 80, 80, 1, 0, nil)
+	uncapped, err := addExtraConnections(context.Background(), extraConnectionsRequest{
+		Rooms: rooms, Backbone: backbone, ExtraEdgeCount: 10,
+		Constraints: roleGridConstraints{Width: 80, Height: 80, CorridorWidth: 1},
+	})
 	require.NoError(t, err)
 	assert.Greater(t, maxConnectionDegree(rooms, uncapped), 2)
 
-	capped, err := addExtraConnections(context.Background(), rooms, backbone, 10, 80, 80, 1, 2, nil)
+	capped, err := addExtraConnections(context.Background(), extraConnectionsRequest{
+		Rooms: rooms, Backbone: backbone, ExtraEdgeCount: 10,
+		Constraints: roleGridConstraints{Width: 80, Height: 80, CorridorWidth: 1, MaxRoomEdges: 2},
+	})
 	require.NoError(t, err)
 	assert.LessOrEqual(t, maxConnectionDegree(rooms, capped), 2)
 	assert.Less(t, len(capped), len(uncapped))

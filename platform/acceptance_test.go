@@ -186,10 +186,13 @@ func qualityLayoutFromBytes(payload []byte) (PlatformLayout, error) {
 	if err != nil {
 		return zero, err
 	}
-	defer reader.Close()
 	decoded, err := io.ReadAll(reader)
+	closeErr := reader.Close()
 	if err != nil {
 		return zero, err
+	}
+	if closeErr != nil {
+		return zero, closeErr
 	}
 	decoder := json.NewDecoder(bytes.NewReader(decoded))
 	decoder.UseNumber()
@@ -263,80 +266,17 @@ func qualityAssign(target reflect.Value, tree any) error {
 	}
 	switch target.Kind() {
 	case reflect.Pointer:
-		if tree == nil {
-			target.SetZero()
-			return nil
-		}
-		child := reflect.New(target.Type().Elem())
-		if err := qualityAssign(child.Elem(), tree); err != nil {
-			return err
-		}
-		target.Set(child)
-		return nil
+		return qualityAssignPointer(target, tree)
 	case reflect.Struct:
-		object, ok := tree.(map[string]any)
-		if !ok {
-			return fmt.Errorf("%s: got %T", target.Type(), tree)
-		}
-		structType := target.Type()
-		for field := 0; field < target.NumField(); field++ {
-			name := structType.Field(field).Name
-			child, ok := object[name]
-			if !ok {
-				return fmt.Errorf("%s.%s missing from fixture", target.Type(), name)
-			}
-			if err := qualityAssign(target.Field(field), child); err != nil {
-				return fmt.Errorf("%s: %w", name, err)
-			}
-		}
-		return nil
+		return qualityAssignStruct(target, tree)
 	case reflect.Slice:
-		if tree == nil {
-			target.SetZero()
-			return nil
-		}
-		items, ok := tree.([]any)
-		if !ok {
-			return fmt.Errorf("%s: got %T", target.Type(), tree)
-		}
-		slice := reflect.MakeSlice(target.Type(), len(items), len(items))
-		for index := range items {
-			if err := qualityAssign(slice.Index(index), items[index]); err != nil {
-				return fmt.Errorf("[%d]: %w", index, err)
-			}
-		}
-		target.Set(slice)
-		return nil
+		return qualityAssignSlice(target, tree)
 	case reflect.Float32, reflect.Float64:
-		number, err := qualityParseFloat(tree)
-		if err != nil {
-			return err
-		}
-		if target.OverflowFloat(number) {
-			return fmt.Errorf("%s overflows", target.Type())
-		}
-		target.SetFloat(number)
-		return nil
+		return qualityAssignFloat(target, tree)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		number, err := qualityParseInt(tree)
-		if err != nil {
-			return err
-		}
-		if target.OverflowInt(number) {
-			return fmt.Errorf("%s overflows", target.Type())
-		}
-		target.SetInt(number)
-		return nil
+		return qualityAssignInt(target, tree)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		number, err := qualityParseUint(tree)
-		if err != nil {
-			return err
-		}
-		if target.OverflowUint(number) {
-			return fmt.Errorf("%s overflows", target.Type())
-		}
-		target.SetUint(number)
-		return nil
+		return qualityAssignUint(target, tree)
 	case reflect.String:
 		text, ok := tree.(string)
 		if !ok {
@@ -354,6 +294,93 @@ func qualityAssign(target reflect.Value, tree any) error {
 	default:
 		return fmt.Errorf("cannot restore %s", target.Type())
 	}
+}
+
+func qualityAssignPointer(target reflect.Value, tree any) error {
+	if tree == nil {
+		target.SetZero()
+		return nil
+	}
+	child := reflect.New(target.Type().Elem())
+	if err := qualityAssign(child.Elem(), tree); err != nil {
+		return err
+	}
+	target.Set(child)
+	return nil
+}
+
+func qualityAssignStruct(target reflect.Value, tree any) error {
+	object, ok := tree.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s: got %T", target.Type(), tree)
+	}
+	structType := target.Type()
+	for field := 0; field < target.NumField(); field++ {
+		name := structType.Field(field).Name
+		child, ok := object[name]
+		if !ok {
+			return fmt.Errorf("%s.%s missing from fixture", target.Type(), name)
+		}
+		if err := qualityAssign(target.Field(field), child); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func qualityAssignSlice(target reflect.Value, tree any) error {
+	if tree == nil {
+		target.SetZero()
+		return nil
+	}
+	items, ok := tree.([]any)
+	if !ok {
+		return fmt.Errorf("%s: got %T", target.Type(), tree)
+	}
+	slice := reflect.MakeSlice(target.Type(), len(items), len(items))
+	for index := range items {
+		if err := qualityAssign(slice.Index(index), items[index]); err != nil {
+			return fmt.Errorf("[%d]: %w", index, err)
+		}
+	}
+	target.Set(slice)
+	return nil
+}
+
+func qualityAssignFloat(target reflect.Value, tree any) error {
+	number, err := qualityParseFloat(tree)
+	if err != nil {
+		return err
+	}
+	if target.OverflowFloat(number) {
+		return fmt.Errorf("%s overflows", target.Type())
+	}
+	target.SetFloat(number)
+	return nil
+}
+
+func qualityAssignInt(target reflect.Value, tree any) error {
+	number, err := qualityParseInt(tree)
+	if err != nil {
+		return err
+	}
+	if target.OverflowInt(number) {
+		return fmt.Errorf("%s overflows", target.Type())
+	}
+	target.SetInt(number)
+	return nil
+}
+
+func qualityAssignUint(target reflect.Value, tree any) error {
+	number, err := qualityParseUint(tree)
+	if err != nil {
+		return err
+	}
+	if target.OverflowUint(number) {
+		return fmt.Errorf("%s overflows", target.Type())
+	}
+	target.SetUint(number)
+	return nil
 }
 
 func qualityParseFloat(tree any) (float64, error) {
@@ -420,45 +447,57 @@ func qualityFirstDifference(path string, expected, actual reflect.Value) (string
 	}
 	switch expected.Kind() {
 	case reflect.Pointer:
-		if expected.IsNil() != actual.IsNil() {
-			return path, qualityScalar(expected), qualityScalar(actual), true
-		}
-		if expected.IsNil() {
-			return "", nil, nil, false
-		}
-		return qualityFirstDifference(path, expected.Elem(), actual.Elem())
+		return qualityPointerDifference(path, expected, actual)
 	case reflect.Struct:
-		for field := 0; field < expected.NumField(); field++ {
-			fieldPath := path + "." + expected.Type().Field(field).Name
-			if differing, want, got, found := qualityFirstDifference(fieldPath, expected.Field(field), actual.Field(field)); found {
-				return differing, want, got, true
-			}
-		}
-		return "", nil, nil, false
+		return qualityStructDifference(path, expected, actual)
 	case reflect.Slice:
-		if expected.IsNil() != actual.IsNil() {
-			return path + ".nil", expected.IsNil(), actual.IsNil(), true
-		}
-		shared := expected.Len()
-		if actual.Len() < shared {
-			shared = actual.Len()
-		}
-		for index := 0; index < shared; index++ {
-			itemPath := fmt.Sprintf("%s[%d]", path, index)
-			if differing, want, got, found := qualityFirstDifference(itemPath, expected.Index(index), actual.Index(index)); found {
-				return differing, want, got, true
-			}
-		}
-		if expected.Len() != actual.Len() {
-			return path + ".len", expected.Len(), actual.Len(), true
-		}
-		return "", nil, nil, false
+		return qualitySliceDifference(path, expected, actual)
 	default:
 		if !reflect.DeepEqual(qualityInterface(expected), qualityInterface(actual)) {
 			return path, qualityScalar(expected), qualityScalar(actual), true
 		}
 		return "", nil, nil, false
 	}
+}
+
+func qualityPointerDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
+	if expected.IsNil() != actual.IsNil() {
+		return path, qualityScalar(expected), qualityScalar(actual), true
+	}
+	if expected.IsNil() {
+		return "", nil, nil, false
+	}
+	return qualityFirstDifference(path, expected.Elem(), actual.Elem())
+}
+
+func qualityStructDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
+	for field := 0; field < expected.NumField(); field++ {
+		fieldPath := path + "." + expected.Type().Field(field).Name
+		if differing, want, got, found := qualityFirstDifference(fieldPath, expected.Field(field), actual.Field(field)); found {
+			return differing, want, got, true
+		}
+	}
+	return "", nil, nil, false
+}
+
+func qualitySliceDifference(path string, expected, actual reflect.Value) (string, any, any, bool) {
+	if expected.IsNil() != actual.IsNil() {
+		return path + ".nil", expected.IsNil(), actual.IsNil(), true
+	}
+	shared := expected.Len()
+	if actual.Len() < shared {
+		shared = actual.Len()
+	}
+	for index := 0; index < shared; index++ {
+		itemPath := fmt.Sprintf("%s[%d]", path, index)
+		if differing, want, got, found := qualityFirstDifference(itemPath, expected.Index(index), actual.Index(index)); found {
+			return differing, want, got, true
+		}
+	}
+	if expected.Len() != actual.Len() {
+		return path + ".len", expected.Len(), actual.Len(), true
+	}
+	return "", nil, nil, false
 }
 
 func qualityInterface(value reflect.Value) any {

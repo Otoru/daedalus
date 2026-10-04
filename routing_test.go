@@ -460,6 +460,16 @@ func placedShape(t testing.TB, id RoomID, shape RoomShape, origin Cell, width, h
 
 func assertCorridorChebyshevSeparation(t *testing.T, corridors []Corridor) {
 	t.Helper()
+	owners := corridorCellOwners(t, corridors)
+	for _, corridor := range corridors {
+		for _, cell := range corridor.Cells {
+			assertCellChebyshevClear(t, corridor.ID, cell, owners)
+		}
+	}
+}
+
+func corridorCellOwners(t *testing.T, corridors []Corridor) map[Cell]CorridorID {
+	t.Helper()
 	owners := make(map[Cell]CorridorID, len(corridors))
 	for _, corridor := range corridors {
 		for _, cell := range corridor.Cells {
@@ -469,16 +479,17 @@ func assertCorridorChebyshevSeparation(t *testing.T, corridors []Corridor) {
 			owners[cell] = corridor.ID
 		}
 	}
-	for _, corridor := range corridors {
-		for _, cell := range corridor.Cells {
-			for dy := int32(-1); dy <= 1; dy++ {
-				for dx := int32(-1); dx <= 1; dx++ {
-					neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
-					other, exists := owners[neighbor]
-					if exists && other != corridor.ID {
-						t.Fatalf("Corridor %d at %v touches Corridor %d at %v", corridor.ID, cell, other, neighbor)
-					}
-				}
+	return owners
+}
+
+func assertCellChebyshevClear(t *testing.T, id CorridorID, cell Cell, owners map[Cell]CorridorID) {
+	t.Helper()
+	for dy := int32(-1); dy <= 1; dy++ {
+		for dx := int32(-1); dx <= 1; dx++ {
+			neighbor := Cell{X: cell.X + dx, Y: cell.Y + dy}
+			other, exists := owners[neighbor]
+			if exists && other != id {
+				t.Fatalf("Corridor %d at %v touches Corridor %d at %v", id, cell, other, neighbor)
 			}
 		}
 	}

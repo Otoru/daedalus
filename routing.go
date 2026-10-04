@@ -88,19 +88,22 @@ func routeCorridors(
 	rooms []PlacedRoom,
 	connections []Connection,
 ) ([]Corridor, []Door, error) {
-	return routeCorridorsWithWidths(ctx, width, height, order, rooms, connections, nil, nil)
+	return routeCorridorsWithWidths(ctx, corridorRoutingRequest{
+		Width: width, Height: height, Order: order, Rooms: rooms, Connections: connections,
+	})
 }
 
-func routeCorridorsWithWidths(
-	ctx context.Context,
-	width uint32,
-	height uint32,
-	order CorridorOrder,
-	rooms []PlacedRoom,
-	connections []Connection,
-	corridorWidths []CorridorWidthWeight,
-	widthStream *core.SplitMix64,
-) ([]Corridor, []Door, error) {
+type corridorRoutingRequest struct {
+	Width          uint32
+	Height         uint32
+	Order          CorridorOrder
+	Rooms          []PlacedRoom
+	Connections    []Connection
+	CorridorWidths []CorridorWidthWeight
+	WidthStream    *core.SplitMix64
+}
+
+func routeCorridorsWithWidths(ctx context.Context, request corridorRoutingRequest) ([]Corridor, []Door, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -108,6 +111,46 @@ func routeCorridorsWithWidths(
 		return nil, nil, err
 	}
 
+	occupancy, openings := prepareCorridorRouting(request.Width, request.Height, request.Rooms)
+	corridors := make([]Corridor, 0, len(request.Connections))
+	doors := make([]Door, 0, len(request.Connections)*2)
+	search := newRoutingSearch(ctx, occupancy)
+	useWidths := len(request.CorridorWidths) > 0
+	if useWidths {
+		if request.WidthStream == nil {
+			return nil, nil, errGeneratorInvariant
+		}
+		search.clearance = newWidthClearance(occupancy)
+	}
+	for connectionIndex, connection := range request.Connections {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		routed, err := routeOneConnection(
+			connection, CorridorID(connectionIndex), request, openings, search, useWidths,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		fromDoorID := getOrCreateSpannedDoor(&doors, routed.best.from, routed.width, routed.id)
+		toDoorID := getOrCreateSpannedDoor(&doors, routed.best.to, routed.width, routed.id)
+		corridors = append(corridors, Corridor{
+			ID: routed.id, FromRoomID: connection.FromRoomID, ToRoomID: connection.ToRoomID,
+			FromDoorID: fromDoorID, ToDoorID: toDoorID,
+			Centerline: routed.centerline, Cells: routed.cells,
+		})
+		blockCorridorHalo(occupancy, routed.cells)
+		if search.clearance != nil {
+			search.clearance = newWidthClearance(occupancy)
+		}
+	}
+	return corridors, doors, nil
+}
+
+func prepareCorridorRouting(
+	width, height uint32,
+	rooms []PlacedRoom,
+) (*placementOccupancy, [][]doorOpening) {
 	occupancy := newPlacementOccupancy(width, height)
 	openings := make([][]doorOpening, len(rooms))
 	for roomIndex, room := range rooms {
@@ -116,78 +159,71 @@ func routeCorridorsWithWidths(
 	for roomIndex, room := range rooms {
 		openings[roomIndex] = enumerateDoorOpenings(room, uint32(roomIndex), occupancy)
 	}
+	return occupancy, openings
+}
 
-	corridors := make([]Corridor, 0, len(connections))
-	doors := make([]Door, 0, len(connections)*2)
-	search := newRoutingSearch(ctx, occupancy)
-	useWidths := len(corridorWidths) > 0
+type placedRoute struct {
+	id         CorridorID
+	best       routedConnection
+	width      uint32
+	centerline []Cell
+	cells      []Cell
+}
+
+func routeOneConnection(
+	connection Connection,
+	corridorID CorridorID,
+	request corridorRoutingRequest,
+	openings [][]doorOpening,
+	search *routingSearch,
+	useWidths bool,
+) (placedRoute, error) {
+	fromIndex := roomIndexByID(request.Rooms, connection.FromRoomID)
+	toIndex := roomIndexByID(request.Rooms, connection.ToRoomID)
+	if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
+		return placedRoute{}, errTopologyUnknownRoom
+	}
+	best, routedWidth, found, err := chooseRoutedConnection(
+		openings[fromIndex], openings[toIndex], request, search, useWidths,
+	)
+	if err != nil {
+		return placedRoute{}, err
+	}
+	if !found {
+		return placedRoute{}, fmt.Errorf(
+			"%w: RoomID %d to RoomID %d",
+			ErrUnroutableEdge, connection.FromRoomID, connection.ToRoomID,
+		)
+	}
+	// A one-Cell Corridor is the width-1 case, not a separate kind: its
+	// Centerline is the route and its Doors span one Cell. Reporting a zero
+	// Span there would make every caller rewrite it to one.
+	if !useWidths {
+		routedWidth = 1
+	}
+	centerline := append([]Cell(nil), best.cells...)
+	cells := best.cells
 	if useWidths {
-		if widthStream == nil {
-			return nil, nil, errGeneratorInvariant
-		}
-		search.clearance = newWidthClearance(occupancy)
+		cells = occupyBand(best.cells, best.from.direction, best.to.direction, routedWidth)
 	}
-	for connectionIndex, connection := range connections {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
-		fromIndex := roomIndexByID(rooms, connection.FromRoomID)
-		toIndex := roomIndexByID(rooms, connection.ToRoomID)
-		if fromIndex == topologyNoRoomIndex || toIndex == topologyNoRoomIndex {
-			return nil, nil, errTopologyUnknownRoom
-		}
+	return placedRoute{
+		id: corridorID, best: best, width: routedWidth, centerline: centerline, cells: cells,
+	}, nil
+}
 
-		var best routedConnection
-		var found bool
-		var routedWidth uint32
-		var err error
-		if !useWidths {
-			// A nil CorridorGeometry never draws. The width stream is left untouched.
-			best, found, err = selectRoutedConnection(
-				openings[fromIndex], openings[toIndex], order, search, 0,
-			)
-		} else {
-			drawn := drawCorridorWidth(corridorWidths, widthStream)
-			best, routedWidth, found, err = routeDegraded(
-				openings[fromIndex], openings[toIndex], order, drawn, corridorWidths, search,
-			)
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		if !found {
-			return nil, nil, fmt.Errorf(
-				"%w: RoomID %d to RoomID %d",
-				ErrUnroutableEdge, connection.FromRoomID, connection.ToRoomID,
-			)
-		}
-		corridorID := CorridorID(connectionIndex)
-		var fromDoorID, toDoorID DoorID
-		// A one-Cell Corridor is the width-1 case, not a separate kind: its
-		// Centerline is the route and its Doors span one Cell. Reporting a zero
-		// Span there would make every caller rewrite it to one.
-		if !useWidths {
-			routedWidth = 1
-		}
-		centerline := append([]Cell(nil), best.cells...)
-		cells := best.cells
-		if useWidths {
-			cells = occupyBand(best.cells, best.from.direction, best.to.direction, routedWidth)
-		}
-		fromDoorID = getOrCreateSpannedDoor(&doors, best.from, routedWidth, corridorID)
-		toDoorID = getOrCreateSpannedDoor(&doors, best.to, routedWidth, corridorID)
-		corridors = append(corridors, Corridor{
-			ID: corridorID, FromRoomID: connection.FromRoomID, ToRoomID: connection.ToRoomID,
-			FromDoorID: fromDoorID, ToDoorID: toDoorID, Centerline: centerline, Cells: cells,
-		})
-		// The band is closed, and so is its Chebyshev halo, including the Cells
-		// that sit on a Room wall. Room Cells stay owned by their Room.
-		blockCorridorHalo(occupancy, cells)
-		if search.clearance != nil {
-			search.clearance = newWidthClearance(occupancy)
-		}
+func chooseRoutedConnection(
+	fromOpenings, toOpenings []doorOpening,
+	request corridorRoutingRequest,
+	search *routingSearch,
+	useWidths bool,
+) (routedConnection, uint32, bool, error) {
+	if !useWidths {
+		// A nil CorridorGeometry never draws. The width stream is left untouched.
+		best, found, err := selectRoutedConnection(fromOpenings, toOpenings, request.Order, search, 0)
+		return best, 0, found, err
 	}
-	return corridors, doors, nil
+	drawn := drawCorridorWidth(request.CorridorWidths, request.WidthStream)
+	return routeDegraded(fromOpenings, toOpenings, request.Order, drawn, request.CorridorWidths, search)
 }
 
 // blockCorridorHalo reserves the placed band and its one-Cell Chebyshev halo.
@@ -197,27 +233,33 @@ func routeCorridorsWithWidths(
 // owned, including Room footprints, are left unchanged.
 func blockCorridorHalo(occupancy *placementOccupancy, band []Cell) []Cell {
 	marked := make([]Cell, 0, len(band)*9)
-	markFree := func(cell Cell) {
-		if _, occupied := occupancy.ownerAt(cell); occupied {
-			return
-		}
-		if _, inside := occupancy.index(cell); !inside {
-			return
-		}
-		occupancy.mark(corridorObstacleOwner, []Cell{cell})
-		marked = append(marked, cell)
+	for _, cell := range band {
+		marked = appendFreeCorridorObstacle(occupancy, marked, cell)
 	}
 	for _, cell := range band {
-		markFree(cell)
+		marked = markCorridorHaloNeighbors(occupancy, marked, cell)
 	}
-	for _, cell := range band {
-		for dy := int32(-1); dy <= 1; dy++ {
-			for dx := int32(-1); dx <= 1; dx++ {
-				if dx == 0 && dy == 0 {
-					continue
-				}
-				markFree(Cell{X: cell.X + dx, Y: cell.Y + dy})
+	return marked
+}
+
+func appendFreeCorridorObstacle(occupancy *placementOccupancy, marked []Cell, cell Cell) []Cell {
+	if _, occupied := occupancy.ownerAt(cell); occupied {
+		return marked
+	}
+	if _, inside := occupancy.index(cell); !inside {
+		return marked
+	}
+	occupancy.mark(corridorObstacleOwner, []Cell{cell})
+	return append(marked, cell)
+}
+
+func markCorridorHaloNeighbors(occupancy *placementOccupancy, marked []Cell, cell Cell) []Cell {
+	for dy := int32(-1); dy <= 1; dy++ {
+		for dx := int32(-1); dx <= 1; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
 			}
+			marked = appendFreeCorridorObstacle(occupancy, marked, Cell{X: cell.X + dx, Y: cell.Y + dy})
 		}
 	}
 	return marked

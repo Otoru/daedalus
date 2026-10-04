@@ -1,0 +1,97 @@
+{
+  "config": {
+    "seed": "9",
+    "width": 160,
+    "height": 100,
+    "progression": {
+      "base": 8,
+      "steps": [
+        {"name": "Swift Step", "grants": 1},
+        {"name": "Cling Grip", "grants": 4},
+        {"name": "Faydown Cloak", "grants": 2}
+      ]
+    },
+    "profile": {
+      "version": "silksong-inspired-m1",
+      "cell_size": 1,
+      "control_rate": 60,
+      "gravity_up": 50,
+      "gravity_down": 62.5,
+      "jump_velocity": 20,
+      "max_run_speed": 8,
+      "ground_accel": 80,
+      "air_accel": 40,
+      "braking": 120,
+      "body_half_width": 0.35,
+      "body_height": 1.6,
+      "margin": 0.05,
+      "max_fall_speed": 20,
+      "max_safe_fall_height": "Infinity",
+      "double_jump": {
+        "mode": 1,
+        "velocity": 20,
+        "charges": 1,
+        "refill_on": 15,
+        "min_delay": 0.05
+      },
+      "dash": {
+        "speed": 19.28,
+        "shadow_speed": 26.992,
+        "shadow_passes_hazard": true,
+        "duration": 0.2,
+        "suspends_gravity": true,
+        "exit": 3,
+        "charges": 1,
+        "cooldown": 0.6,
+        "refill_on": 23,
+        "directions": 1,
+        "cancel": 7
+      },
+      "wall_jump": {
+        "impulse_x": 8,
+        "impulse_y": 17,
+        "same_wall_reuse": false,
+        "max_consecutive": 0,
+        "stamina": "Infinity",
+        "slide_speed": 4,
+        "input_lock": 0.1,
+        "min_wall_height": 2
+      },
+      "coyote": {
+        "window": 0.08,
+        "applies_to": 3
+      },
+      "variable_jump": {
+        "mode": 2,
+        "cut_factor": 0,
+        "min_hold_time": 0.08
+      },
+      "climb": {
+        "speed": 4,
+        "capture_half_width": 0.4,
+        "can_jump_off": true,
+        "exit_impulse_x": 4
+      }
+    },
+    "beat_definitions": [
+      {"kind": 1, "difficulty": 0},
+      {"kind": 2, "difficulty": 40},
+      {"kind": 3, "difficulty": 120},
+      {"kind": 4, "difficulty": 160},
+      {"kind": 5, "difficulty": 90},
+      {"kind": 6, "difficulty": 180, "requires": 4}
+    ],
+    "spine": {
+      "beats": [
+        {"kind": 1, "weight": 2},
+        {"kind": 2, "weight": 2},
+        {"kind": 3, "weight": 2},
+        {"kind": 4, "weight": 2},
+        {"kind": 5, "weight": 2},
+        {"kind": 6, "weight": 3}
+      ],
+      "min_run_beats": 4,
+      "max_run_beats": 6
+    }
+  }
+}

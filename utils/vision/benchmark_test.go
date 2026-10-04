@@ -72,17 +72,22 @@ func visibilityLoads() []visibilityLoad {
 	}
 }
 
-func (load visibilityLoad) gridAndQueries() (vision.OpacityGrid, []vision.Query) {
+func (load visibilityLoad) grid() vision.OpacityGrid {
 	grid := openGrid(int(load.width), int(load.height))
-	if !load.open {
-		for y := uint32(0); y < load.height; y++ {
-			for x := uint32(0); x < load.width; x++ {
-				if (x+y)%11 == 0 {
-					grid.SetTransparent(daedalus.Cell{X: int32(x), Y: int32(y)}, false)
-				}
+	if load.open {
+		return grid
+	}
+	for y := uint32(0); y < load.height; y++ {
+		for x := uint32(0); x < load.width; x++ {
+			if (x+y)%11 == 0 {
+				grid.SetTransparent(daedalus.Cell{X: int32(x), Y: int32(y)}, false)
 			}
 		}
 	}
+	return grid
+}
+
+func (load visibilityLoad) origins(grid vision.OpacityGrid) []daedalus.Cell {
 	origins := make([]daedalus.Cell, 0, load.queries)
 	for y := uint32(0); y < load.height && len(origins) < load.queries; y++ {
 		for x := uint32(0); x < load.width && len(origins) < load.queries; x++ {
@@ -92,6 +97,12 @@ func (load visibilityLoad) gridAndQueries() (vision.OpacityGrid, []vision.Query)
 			}
 		}
 	}
+	return origins
+}
+
+func (load visibilityLoad) gridAndQueries() (vision.OpacityGrid, []vision.Query) {
+	grid := load.grid()
+	origins := load.origins(grid)
 	queries := make([]vision.Query, len(origins))
 	for index, origin := range origins {
 		queries[index] = vision.Query{Origin: origin, Radius: load.radius}

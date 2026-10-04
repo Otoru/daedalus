@@ -32,13 +32,7 @@ func TestOptionalStageDiagnostics(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed %d optional selection: %v", seed, err)
 		}
-		for _, gate := range optional {
-			for _, pathEdge := range mainPath {
-				if gate.edge.corridor == pathEdge.corridor {
-					t.Fatalf("seed %d optional gate corridor %d lies on the mandatory target path", seed, gate.edge.corridor)
-				}
-			}
-		}
+		checkOptionalGatesAvoidMainPath(t, optional, mainPath, seed)
 		stats := diagnoseKeyStages(g, append(main, optional...), 0, daedalus.Seed(seed))
 		optionalStats := stats[len(main):]
 		if len(optionalStats) < 2 {
@@ -53,24 +47,38 @@ func TestOptionalStageDiagnostics(t *testing.T) {
 		firstStageAvailable += first.stageAvailable
 		secondStageAvailable += second.stageAvailable
 		samples++
-		if seed == 0 {
-			t.Logf("seed 0 all stages: %+v", stats)
-			parent, _, _ := rootedTree(g, g.blockOf[0])
-			for index, gate := range main {
-				t.Logf("seed 0 main gate %d corridor=%d door=%d fromRoom=%d(block=%d) toRoom=%d(block=%d) parentChild=%d->%d", index, gate.edge.corridor, gate.door, gate.edge.fromRoom, g.blockOf[gate.edge.fromRoom], gate.edge.toRoom, g.blockOf[gate.edge.toRoom], parent[g.blockOf[gate.edge.toRoom]], g.blockOf[gate.edge.toRoom])
-			}
-			locked := make([]bool, len(layout.Doors))
-			for _, gate := range append(main, optional...) {
-				locked[gate.door] = true
-			}
-			before := countTrue(floodRooms(g, locked, 0))
-			locked[main[0].door] = false
-			after := countTrue(floodRooms(g, locked, 0))
-			corridor := layout.Corridors[main[0].edge.corridor]
-			t.Logf("seed 0 gate 0 direct unlock: before=%d after=%d corridor endpoints=%d/%d locked=%v/%v", before, after, corridor.FromDoorID, corridor.ToDoorID, locked[corridor.FromDoorID], locked[corridor.ToDoorID])
-		}
+		logFirstStageDiagnostics(t, seed, stats, g, main, layout, optional)
 	}
 	t.Logf("128x128/256, 24 Treasure, 8+8, seeds=%d: first reachable=%d global_unused=%d stage_available=%d; second reachable=%d global_unused=%d stage_available=%d", samples, firstReachable/samples, firstGlobalUnused/samples, firstStageAvailable/samples, secondReachable/samples, secondGlobalUnused/samples, secondStageAvailable/samples)
+}
+
+func checkOptionalGatesAvoidMainPath(t *testing.T, optional []selectedGate, mainPath []treeEdge, seed uint64) {
+	for _, gate := range optional {
+		for _, pathEdge := range mainPath {
+			if gate.edge.corridor == pathEdge.corridor {
+				t.Fatalf("seed %d optional gate corridor %d lies on the mandatory target path", seed, gate.edge.corridor)
+			}
+		}
+	}
+}
+
+func logFirstStageDiagnostics(t *testing.T, seed uint64, stats []keyStageDiagnostic, g *graph, main []selectedGate, layout daedalus.Layout, optional []selectedGate) {
+	if seed == 0 {
+		t.Logf("seed 0 all stages: %+v", stats)
+		parent, _, _ := rootedTree(g, g.blockOf[0])
+		for index, gate := range main {
+			t.Logf("seed 0 main gate %d corridor=%d door=%d fromRoom=%d(block=%d) toRoom=%d(block=%d) parentChild=%d->%d", index, gate.edge.corridor, gate.door, gate.edge.fromRoom, g.blockOf[gate.edge.fromRoom], gate.edge.toRoom, g.blockOf[gate.edge.toRoom], parent[g.blockOf[gate.edge.toRoom]], g.blockOf[gate.edge.toRoom])
+		}
+		locked := make([]bool, len(layout.Doors))
+		for _, gate := range append(main, optional...) {
+			locked[gate.door] = true
+		}
+		before := countTrue(floodRooms(g, locked, 0))
+		locked[main[0].door] = false
+		after := countTrue(floodRooms(g, locked, 0))
+		corridor := layout.Corridors[main[0].edge.corridor]
+		t.Logf("seed 0 gate 0 direct unlock: before=%d after=%d corridor endpoints=%d/%d locked=%v/%v", before, after, corridor.FromDoorID, corridor.ToDoorID, locked[corridor.FromDoorID], locked[corridor.ToDoorID])
+	}
 }
 
 type keyStageDiagnostic struct {
@@ -88,15 +96,7 @@ func diagnoseKeyStages(g *graph, selected []selectedGate, start int, seed daedal
 		if gate.kind == GateKindMain {
 			stage = index
 		}
-		locked := make([]bool, len(g.layout.Doors))
-		for otherIndex, other := range selected {
-			if other.kind == GateKindMain && otherIndex >= stage {
-				locked[other.door] = true
-			}
-			if other.kind == GateKindOptional {
-				locked[other.door] = true
-			}
-		}
+		locked := lockedStageDoors(g, selected, stage)
 		reachable := floodRooms(g, locked, start)
 		globalUnused := 0
 		for room, isReachable := range reachable {
@@ -109,20 +109,38 @@ func diagnoseKeyStages(g *graph, selected []selectedGate, start int, seed daedal
 		}
 		stats = append(stats, keyStageDiagnostic{kind: gate.kind, gate: index, stage: stage, reachable: countTrue(reachable), globalUnused: globalUnused, stageAvailable: countTrue(reachable), start: start})
 		distances := roomDistances(g, locked, start)
-		best := -1
-		for room, isReachable := range reachable {
-			if !isReachable || used[room] {
-				continue
-			}
-			if best < 0 || distances[room] > distances[best] || (distances[room] == distances[best] && rank(seed, index, room) < rank(seed, index, best)) || (distances[room] == distances[best] && rank(seed, index, room) == rank(seed, index, best) && room < best) {
-				best = room
-			}
-		}
+		best := bestUnusedStageRoom(reachable, used, distances, seed, index)
 		if best >= 0 {
 			used[best] = true
 		}
 	}
 	return stats
+}
+
+func lockedStageDoors(g *graph, selected []selectedGate, stage int) []bool {
+	locked := make([]bool, len(g.layout.Doors))
+	for otherIndex, other := range selected {
+		if other.kind == GateKindMain && otherIndex >= stage {
+			locked[other.door] = true
+		}
+		if other.kind == GateKindOptional {
+			locked[other.door] = true
+		}
+	}
+	return locked
+}
+
+func bestUnusedStageRoom(reachable []bool, used []bool, distances []uint64, seed daedalus.Seed, index int) int {
+	best := -1
+	for room, isReachable := range reachable {
+		if !isReachable || used[room] {
+			continue
+		}
+		if best < 0 || distances[room] > distances[best] || (distances[room] == distances[best] && rank(seed, index, room) < rank(seed, index, best)) || (distances[room] == distances[best] && rank(seed, index, room) == rank(seed, index, best) && room < best) {
+			best = room
+		}
+	}
+	return best
 }
 
 func diagnosticConfig(seed uint64, width, maxRooms, treasures uint32) daedalus.Config {

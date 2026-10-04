@@ -13,12 +13,6 @@ const keyPlacementSalt uint64 = 0x9e3779b97f4a7c15
 func placeKeys(ctx context.Context, g *graph, selected []selectedGate, seed daedalus.Seed, startRoom int) ([]daedalus.RoomID, error) {
 	keys := make([]daedalus.RoomID, len(selected))
 	used := make([]bool, len(g.layout.Rooms))
-	mainCount := 0
-	for _, gate := range selected {
-		if gate.kind == GateKindMain {
-			mainCount++
-		}
-	}
 	for index, gate := range selected {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -27,45 +21,45 @@ func placeKeys(ctx context.Context, g *graph, selected []selectedGate, seed daed
 		if gate.kind == GateKindMain {
 			stage = index
 		}
-		locked := make([]bool, len(g.layout.Doors))
-		for otherIndex, other := range selected {
-			if other.kind == GateKindMain {
-				if otherIndex >= stage {
-					locked[other.door] = true
-				}
-			} else {
-				locked[other.door] = true
-			}
-		}
+		locked := lockedForKeyStage(g, selected, stage)
 		reachable := floodRooms(g, locked, startRoom)
 		distances := roomDistances(g, locked, startRoom)
-		best := -1
-		reachableCount := 0
-		unusedCount := 0
-		for room, isReachable := range reachable {
-			if !isReachable {
-				continue
-			}
-			reachableCount++
-			if used[room] {
-				continue
-			}
-			unusedCount++
-			if best < 0 || distances[room] > distances[best] || (distances[room] == distances[best] && rank(seed, index, room) < rank(seed, index, best)) || (distances[room] == distances[best] && rank(seed, index, room) == rank(seed, index, best) && room < best) {
-				best = room
-			}
-		}
+		best, reachableCount, unusedCount := bestKeyRoom(reachable, used, distances, seed, index)
 		if best < 0 {
 			return nil, fmt.Errorf("%w: no distinct reachable key room for gate %d (reachable=%d unused=%d)", daedalus.ErrInsufficientGates, index, reachableCount, unusedCount)
-		}
-		if best < 0 {
-			return nil, fmt.Errorf("%w: no distinct reachable key room for gate %d", daedalus.ErrInsufficientGates, index)
 		}
 		used[best] = true
 		keys[index] = daedalus.RoomID(best)
 	}
-	_ = mainCount
 	return keys, nil
+}
+
+func lockedForKeyStage(g *graph, selected []selectedGate, stage int) []bool {
+	locked := make([]bool, len(g.layout.Doors))
+	for index, gate := range selected {
+		if gate.kind != GateKindMain || index >= stage {
+			locked[gate.door] = true
+		}
+	}
+	return locked
+}
+
+func bestKeyRoom(reachable, used []bool, distances []uint64, seed daedalus.Seed, gateIndex int) (best, reachableCount, unusedCount int) {
+	best = -1
+	for room, isReachable := range reachable {
+		if !isReachable {
+			continue
+		}
+		reachableCount++
+		if used[room] {
+			continue
+		}
+		unusedCount++
+		if best < 0 || distances[room] > distances[best] || (distances[room] == distances[best] && rank(seed, gateIndex, room) < rank(seed, gateIndex, best)) || (distances[room] == distances[best] && rank(seed, gateIndex, room) == rank(seed, gateIndex, best) && room < best) {
+			best = room
+		}
+	}
+	return
 }
 
 func rank(seed daedalus.Seed, gateID, room int) uint64 {
@@ -142,7 +136,14 @@ func validatePlan(ctx context.Context, layout daedalus.Layout, plan Plan, startR
 	if uint64(len(plan.Gates)) > uint64(MaxGates) {
 		return fmt.Errorf("%w: plan has too many gates", daedalus.ErrInvalidGating)
 	}
-	locked := make([]bool, len(layout.Doors))
+	if err := validatePlanGates(ctx, g, plan, startRoomID); err != nil {
+		return err
+	}
+	return oracleFixedPoint(ctx, g, plan, startRoomID)
+}
+
+func validatePlanGates(ctx context.Context, g *graph, plan Plan, startRoomID daedalus.RoomID) error {
+	layout := g.layout
 	seenDoor := make([]bool, len(layout.Doors))
 	seenKey := make([]bool, len(layout.Rooms))
 	mainDone := false
@@ -150,26 +151,9 @@ func validatePlan(ctx context.Context, layout daedalus.Layout, plan Plan, startR
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if gate.ID != GateID(i) || (gate.Kind != GateKindMain && gate.Kind != GateKindOptional) || gate.DoorID >= daedalus.DoorID(len(layout.Doors)) || gate.KeyRoomID >= daedalus.RoomID(len(layout.Rooms)) {
-			return fmt.Errorf("%w: gates[%d] has an invalid id, kind, door, or key", daedalus.ErrInvalidGating, i)
+		if err := validateGate(g, gate, i, &mainDone, seenDoor, seenKey); err != nil {
+			return err
 		}
-		if gate.Kind == GateKindOptional {
-			mainDone = true
-		} else if mainDone {
-			return fmt.Errorf("%w: main gates must precede optional gates", daedalus.ErrInvalidGating)
-		}
-		if seenDoor[gate.DoorID] || seenKey[gate.KeyRoomID] {
-			return fmt.Errorf("%w: gate %d duplicates a Door or key Room", daedalus.ErrInvalidGating, i)
-		}
-		seenDoor[gate.DoorID], seenKey[gate.KeyRoomID] = true, true
-		if len(layout.Doors[gate.DoorID].CorridorIDs) != 1 {
-			return fmt.Errorf("%w: gate %d uses a shared Door", daedalus.ErrInvalidGating, i)
-		}
-		corridorID := int(layout.Doors[gate.DoorID].CorridorIDs[0])
-		if !g.bridges[corridorID] {
-			return fmt.Errorf("%w: gate %d Door %d is not a final-graph bridge", daedalus.ErrInvalidGating, i, gate.DoorID)
-		}
-		locked[gate.DoorID] = true
 	}
 	for index := range plan.Gates {
 		if plan.Gates[index].KeyRoomID == startRoomID && index > 0 {
@@ -179,7 +163,30 @@ func validatePlan(ctx context.Context, layout daedalus.Layout, plan Plan, startR
 			return err
 		}
 	}
-	return oracleFixedPoint(ctx, g, plan, startRoomID)
+	return nil
+}
+
+func validateGate(g *graph, gate Gate, index int, mainDone *bool, seenDoor, seenKey []bool) error {
+	if gate.ID != GateID(index) || (gate.Kind != GateKindMain && gate.Kind != GateKindOptional) || gate.DoorID >= daedalus.DoorID(len(seenDoor)) || gate.KeyRoomID >= daedalus.RoomID(len(seenKey)) {
+		return fmt.Errorf("%w: gates[%d] has an invalid id, kind, door, or key", daedalus.ErrInvalidGating, index)
+	}
+	if gate.Kind == GateKindOptional {
+		*mainDone = true
+	} else if *mainDone {
+		return fmt.Errorf("%w: main gates must precede optional gates", daedalus.ErrInvalidGating)
+	}
+	if seenDoor[gate.DoorID] || seenKey[gate.KeyRoomID] {
+		return fmt.Errorf("%w: gate %d duplicates a Door or key Room", daedalus.ErrInvalidGating, index)
+	}
+	seenDoor[gate.DoorID], seenKey[gate.KeyRoomID] = true, true
+	if len(g.layout.Doors[gate.DoorID].CorridorIDs) != 1 {
+		return fmt.Errorf("%w: gate %d uses a shared Door", daedalus.ErrInvalidGating, index)
+	}
+	corridorID := int(g.layout.Doors[gate.DoorID].CorridorIDs[0])
+	if !g.bridges[corridorID] {
+		return fmt.Errorf("%w: gate %d Door %d is not a final-graph bridge", daedalus.ErrInvalidGating, index, gate.DoorID)
+	}
+	return nil
 }
 
 func oracleFixedPoint(ctx context.Context, g *graph, plan Plan, startRoomID daedalus.RoomID) error {
@@ -194,20 +201,28 @@ func oracleFixedPoint(ctx context.Context, g *graph, plan Plan, startRoomID daed
 			return err
 		}
 		beforeReached, beforeCollected := countTrue(reached), countTrue(collected)
-		current := floodRooms(g, locked, int(startRoomID))
-		for room, ok := range current {
-			reached[room] = reached[room] || ok
-		}
-		for i, gate := range plan.Gates {
-			if !collected[i] && reached[gate.KeyRoomID] {
-				collected[i] = true
-				locked[gate.DoorID] = false
-			}
-		}
+		collectReachableKeys(g, plan, startRoomID, locked, reached, collected)
 		if countTrue(reached) == beforeReached && countTrue(collected) == beforeCollected {
 			break
 		}
 	}
+	return checkOracleCompletion(plan, reached, collected)
+}
+
+func collectReachableKeys(g *graph, plan Plan, startRoomID daedalus.RoomID, locked, reached, collected []bool) {
+	current := floodRooms(g, locked, int(startRoomID))
+	for room, ok := range current {
+		reached[room] = reached[room] || ok
+	}
+	for i, gate := range plan.Gates {
+		if !collected[i] && reached[gate.KeyRoomID] {
+			collected[i] = true
+			locked[gate.DoorID] = false
+		}
+	}
+}
+
+func checkOracleCompletion(plan Plan, reached, collected []bool) error {
 	for room, ok := range reached {
 		if !ok {
 			return fmt.Errorf("%w: unreachable RoomID %d", daedalus.ErrInvalidGating, room)

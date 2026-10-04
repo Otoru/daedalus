@@ -223,28 +223,32 @@ func (r realizer) react(ctx context.Context, beat RealizedBeat, fromAltitude, to
 	}
 	edge := SpineEdge{From: beat.From, To: beat.To, Direction: beat.Proposed}
 	if beat.Proposed == SpineDirectionUp || beat.Arrival.Height > beat.Departure.Height {
-		if toAltitude > fromAltitude+1 {
-			rewritten, ok, err := r.repair(ctx, beat, edge, fromAltitude, fromAltitude+1, SpineDirectionUp)
-			if err != nil || ok {
-				return rewritten, err
-			}
-		}
-		rewritten, ok, err := r.repair(ctx, beat, edge, fromAltitude, fromAltitude, SpineDirectionLateral)
-		if err != nil || ok {
-			return rewritten, err
-		}
-		drop := descentQuantum(ascentQuantum(r.config.Profile, r.abilities))
-		rewritten, ok, err = r.repair(ctx, beat, edge, fromAltitude, fromAltitude-drop, SpineDirectionDown)
-		if err != nil || ok {
-			return rewritten, err
-		}
-		return beat, nil
+		return r.repairClimb(ctx, beat, edge, fromAltitude, toAltitude)
 	}
 	if toAltitude < fromAltitude-1 {
 		rewritten, ok, err := r.repair(ctx, beat, edge, fromAltitude, fromAltitude-1, beat.Direction)
 		if err != nil || ok {
 			return rewritten, err
 		}
+	}
+	return beat, nil
+}
+
+func (r realizer) repairClimb(ctx context.Context, beat RealizedBeat, edge SpineEdge, fromAltitude, toAltitude int32) (RealizedBeat, error) {
+	if toAltitude > fromAltitude+1 {
+		rewritten, ok, err := r.repair(ctx, beat, edge, fromAltitude, fromAltitude+1, SpineDirectionUp)
+		if err != nil || ok {
+			return rewritten, err
+		}
+	}
+	rewritten, ok, err := r.repair(ctx, beat, edge, fromAltitude, fromAltitude, SpineDirectionLateral)
+	if err != nil || ok {
+		return rewritten, err
+	}
+	drop := descentQuantum(ascentQuantum(r.config.Profile, r.abilities))
+	rewritten, ok, err = r.repair(ctx, beat, edge, fromAltitude, fromAltitude-drop, SpineDirectionDown)
+	if err != nil || ok {
+		return rewritten, err
 	}
 	return beat, nil
 }

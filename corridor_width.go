@@ -541,26 +541,30 @@ func occupyBand(centerline []Cell, fromDir, toDir Direction, width uint32) []Cel
 	stamped := make([]Cell, 0, len(centerline)*int(width))
 	for index := range centerline {
 		incoming, outgoing := centerlineDirections(centerline, index, fromDir, toDir)
-		cell := centerline[index]
-		if incoming != outgoing {
-			for dy := -low; dy <= high; dy++ {
-				for dx := -low; dx <= high; dx++ {
-					stamped = append(stamped, Cell{X: cell.X + dx, Y: cell.Y + dy})
-				}
-			}
-			continue
-		}
-		if incoming == DirectionEast || incoming == DirectionWest {
-			for dy := -low; dy <= high; dy++ {
-				stamped = append(stamped, Cell{X: cell.X, Y: cell.Y + dy})
-			}
-			continue
-		}
-		for dx := -low; dx <= high; dx++ {
-			stamped = append(stamped, Cell{X: cell.X + dx, Y: cell.Y})
-		}
+		stamped = appendBandCell(stamped, centerline[index], incoming, outgoing, low, high)
 	}
 	return uniqueRowMajor(stamped)
+}
+
+func appendBandCell(stamped []Cell, cell Cell, incoming, outgoing Direction, low, high int32) []Cell {
+	if incoming != outgoing {
+		for dy := -low; dy <= high; dy++ {
+			for dx := -low; dx <= high; dx++ {
+				stamped = append(stamped, Cell{X: cell.X + dx, Y: cell.Y + dy})
+			}
+		}
+		return stamped
+	}
+	if incoming == DirectionEast || incoming == DirectionWest {
+		for dy := -low; dy <= high; dy++ {
+			stamped = append(stamped, Cell{X: cell.X, Y: cell.Y + dy})
+		}
+		return stamped
+	}
+	for dx := -low; dx <= high; dx++ {
+		stamped = append(stamped, Cell{X: cell.X + dx, Y: cell.Y})
+	}
+	return stamped
 }
 
 func centerlineDirections(cells []Cell, index int, fromDir, toDir Direction) (Direction, Direction) {

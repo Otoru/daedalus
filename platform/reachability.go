@@ -119,10 +119,7 @@ func (g *geometry) fly(abilities AbilitySet, plan launch, ceiling, horizon float
 	for {
 		a, ok := s.next(ceiling)
 		if !ok {
-			if s.failed != ReasonUnspecified {
-				return flightResult{kind: contactNone, reason: s.failed, state: s.state, resources: s.res, duration: s.t}
-			}
-			return flightResult{kind: contactNone, reason: ReasonBudgetExhausted, truncated: true, state: s.state, resources: s.res, duration: s.t}
+			return unfinishedFlight(&s)
 		}
 		// The fall horizon is a search parameter, so it clips the phase rather
 		// than being noticed after the fact: without it the candidate set of a
@@ -137,26 +134,7 @@ func (g *geometry) fly(abilities AbilitySet, plan launch, ceiling, horizon float
 			return flightResult{kind: contactNone, reason: ReasonBudgetExhausted, truncated: true, state: s.state, resources: s.res, duration: s.t}
 		}
 		if met.kind != contactNone && met.at <= a.span+contactEpsilon {
-			s.advance(a, math.Min(met.at, a.span), false)
-			result := flightResult{
-				kind:      met.kind,
-				site:      met.site,
-				wall:      met.wallSide,
-				wallX:     met.wallFace,
-				state:     s.state,
-				resources: s.res,
-				witness:   s.witness(),
-				duration:  s.t,
-			}
-			switch met.kind {
-			case contactLanding:
-				result.reason = ReasonWitnessFound
-			case contactHazard:
-				result.reason = ReasonObstructed
-			default:
-				result.reason = ReasonObstructed
-			}
-			return result
+			return finishFlightContact(&s, a, met)
 		}
 		s.advance(a, a.span, a.span >= full-timeEpsilon)
 		if s.failed != ReasonUnspecified {
@@ -166,6 +144,32 @@ func (g *geometry) fly(abilities AbilitySet, plan launch, ceiling, horizon float
 			return flightResult{kind: contactNone, reason: ReasonBudgetExhausted, truncated: true, state: s.state, resources: s.res, duration: s.t}
 		}
 	}
+}
+
+func unfinishedFlight(s *stepper) flightResult {
+	if s.failed != ReasonUnspecified {
+		return flightResult{kind: contactNone, reason: s.failed, state: s.state, resources: s.res, duration: s.t}
+	}
+	return flightResult{kind: contactNone, reason: ReasonBudgetExhausted, truncated: true, state: s.state, resources: s.res, duration: s.t}
+}
+
+func finishFlightContact(s *stepper, a arc, met contact) flightResult {
+	s.advance(a, math.Min(met.at, a.span), false)
+	result := flightResult{
+		kind:      met.kind,
+		site:      met.site,
+		wall:      met.wallSide,
+		wallX:     met.wallFace,
+		state:     s.state,
+		resources: s.res,
+		witness:   s.witness(),
+		duration:  s.t,
+		reason:    ReasonObstructed,
+	}
+	if met.kind == contactLanding {
+		result.reason = ReasonWitnessFound
+	}
+	return result
 }
 
 // clipToHorizon returns the first time an arc's feet descend through a height,
@@ -299,20 +303,6 @@ func clingResources(profile MovementProfile, arriving Resources, side WallSide, 
 	return out
 }
 
-// climbResources returns the consumable state after grabbing a climbable.
-func climbResources(profile MovementProfile, arriving Resources, elapsed float64) Resources {
-	out := arriving
-	out.DashCooldown = math.Max(0, out.DashCooldown-elapsed)
-	if profile.DoubleJump != nil && profile.DoubleJump.RefillOn.Has(RefillOnClimb) {
-		out.AirJumps = profile.DoubleJump.Charges
-	}
-	if profile.Dash != nil && profile.Dash.RefillOn.Has(RefillOnClimb) {
-		out.DashCharges = profile.Dash.Charges
-		out.DashCooldown = 0
-	}
-	return out
-}
-
 // family is one shape of manoeuvre: a base launch plus the event schedule it
 // varies. Families are generated in a fixed order so the candidate stream is
 // reproducible.
@@ -336,129 +326,118 @@ func (g *geometry) enumerate(record nodeRecord, abilities AbilitySet, budget Sea
 	profile := g.profile
 	ceiling := flightCeiling(profile, budget)
 	for _, f := range g.families(record, abilities, budget) {
-		times := f.events
-		if times == nil {
-			times = []float64{math.NaN()}
-		}
-		for _, at := range times {
-			base := f.base
-			if f.apply != nil && !math.IsNaN(at) {
-				f.apply(&base, at)
-			}
-			for _, u := range g.launchVelocities(record, abilities, f, base, ceiling, budget) {
-				plan := base
-				plan.vx = u
-				plan.kind = f.kind
-				plan.requires = f.requires
-				if spent.exhausted || !visit(plan) {
-					return
-				}
-			}
-			if f.aimable {
-				continue
-			}
+		if !g.enumerateFamily(record, abilities, budget, spent, visit, f, ceiling) {
+			return
 		}
 	}
 }
 
+func (g *geometry) enumerateFamily(record nodeRecord, abilities AbilitySet, budget SearchBudget, spent *spend, visit func(launch) bool, f family, ceiling float64) bool {
+	times := f.events
+	if times == nil {
+		times = []float64{math.NaN()}
+	}
+	for _, at := range times {
+		base := f.base
+		if f.apply != nil && !math.IsNaN(at) {
+			f.apply(&base, at)
+		}
+		for _, u := range g.launchVelocities(record, abilities, f, base, ceiling, budget) {
+			plan := base
+			plan.vx = u
+			plan.kind = f.kind
+			plan.requires = f.requires
+			if spent.exhausted || !visit(plan) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // families lists the manoeuvre shapes available from a node under a moveset.
 func (g *geometry) families(record nodeRecord, abilities AbilitySet, budget SearchBudget) []family {
-	profile := g.profile
-	var out []family
-
 	base := newLaunch()
 	base.x0 = record.footX()
 	base.y0 = record.node.Height
 	base.resources = record.node.Resources
 	base.exempt = record.exempt
+	out := g.initialFamilies(record, abilities, budget, base)
+	return append(out, g.airborneExtensions(record, abilities, budget, out)...)
+}
 
-	ledge := record.ledgeLo || record.ledgeHi
-
+func (g *geometry) initialFamilies(record nodeRecord, abilities AbilitySet, budget SearchBudget, base launch) []family {
 	switch record.node.Mode {
 	case MotionModeGrounded:
-		jump := base
-		jump.vy = profile.JumpVelocity
-		jump.mode = MotionModeAirborne
-		out = append(out, family{kind: MotionEdgeKindJump, base: jump, aimable: true})
-
-		if profile.VariableJump != nil && profile.VariableJump.Mode != VariableJumpModeNone &&
-			profile.VariableJump.Mode != VariableJumpModeUnspecified {
-			out = append(out, family{
-				kind:    MotionEdgeKindJump,
-				base:    jump,
-				events:  releaseTimes(profile, budget),
-				apply:   func(plan *launch, at float64) { plan.jumpRelease = at },
-				aimable: true,
-			})
-		}
-
-		if ledge {
-			fall := base
-			fall.mode = MotionModeAirborne
-			out = append(out, family{kind: MotionEdgeKindFall, base: fall, aimable: true})
-
-			if profile.Coyote != nil && profile.Coyote.Window > 0 &&
-				profile.Coyote.AppliesTo.Has(CoyoteFromLedge) {
-				coyote := base
-				coyote.mode = MotionModeCoyote
-				out = append(out, family{
-					kind:    MotionEdgeKindJump,
-					base:    coyote,
-					events:  eventTimes(budget, profile.Coyote.Window),
-					apply:   func(plan *launch, at float64) { plan.coyoteJumpAt = at },
-					aimable: true,
-				})
-			}
-		}
-
-		if record.semi {
-			drop := base
-			drop.mode = MotionModeAirborne
-			drop.ignoreSemi = record.node.Surface
-			drop.ignoreSemiActive = true
-			out = append(out, family{kind: MotionEdgeKindDropThrough, base: drop, aimable: true})
-		}
-
+		return g.groundedFamilies(record, budget, base)
 	case MotionModeWallCling:
-		if profile.WallJump == nil || !abilities.Has(AbilityWallJump) {
-			return nil
+		return g.wallFamilies(record, abilities, base)
+	case MotionModeClimbing:
+		return g.climbFamilies(abilities, base)
+	}
+	return nil
+}
+
+func (g *geometry) groundedFamilies(record nodeRecord, budget SearchBudget, base launch) []family {
+	profile := g.profile
+	jump := base
+	jump.vy = profile.JumpVelocity
+	jump.mode = MotionModeAirborne
+	out := []family{{kind: MotionEdgeKindJump, base: jump, aimable: true}}
+	if profile.VariableJump != nil && profile.VariableJump.Mode != VariableJumpModeNone && profile.VariableJump.Mode != VariableJumpModeUnspecified {
+		out = append(out, family{kind: MotionEdgeKindJump, base: jump, events: releaseTimes(profile, budget), apply: func(plan *launch, at float64) { plan.jumpRelease = at }, aimable: true})
+	}
+	if record.ledgeLo || record.ledgeHi {
+		fall := base
+		fall.mode = MotionModeAirborne
+		out = append(out, family{kind: MotionEdgeKindFall, base: fall, aimable: true})
+		if profile.Coyote != nil && profile.Coyote.Window > 0 && profile.Coyote.AppliesTo.Has(CoyoteFromLedge) {
+			coyote := base
+			coyote.mode = MotionModeCoyote
+			out = append(out, family{kind: MotionEdgeKindJump, base: coyote, events: eventTimes(budget, profile.Coyote.Window), apply: func(plan *launch, at float64) { plan.coyoteJumpAt = at }, aimable: true})
 		}
-		away := 1.0
-		if record.wall == WallSideRight {
-			away = -1
-		}
-		leap := base
-		leap.mode = MotionModeAirborne
-		leap.vy = profile.WallJump.ImpulseY
-		leap.vx = away * profile.WallJump.ImpulseX
-		out = append(out, family{
-			kind:     MotionEdgeKindWallJump,
-			requires: NewAbilitySet(AbilityWallJump),
-			base:     leap,
-		})
+	}
+	if record.semi {
 		drop := base
 		drop.mode = MotionModeAirborne
-		drop.vx = away * profile.WallJump.ImpulseX * 0.25
-		out = append(out, family{kind: MotionEdgeKindFall, base: drop})
-
-	case MotionModeClimbing:
-		if profile.Climb == nil || !abilities.Has(AbilityClimb) {
-			return nil
-		}
-		if !profile.Climb.CanJumpOff {
-			return nil
-		}
-		leap := base
-		leap.mode = MotionModeAirborne
-		leap.vy = profile.JumpVelocity
-		out = append(out, family{
-			kind:     MotionEdgeKindClimb,
-			requires: NewAbilitySet(AbilityClimb),
-			base:     leap,
-			aimable:  true,
-		})
+		drop.ignoreSemi = record.node.Surface
+		drop.ignoreSemiActive = true
+		out = append(out, family{kind: MotionEdgeKindDropThrough, base: drop, aimable: true})
 	}
+	return out
+}
 
+func (g *geometry) wallFamilies(record nodeRecord, abilities AbilitySet, base launch) []family {
+	profile := g.profile
+	if profile.WallJump == nil || !abilities.Has(AbilityWallJump) {
+		return nil
+	}
+	away := 1.0
+	if record.wall == WallSideRight {
+		away = -1
+	}
+	leap := base
+	leap.mode = MotionModeAirborne
+	leap.vy = profile.WallJump.ImpulseY
+	leap.vx = away * profile.WallJump.ImpulseX
+	drop := base
+	drop.mode = MotionModeAirborne
+	drop.vx = away * profile.WallJump.ImpulseX * 0.25
+	return []family{{kind: MotionEdgeKindWallJump, requires: NewAbilitySet(AbilityWallJump), base: leap}, {kind: MotionEdgeKindFall, base: drop}}
+}
+
+func (g *geometry) climbFamilies(abilities AbilitySet, base launch) []family {
+	profile := g.profile
+	if profile.Climb == nil || !abilities.Has(AbilityClimb) || !profile.Climb.CanJumpOff {
+		return nil
+	}
+	leap := base
+	leap.mode = MotionModeAirborne
+	leap.vy = profile.JumpVelocity
+	return []family{{kind: MotionEdgeKindClimb, requires: NewAbilitySet(AbilityClimb), base: leap, aimable: true}}
+}
+
+func (g *geometry) airborneExtensions(record nodeRecord, abilities AbilitySet, budget SearchBudget, out []family) []family {
 	// Mid-air extensions. At most one per arc: combining a mid-air jump with a
 	// dash is a real manoeuvre and this build does not enumerate it, which
 	// makes the analysis more incomplete and never less sound.
@@ -470,40 +449,32 @@ func (g *geometry) families(record nodeRecord, abilities AbilitySet, budget Sear
 		if f.events != nil {
 			continue
 		}
-		if profile.DoubleJump != nil && abilities.Has(AbilityDoubleJump) && record.node.Resources.AirJumps > 0 {
-			airborne = append(airborne, family{
-				kind:     MotionEdgeKindDoubleJump,
-				requires: NewAbilitySet(AbilityDoubleJump),
-				base:     f.base,
-				events:   eventTimes(budget, flightCeiling(profile, budget)/2),
-				apply:    func(plan *launch, at float64) { plan.airJumpAt = at },
-				aimable:  true,
-			})
-		}
-		if profile.Dash != nil && abilities.Has(AbilityDash) &&
-			record.node.Resources.DashCharges > 0 && record.node.Resources.DashCooldown <= contactEpsilon {
-			requires := NewAbilitySet(AbilityDash)
-			if abilities.Has(AbilityShadowDash) && profile.Dash.ShadowSpeed > 0 {
-				requires = requires.With(AbilityShadowDash)
-			}
-			for _, dir := range []float64{1, -1} {
-				if !profile.Dash.Directions.Has(DashDirectionHorizontal) {
-					continue
-				}
-				burst := f.base
-				burst.dashDir = dir
-				airborne = append(airborne, family{
-					kind:     MotionEdgeKindDash,
-					requires: requires,
-					base:     burst,
-					events:   eventTimes(budget, flightCeiling(profile, budget)/2),
-					apply:    func(plan *launch, at float64) { plan.dashAt = at },
-					aimable:  false,
-				})
-			}
+		airborne = append(airborne, g.airborneFromFamily(record, abilities, budget, f)...)
+	}
+	return airborne
+}
+
+func (g *geometry) airborneFromFamily(record nodeRecord, abilities AbilitySet, budget SearchBudget, f family) []family {
+	profile := g.profile
+	var airborne []family
+	if profile.DoubleJump != nil && abilities.Has(AbilityDoubleJump) && record.node.Resources.AirJumps > 0 {
+		airborne = append(airborne, family{kind: MotionEdgeKindDoubleJump, requires: NewAbilitySet(AbilityDoubleJump), base: f.base, events: eventTimes(budget, flightCeiling(profile, budget)/2), apply: func(plan *launch, at float64) { plan.airJumpAt = at }, aimable: true})
+	}
+	if profile.Dash == nil || !abilities.Has(AbilityDash) || record.node.Resources.DashCharges == 0 || record.node.Resources.DashCooldown > contactEpsilon {
+		return airborne
+	}
+	requires := NewAbilitySet(AbilityDash)
+	if abilities.Has(AbilityShadowDash) && profile.Dash.ShadowSpeed > 0 {
+		requires = requires.With(AbilityShadowDash)
+	}
+	if profile.Dash.Directions.Has(DashDirectionHorizontal) {
+		for _, dir := range []float64{1, -1} {
+			burst := f.base
+			burst.dashDir = dir
+			airborne = append(airborne, family{kind: MotionEdgeKindDash, requires: requires, base: burst, events: eventTimes(budget, flightCeiling(profile, budget)/2), apply: func(plan *launch, at float64) { plan.dashAt = at }})
 		}
 	}
-	return append(out, airborne...)
+	return airborne
 }
 
 // eventTimes returns the mid-air event times a family tries, sampled from the
@@ -563,90 +534,100 @@ func (g *geometry) launchVelocities(record nodeRecord, abilities AbilitySet, f f
 		// The launch velocity is fixed by the manoeuvre itself.
 		return []float64{f.base.vx}
 	}
-
-	admit := func(u float64) bool {
-		if u >= 0 {
-			return u <= right+contactEpsilon
-		}
-		return -u <= left+contactEpsilon
+	samples := velocitySamples{g: g, abilities: abilities, base: base, ceiling: ceiling, budget: budget, left: left, right: right, out: make([]float64, 0, sweepSamples+2*aimPoints)}
+	if f.aimable && base.airHold == 0 {
+		samples.aimLandings()
 	}
+	samples.sweep()
+	return samples.out
+}
 
-	out := make([]float64, 0, sweepSamples+2*aimPoints)
-	seen := func(u float64) bool {
-		for _, had := range out {
-			if math.Abs(had-u) <= 1e-6 {
-				return true
-			}
-		}
-		return false
+type velocitySamples struct {
+	g           *geometry
+	abilities   AbilitySet
+	base        launch
+	ceiling     float64
+	budget      SearchBudget
+	left, right float64
+	out         []float64
+}
+
+func (s *velocitySamples) add(u float64) {
+	if math.IsNaN(u) || math.IsInf(u, 0) || u >= 0 && u > s.right+contactEpsilon || u < 0 && -u > s.left+contactEpsilon {
+		return
 	}
-	add := func(u float64) {
-		if !admit(u) || math.IsNaN(u) || math.IsInf(u, 0) || seen(u) {
+	for _, had := range s.out {
+		if math.Abs(had-u) <= 1e-6 {
 			return
 		}
-		out = append(out, u)
 	}
+	s.out = append(s.out, u)
+}
 
-	if f.aimable && base.airHold == 0 {
-		// The vertical motion does not depend on the launch velocity, so the
-		// flight time to a height — and with it the horizontal offset and the
-		// slope of the displacement in u — is computed ONCE PER ROW and
-		// reused by every landing site at that height. Then the window the
-		// run-up can actually deliver prunes the sites before any of them is
-		// aimed at.
-		zero, one := base, base
-		zero.vx, one.vx = 0, 1
-		for row := range g.landings {
-			sites := g.landings[row]
-			if len(sites) == 0 {
-				continue
-			}
-			at := sites[0].at
-			if at-base.y0 > profile.ApexHeight()+profile.BodyHeight || base.y0-at > budget.FallHorizon {
-				continue
-			}
-			flight, ok := descentTime(profile, abilities, zero, at, ceiling)
-			if !ok {
-				continue
-			}
-			offset := horizontalReach(profile, abilities, zero, flight)
-			slope := horizontalReach(profile, abilities, one, flight) - offset
-			if math.Abs(slope) <= contactEpsilon {
-				continue
-			}
-			leftReach := float64(left * slope)
-			rightReach := float64(right * slope)
-			window := Span{
-				Lo: float64(base.x0 + offset - leftReach),
-				Hi: float64(base.x0 + offset + rightReach),
-			}
-			if window.Lo > window.Hi {
-				window.Lo, window.Hi = window.Hi, window.Lo
-			}
-			for _, site := range sites {
-				if !window.Overlaps(site.footing) {
-					continue
-				}
-				for point := 0; point < aimPoints; point++ {
-					length := float64(site.footing.Length())
-					weighted := float64(length * float64(point))
-					fraction := float64(weighted / float64(aimPoints-1))
-					target := float64(site.footing.Lo + fraction)
-					add((target - base.x0 - offset) / slope)
-				}
-			}
+func (s *velocitySamples) aimLandings() {
+	// Vertical motion is independent of launch velocity, so compute flight
+	// time and horizontal slope once per row, then aim at each landing site.
+	zero, one := s.base, s.base
+	zero.vx, one.vx = 0, 1
+	for row := range s.g.landings {
+		sites := s.g.landings[row]
+		if len(sites) == 0 {
+			continue
+		}
+		s.aimRow(sites, zero, one)
+	}
+}
+
+func (s *velocitySamples) aimRow(sites []landingSite, zero, one launch) {
+	profile := s.g.profile
+	at := sites[0].at
+	if at-s.base.y0 > profile.ApexHeight()+profile.BodyHeight || s.base.y0-at > s.budget.FallHorizon {
+		return
+	}
+	flight, ok := descentTime(profile, s.abilities, zero, at, s.ceiling)
+	if !ok {
+		return
+	}
+	offset := horizontalReach(profile, s.abilities, zero, flight)
+	slope := horizontalReach(profile, s.abilities, one, flight) - offset
+	if math.Abs(slope) <= contactEpsilon {
+		return
+	}
+	leftReach := float64(s.left * slope)
+	rightReach := float64(s.right * slope)
+	window := Span{
+		Lo: float64(s.base.x0 + offset - leftReach),
+		Hi: float64(s.base.x0 + offset + rightReach),
+	}
+	if window.Lo > window.Hi {
+		window.Lo, window.Hi = window.Hi, window.Lo
+	}
+	for _, site := range sites {
+		if window.Overlaps(site.footing) {
+			s.aimSite(site, offset, slope)
 		}
 	}
+}
 
-	limit := math.Max(right, left)
+func (s *velocitySamples) aimSite(site landingSite, offset, slope float64) {
+	for point := 0; point < aimPoints; point++ {
+		length := float64(site.footing.Length())
+		weighted := float64(length * float64(point))
+		fraction := float64(weighted / float64(aimPoints-1))
+		target := float64(site.footing.Lo + fraction)
+		s.add((target - s.base.x0 - offset) / slope)
+	}
+}
+
+func (s *velocitySamples) sweep() {
+	limit := math.Max(s.right, s.left)
 	for i := 0; i < sweepSamples; i++ {
 		scaledLimit := float64(2 * limit)
 		weighted := float64(scaledLimit * float64(i))
 		fraction := float64(weighted / float64(sweepSamples-1))
 		u := float64(-limit + fraction)
-		add(u)
+		s.add(u)
 	}
-	return out
 }
 
 // --- the edge question ----------------------------------------------------
@@ -782,122 +763,143 @@ func (g *geometry) decide(ctx context.Context, from nodeRecord, query EdgeQuery,
 		return walk
 	}
 
-	// The rejection reasons are distinguished by how far a candidate got, not
-	// by which one failed last. Reaching the destination and failing to stop
-	// on it is a different fact from never reaching it, and a consumer that
-	// has to tell a short platform from a wall reads this field.
-	landedSomewhere := false
-	landedOnTarget := false
-	stopFailed := false
-	arrivalMismatch := false
-	obstructed := false
-	truncated := false
-	abilityShort := false
-
-	var answer EdgeResult
-	found := false
-
-	g.enumerate(from, query.Abilities, budget, spent, func(plan launch) bool {
-		if err := ctx.Err(); err != nil {
-			return false
-		}
-		if query.Kind != MotionEdgeKindUnspecified && plan.kind != query.Kind {
-			return true
-		}
-		if !query.Abilities.Contains(plan.requires) {
-			abilityShort = true
-			return true
-		}
-		if !spent.candidate() {
-			truncated = true
-			return false
-		}
-		result := g.fly(query.Abilities, plan, ceiling, horizon, !query.OmitWitness, spent)
-		switch result.reason {
-		case ReasonBudgetExhausted:
-			truncated = true
-		case ReasonObstructed:
-			obstructed = true
-		}
-		if result.kind != contactLanding {
-			if arrival, ok := g.clingArrival(from, plan, result, query); ok {
-				if matchArrival(arrival, query, profile) {
-					answer = EdgeResult{
-						Edge:      edgeFrom(plan, result, query),
-						Judgement: judgeAs(VerdictCertified, ReasonWitnessFound, profile, "wall contact certified", spent.report),
-					}
-					found = true
-					return false
-				}
-			}
-			return true
-		}
-		landedSomewhere = true
-		onTarget := result.site.surface == query.To.Surface && result.site.interval == query.To.Interval
-		if onTarget {
-			landedOnTarget = true
-		}
-		arrival, ok := g.landingArrival(plan, result, query.Profile)
-		if !ok {
-			if onTarget {
-				stopFailed = true
-			}
-			return true
-		}
-		if !matchArrival(arrival, query, profile) {
-			if onTarget {
-				arrivalMismatch = true
-			}
-			return true
-		}
-		answer = EdgeResult{
-			Edge:      edgeFrom(plan, result, query),
-			Judgement: judgeAs(VerdictCertified, ReasonWitnessFound, profile, plan.kind.String()+" certified", spent.report),
-		}
-		found = true
-		return false
-	})
-
-	if found {
-		return answer
+	// Rejection reasons reflect how far candidates got, not the last failure.
+	search := edgeSearch{g: g, ctx: ctx, from: from, query: query, budget: budget, spent: spent, ceiling: ceiling, horizon: horizon}
+	g.enumerate(from, query.Abilities, budget, spent, search.visit)
+	if search.found {
+		return search.answer
 	}
 	// Naming the right reason for a rejection is worth one re-run. When the
 	// departure has already spent a charge, the honest answer depends on
 	// whether the charge was what was missing, and the only way to know is to
 	// ask the same question of a rested state. ReasonResourceExhausted is
 	// reported only when that rested state would have made it.
-	if diagnose && !truncated && spentCharges(profile, query.Abilities, from.node.Resources) {
-		rested := from
-		rested.node.Resources = profile.FullResources()
-		probe := query
-		probe.From.Resources = rested.node.Resources
-		if g.decide(ctx, rested, probe, budget, newSpend(budget), false).Judgement.Certified() {
-			return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonResourceExhausted, profile,
-				"the same manoeuvre is certified from a rested state, so what is missing is a charge the departure has already spent", spent.report)}
-		}
+	if diagnose && !search.truncated && spentCharges(profile, query.Abilities, from.node.Resources) && search.restedWouldSucceed() {
+		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonResourceExhausted, profile,
+			"the same manoeuvre is certified from a rested state, so what is missing is a charge the departure has already spent", spent.report)}
 	}
+	return search.rejection()
+}
+
+type edgeSearch struct {
+	g                *geometry
+	ctx              context.Context
+	from             nodeRecord
+	query            EdgeQuery
+	budget           SearchBudget
+	spent            *spend
+	ceiling, horizon float64
+	landedSomewhere  bool
+	landedOnTarget   bool
+	stopFailed       bool
+	arrivalMismatch  bool
+	obstructed       bool
+	truncated        bool
+	abilityShort     bool
+	answer           EdgeResult
+	found            bool
+}
+
+func (s *edgeSearch) visit(plan launch) bool {
+	if s.ctx.Err() != nil {
+		return false
+	}
+	if s.query.Kind != MotionEdgeKindUnspecified && plan.kind != s.query.Kind {
+		return true
+	}
+	if !s.query.Abilities.Contains(plan.requires) {
+		s.abilityShort = true
+		return true
+	}
+	if !s.spent.candidate() {
+		s.truncated = true
+		return false
+	}
+	result := s.g.fly(s.query.Abilities, plan, s.ceiling, s.horizon, !s.query.OmitWitness, s.spent)
+	switch result.reason {
+	case ReasonBudgetExhausted:
+		s.truncated = true
+	case ReasonObstructed:
+		s.obstructed = true
+	}
+	if result.kind == contactLanding {
+		return s.visitLanding(plan, result)
+	}
+	return s.visitCling(plan, result)
+}
+
+func (s *edgeSearch) visitCling(plan launch, result flightResult) bool {
+	arrival, ok := s.g.clingArrival(s.from, plan, result, s.query)
+	if !ok || !matchArrival(arrival, s.query, s.query.Profile) {
+		return true
+	}
+	s.answer = EdgeResult{
+		Edge:      edgeFrom(plan, result, s.query),
+		Judgement: judgeAs(VerdictCertified, ReasonWitnessFound, s.query.Profile, "wall contact certified", s.spent.report),
+	}
+	s.found = true
+	return false
+}
+
+func (s *edgeSearch) visitLanding(plan launch, result flightResult) bool {
+	s.landedSomewhere = true
+	onTarget := result.site.surface == s.query.To.Surface && result.site.interval == s.query.To.Interval
+	if onTarget {
+		s.landedOnTarget = true
+	}
+	arrival, ok := s.g.landingArrival(plan, result, s.query.Profile)
+	if !ok {
+		if onTarget {
+			s.stopFailed = true
+		}
+		return true
+	}
+	if !matchArrival(arrival, s.query, s.query.Profile) {
+		if onTarget {
+			s.arrivalMismatch = true
+		}
+		return true
+	}
+	s.answer = EdgeResult{
+		Edge:      edgeFrom(plan, result, s.query),
+		Judgement: judgeAs(VerdictCertified, ReasonWitnessFound, s.query.Profile, plan.kind.String()+" certified", s.spent.report),
+	}
+	s.found = true
+	return false
+}
+
+func (s *edgeSearch) restedWouldSucceed() bool {
+	rested := s.from
+	rested.node.Resources = s.query.Profile.FullResources()
+	probe := s.query
+	probe.From.Resources = rested.node.Resources
+	return s.g.decide(s.ctx, rested, probe, s.budget, newSpend(s.budget), false).Judgement.Certified()
+}
+
+func (s *edgeSearch) rejection() EdgeResult {
+	profile := s.query.Profile
 	switch {
-	case truncated:
+	case s.truncated:
 		return EdgeResult{Judgement: judgeAs(VerdictUnknown, ReasonBudgetExhausted, profile,
-			"the search ceiling or the fall horizon ended the enumeration before the question was decided", spent.report)}
-	case stopFailed:
+			"the search ceiling or the fall horizon ended the enumeration before the question was decided", s.spent.report)}
+	case s.stopFailed:
 		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonLandingUnsupported, profile,
-			"candidates landed on the destination but could not shed their arrival speed inside its footing; arriving is not standing", spent.report)}
-	case arrivalMismatch:
+			"candidates landed on the destination but could not shed their arrival speed inside its footing; arriving is not standing", s.spent.report)}
+	case s.arrivalMismatch:
 		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonLandingUnsupported, profile,
-			"candidates came to rest on the destination surface in a state the query does not accept", spent.report)}
-	case landedOnTarget:
+			"candidates came to rest on the destination surface in a state the query does not accept", s.spent.report)}
+	case s.landedOnTarget:
 		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonLandingUnsupported, profile,
-			"the destination offers no footing the body can land on", spent.report)}
-	case abilityShort && !landedSomewhere:
+			"the destination offers no footing the body can land on", s.spent.report)}
+	case s.abilityShort && !s.landedSomewhere:
 		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonAbilityMissing, profile,
-			"the manoeuvre needs an ability the moveset does not hold", spent.report)}
-	case obstructed:
+			"the manoeuvre needs an ability the moveset does not hold", s.spent.report)}
+	case s.obstructed:
 		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonObstructed, profile,
-			"every candidate aimed at the destination collided before reaching it", spent.report)}
+			"every candidate aimed at the destination collided before reaching it", s.spent.report)}
 	default:
 		return EdgeResult{Judgement: judgeAs(VerdictRejected, ReasonOutOfEnvelope, profile,
-			"no candidate manoeuvre reached the destination", spent.report)}
+			"no candidate manoeuvre reached the destination", s.spent.report)}
 	}
 }
 

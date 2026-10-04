@@ -49,6 +49,9 @@ func TestGeneratePlatformCarriesUnknownJudgementAndReason(t *testing.T) {
 	require.Equal(t, daedalusv1.PlatformVerdict_PLATFORM_VERDICT_UNKNOWN, response.Layout.Judgement.Verdict)
 	require.Equal(t, daedalusv1.PlatformVerdictReason_PLATFORM_VERDICT_REASON_BUDGET_EXHAUSTED, response.Layout.Judgement.Reason)
 	require.True(t, response.Layout.Judgement.Budget.Exhausted)
+	payload, err := protojson.Marshal(response.Layout.Judgement)
+	require.NoError(t, err)
+	require.Contains(t, string(payload), "PLATFORM_VERDICT_UNKNOWN")
 }
 
 func TestGeneratePlatformUsesAnExplicitMovementProfile(t *testing.T) {

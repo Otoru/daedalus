@@ -135,41 +135,67 @@ func (layer *TerrainLayer) Validate(width, height uint32) error {
 	if layer == nil {
 		return nil
 	}
+	product, err := terrainCellCount(width, height)
+	if err != nil {
+		return err
+	}
+	if err := validateTerrainPalette(layer.Palette); err != nil {
+		return err
+	}
+	return validateTerrainIndices(layer.Indices, layer.Palette, product)
+}
+
+func terrainCellCount(width, height uint32) (uint64, error) {
 	if width == 0 || height == 0 {
-		return terrainError("dimensions %dx%d are zero", width, height)
+		return 0, terrainError("dimensions %dx%d are zero", width, height)
 	}
 	product := uint64(width) * uint64(height)
 	if product > uint64(MaxCells) {
-		return fmt.Errorf("%w: TerrainLayer has %d cells, above %d", ErrLimitExceeded, product, MaxCells)
+		return 0, fmt.Errorf("%w: TerrainLayer has %d cells, above %d", ErrLimitExceeded, product, MaxCells)
 	}
-	if len(layer.Palette) == 0 {
+	return product, nil
+}
+
+func validateTerrainPalette(palette []TerrainDefinition) error {
+	if len(palette) == 0 {
 		return terrainError("palette is empty")
 	}
-	if len(layer.Palette) > MaxTerrainKinds {
-		return fmt.Errorf("%w: palette has %d definitions, above %d", ErrLimitExceeded, len(layer.Palette), MaxTerrainKinds)
+	if len(palette) > MaxTerrainKinds {
+		return fmt.Errorf("%w: palette has %d definitions, above %d", ErrLimitExceeded, len(palette), MaxTerrainKinds)
 	}
 	var paletteBytes uint64
-	for index, definition := range layer.Palette {
-		if definition.ID == "" {
-			return terrainError("palette definition %d has an empty ID", index)
-		}
-		if !utf8.ValidString(string(definition.ID)) {
-			return terrainError("palette definition %d has invalid UTF-8", index)
-		}
-		if index > 0 && layer.Palette[index-1].ID >= definition.ID {
-			return terrainError("palette is not strictly sorted at index %d", index)
+	for index, definition := range palette {
+		if err := validateTerrainPaletteEntry(palette, index, definition); err != nil {
+			return err
 		}
 		paletteBytes += uint64(len(string(definition.ID)))
 		if paletteBytes > uint64(MaxTerrainPaletteBytes) {
 			return fmt.Errorf("%w: palette IDs use %d bytes, above %d", ErrLimitExceeded, paletteBytes, MaxTerrainPaletteBytes)
 		}
 	}
-	if uint64(len(layer.Indices)) != product {
-		return terrainError("index length %d disagrees with grid cell count %d", len(layer.Indices), product)
+	return nil
+}
+
+func validateTerrainPaletteEntry(palette []TerrainDefinition, index int, definition TerrainDefinition) error {
+	if definition.ID == "" {
+		return terrainError("palette definition %d has an empty ID", index)
 	}
-	for index, paletteIndex := range layer.Indices {
-		if int(paletteIndex) > len(layer.Palette) {
-			return terrainError("index %d selects palette entry %d, palette length is %d", index, paletteIndex, len(layer.Palette))
+	if !utf8.ValidString(string(definition.ID)) {
+		return terrainError("palette definition %d has invalid UTF-8", index)
+	}
+	if index > 0 && palette[index-1].ID >= definition.ID {
+		return terrainError("palette is not strictly sorted at index %d", index)
+	}
+	return nil
+}
+
+func validateTerrainIndices(indices []byte, palette []TerrainDefinition, product uint64) error {
+	if uint64(len(indices)) != product {
+		return terrainError("index length %d disagrees with grid cell count %d", len(indices), product)
+	}
+	for index, paletteIndex := range indices {
+		if int(paletteIndex) > len(palette) {
+			return terrainError("index %d selects palette entry %d, palette length is %d", index, paletteIndex, len(palette))
 		}
 	}
 	return nil

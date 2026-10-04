@@ -60,6 +60,21 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 	if err := ValidatePlane(macro.Plane); err != nil {
 		t.Fatalf("ValidatePlane: %v", err)
 	}
+	stats := checkMacroCalibration(t, macro, cfg)
+	checkMacroAudit(t, macro)
+	again, err := GenerateMacro(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second GenerateMacro: %v", err)
+	}
+	if TransitionStatistics(again.Plane) != stats {
+		t.Fatal("a second generate with the same seed changed the statistics")
+	}
+	if again.Plane.Goal != macro.Plane.Goal || again.Plane.Rooms[3].Origin != macro.Plane.Rooms[3].Origin {
+		t.Fatal("a second generate with the same seed moved a room or the goal")
+	}
+}
+
+func checkMacroCalibration(t *testing.T, macro Macro, cfg MacroConfig) TransitionStats {
 	stats := TransitionStatistics(macro.Plane)
 	if stats.ParallelPairs != 0 {
 		t.Fatalf("parallel room pairs = %d; inflated degree %.4f over %d distinct pairs", stats.ParallelPairs, stats.MeanDegree, stats.DistinctPairs)
@@ -78,6 +93,11 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 	if stats.OneWayPairs > stats.ConditionalPairs {
 		t.Fatalf("one-way pairs %d outnumber conditional pairs %d", stats.OneWayPairs, stats.ConditionalPairs)
 	}
+	checkMacroOpeningOffsets(t, macro, stats)
+	return stats
+}
+
+func checkMacroOpeningOffsets(t *testing.T, macro Macro, stats TransitionStats) {
 	widths := map[uint32]bool{}
 	var multiOffset bool
 	for _, room := range macro.Plane.Rooms {
@@ -98,6 +118,9 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 	if stats.MultiOpeningSides > 0 && !multiOffset {
 		t.Fatal("a side with two openings does not give them different offsets")
 	}
+}
+
+func checkMacroAudit(t *testing.T, macro Macro) {
 	audit, err := AuditMacro(context.Background(), macro)
 	if err != nil {
 		t.Fatalf("AuditMacro: %v", err)
@@ -111,16 +134,6 @@ func TestGenerateMacroMatchesTheCalibration(t *testing.T) {
 	last := audit.Route.Stages[len(audit.Route.Stages)-1]
 	if !last.GoalReachable || !last.ObjectiveIsGoal {
 		t.Fatal("the final stage does not reach the goal")
-	}
-	again, err := GenerateMacro(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("second GenerateMacro: %v", err)
-	}
-	if TransitionStatistics(again.Plane) != stats {
-		t.Fatal("a second generate with the same seed changed the statistics")
-	}
-	if again.Plane.Goal != macro.Plane.Goal || again.Plane.Rooms[3].Origin != macro.Plane.Rooms[3].Origin {
-		t.Fatal("a second generate with the same seed moved a room or the goal")
 	}
 }
 
@@ -138,35 +151,12 @@ func TestCalibrationIsStableAcrossSeeds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed %d: %v", seed, err)
 		}
-		stats := TransitionStatistics(macro.Plane)
-		wantAsym := targetAsymmetricCount(stats.Pairs)
-		if stats.ParallelPairs != 0 || stats.ConditionalPairs != 3 || stats.AsymmetricPairs != wantAsym {
-			t.Fatalf("seed %d stats = %+v, want 3 conditional and %d asymmetric", seed, stats, wantAsym)
-		}
-		if msg := exampleSideOpeningError(macro.Plane); msg != "" {
-			t.Fatalf("seed %d: %s", seed, msg)
-		}
-		honest := 2 * float64(stats.DistinctPairs) / float64(stats.Rooms)
-		if math.Abs(stats.MeanDegree-honest) > 1e-9 {
-			t.Fatalf("seed %d mean degree %.4f, honest %.4f", seed, stats.MeanDegree, honest)
-		}
+		stats := checkSeedCalibration(t, macro, seed)
 		asym += stats.AsymmetricPairs
 		oneWay += stats.OneWayPairs
 		conditional += stats.ConditionalPairs
 		pairs += stats.Pairs
-		for _, room := range macro.Plane.Rooms {
-			for _, tr := range room.Transitions {
-				if tr.Outbound == nil {
-					continue
-				}
-				switch tr.Outbound.Note {
-				case "fall":
-					falls++
-				case "bot-return":
-					returns++
-				}
-			}
-		}
+		falls, returns = countMacroTransitionNotes(macro, falls, returns)
 		audit, err := AuditMacro(context.Background(), macro)
 		if err != nil {
 			t.Fatalf("seed %d audit: %v", seed, err)
@@ -185,6 +175,39 @@ func TestCalibrationIsStableAcrossSeeds(t *testing.T) {
 	if returns == 0 || conditional <= oneWay {
 		t.Fatalf("falls %d, bot-returns %d, conditional %d, one-way %d", falls, returns, conditional, oneWay)
 	}
+}
+
+func checkSeedCalibration(t *testing.T, macro Macro, seed uint64) TransitionStats {
+	stats := TransitionStatistics(macro.Plane)
+	wantAsym := targetAsymmetricCount(stats.Pairs)
+	if stats.ParallelPairs != 0 || stats.ConditionalPairs != 3 || stats.AsymmetricPairs != wantAsym {
+		t.Fatalf("seed %d stats = %+v, want 3 conditional and %d asymmetric", seed, stats, wantAsym)
+	}
+	if msg := exampleSideOpeningError(macro.Plane); msg != "" {
+		t.Fatalf("seed %d: %s", seed, msg)
+	}
+	honest := 2 * float64(stats.DistinctPairs) / float64(stats.Rooms)
+	if math.Abs(stats.MeanDegree-honest) > 1e-9 {
+		t.Fatalf("seed %d mean degree %.4f, honest %.4f", seed, stats.MeanDegree, honest)
+	}
+	return stats
+}
+
+func countMacroTransitionNotes(macro Macro, falls int, returns int) (int, int) {
+	for _, room := range macro.Plane.Rooms {
+		for _, tr := range room.Transitions {
+			if tr.Outbound == nil {
+				continue
+			}
+			switch tr.Outbound.Note {
+			case "fall":
+				falls++
+			case "bot-return":
+				returns++
+			}
+		}
+	}
+	return falls, returns
 }
 
 // TestACanonicalBeatFitsInTheDefaultRoom is the composition check that used to

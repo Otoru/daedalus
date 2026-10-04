@@ -151,33 +151,48 @@ func TestTerrainPatchGolden(t *testing.T) {
 
 func TestTerrainSpineNeverReceivesImpassableTerrain(t *testing.T) {
 	for seed := Seed(0); seed < 32; seed++ {
-		layout := terrainGoldenLayout()
-		effective, err := normalizeConfig(Config{
-			Width: 6, Height: 4, Seed: seed,
-			Terrain: &TerrainConfig{
-				Definitions: []TerrainDefinition{{ID: "rock", EntryCost: 0}, {ID: "water", EntryCost: 1}},
-				Rooms:       &TerrainDistribution{Terrains: []TerrainWeight{{TerrainID: "rock", Weight: 99}, {TerrainID: "water", Weight: 1}}},
-			},
-		})
-		if err != nil {
-			t.Fatal(err)
+		assertSpineRejectsImpassableTerrain(t, seed)
+	}
+}
+
+func assertSpineRejectsImpassableTerrain(t *testing.T, seed Seed) {
+	t.Helper()
+	layout := terrainGoldenLayout()
+	effective, err := normalizeConfig(Config{
+		Width: 6, Height: 4, Seed: seed,
+		Terrain: &TerrainConfig{
+			Definitions: []TerrainDefinition{{ID: "rock", EntryCost: 0}, {ID: "water", EntryCost: 1}},
+			Rooms:       &TerrainDistribution{Terrains: []TerrainWeight{{TerrainID: "rock", Weight: 99}, {TerrainID: "water", Weight: 1}}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNoImpassableProtectedCandidate(t, effective, seed)
+	if err := placeTerrain(context.Background(), effective, &layout); err != nil {
+		t.Fatal(err)
+	}
+	assertProtectedCellsAvoidImpassable(t, layout, seed)
+}
+
+func assertNoImpassableProtectedCandidate(t *testing.T, effective effectiveConfig, seed Seed) {
+	t.Helper()
+	for _, candidate := range terrainCandidates(effective.terrain, effective.terrain.Rooms, true) {
+		if candidate.index == 1 {
+			t.Fatalf("protected candidate set contains impassable terrain at seed %d", seed)
 		}
-		for _, candidate := range terrainCandidates(effective.terrain, effective.terrain.Rooms, true) {
-			if candidate.index == 1 {
-				t.Fatalf("protected candidate set contains impassable terrain at seed %d", seed)
-			}
-		}
-		if err := placeTerrain(context.Background(), effective, &layout); err != nil {
-			t.Fatal(err)
-		}
-		spine, err := buildConnectivitySpine(context.Background(), layout)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for index, state := range layout.Grid.Cells {
-			if spine.protected(state.At) && layout.Grid.Terrain.Indices[index] == 1 {
-				t.Fatalf("protected Cell %v received impassable terrain at seed %d", state.At, seed)
-			}
+	}
+}
+
+func assertProtectedCellsAvoidImpassable(t *testing.T, layout Layout, seed Seed) {
+	t.Helper()
+	spine, err := buildConnectivitySpine(context.Background(), layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, state := range layout.Grid.Cells {
+		if spine.protected(state.At) && layout.Grid.Terrain.Indices[index] == 1 {
+			t.Fatalf("protected Cell %v received impassable terrain at seed %d", state.At, seed)
 		}
 	}
 }
@@ -197,31 +212,45 @@ func TestTerrainPatchHistogramHasRecognizableRegions(t *testing.T) {
 	}
 	histogram := terrainRegionHistogram(layout.Grid)
 	for _, id := range []TerrainID{"water", "grass"} {
-		index := byte(0)
-		for paletteIndex, definition := range layout.Grid.Terrain.Palette {
-			if definition.ID == id {
-				index = byte(paletteIndex + 1)
-			}
-		}
-		sizes := make([]int, 0)
-		cells := 0
-		for size, count := range histogram[index] {
-			for repeat := 0; repeat < count; repeat++ {
-				sizes = append(sizes, size)
-				cells += size
-			}
-		}
-		if len(sizes) == 0 {
-			t.Fatalf("no regions for %s", id)
-		}
-		sort.Ints(sizes)
-		median := sizes[len(sizes)/2]
-		singles := histogram[index][1]
-		if median <= 1 || singles*2 >= len(sizes) {
-			t.Fatalf("%s remains speckled: regions=%d singles=%d median=%d cells=%d histogram=%v", id, len(sizes), singles, median, cells, histogram[index])
-		}
-		t.Logf("%s: regions=%d cells=%d median=%d histogram=%v", id, len(sizes), cells, median, histogram[index])
+		assertTerrainRegionIsNotSpeckled(t, layout, histogram, id)
 	}
+}
+
+func assertTerrainRegionIsNotSpeckled(t *testing.T, layout Layout, histogram map[byte]map[int]int, id TerrainID) {
+	t.Helper()
+	index := terrainPaletteIndex(layout.Grid.Terrain.Palette, id)
+	sizes, cells := terrainRegionSizes(histogram[index])
+	if len(sizes) == 0 {
+		t.Fatalf("no regions for %s", id)
+	}
+	sort.Ints(sizes)
+	median := sizes[len(sizes)/2]
+	singles := histogram[index][1]
+	if median <= 1 || singles*2 >= len(sizes) {
+		t.Fatalf("%s remains speckled: regions=%d singles=%d median=%d cells=%d histogram=%v", id, len(sizes), singles, median, cells, histogram[index])
+	}
+	t.Logf("%s: regions=%d cells=%d median=%d histogram=%v", id, len(sizes), cells, median, histogram[index])
+}
+
+func terrainPaletteIndex(palette []TerrainDefinition, id TerrainID) byte {
+	for paletteIndex, definition := range palette {
+		if definition.ID == id {
+			return byte(paletteIndex + 1)
+		}
+	}
+	return 0
+}
+
+func terrainRegionSizes(counts map[int]int) ([]int, int) {
+	sizes := make([]int, 0)
+	cells := 0
+	for size, count := range counts {
+		for repeat := 0; repeat < count; repeat++ {
+			sizes = append(sizes, size)
+			cells += size
+		}
+	}
+	return sizes, cells
 }
 
 func TestTerrainAreaGrowthGolden(t *testing.T) {
@@ -264,33 +293,48 @@ func terrainRegionHistogram(grid Grid) map[byte]map[int]int {
 		if visited[index] || grid.Terrain.Indices[index] == 0 {
 			continue
 		}
+		size := floodTerrainRegion(grid, visited, index, grid.Terrain.Indices[index], state.Kind, width)
 		label := grid.Terrain.Indices[index]
-		kind := state.Kind
-		queue := []int{index}
-		visited[index] = true
-		for head := 0; head < len(queue); head++ {
-			current := queue[head]
-			x, y := current%width, current/width
-			for _, direction := range terrainNeighborOrder {
-				delta := direction.Delta()
-				nextX, nextY := x+int(delta.X), y+int(delta.Y)
-				if nextX < 0 || nextX >= width || nextY < 0 || nextY >= int(grid.Height) {
-					continue
-				}
-				next := nextY*width + nextX
-				if visited[next] || grid.Terrain.Indices[next] != label || grid.Cells[next].Kind != kind {
-					continue
-				}
-				visited[next] = true
-				queue = append(queue, next)
-			}
-		}
 		if histogram[label] == nil {
 			histogram[label] = make(map[int]int)
 		}
-		histogram[label][len(queue)]++
+		histogram[label][size]++
 	}
 	return histogram
+}
+
+func floodTerrainRegion(grid Grid, visited []bool, start int, label byte, kind CellKind, width int) int {
+	queue := []int{start}
+	visited[start] = true
+	for head := 0; head < len(queue); head++ {
+		enqueueTerrainRegionNeighbors(grid, visited, &queue, queue[head], label, kind, width)
+	}
+	return len(queue)
+}
+
+func enqueueTerrainRegionNeighbors(
+	grid Grid,
+	visited []bool,
+	queue *[]int,
+	current int,
+	label byte,
+	kind CellKind,
+	width int,
+) {
+	x, y := current%width, current/width
+	for _, direction := range terrainNeighborOrder {
+		delta := direction.Delta()
+		nextX, nextY := x+int(delta.X), y+int(delta.Y)
+		if nextX < 0 || nextX >= width || nextY < 0 || nextY >= int(grid.Height) {
+			continue
+		}
+		next := nextY*width + nextX
+		if visited[next] || grid.Terrain.Indices[next] != label || grid.Cells[next].Kind != kind {
+			continue
+		}
+		visited[next] = true
+		*queue = append(*queue, next)
+	}
 }
 
 func terrainGoldenLayout() Layout {
