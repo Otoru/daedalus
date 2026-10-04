@@ -17,6 +17,8 @@ jobs:
           # go.mod is the single source of the Go toolchain version.
           go-version-file: go.mod
       - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
       - uses: golangci/golangci-lint-action@v9
         with:
           # Pinned to the Makefile floor (GOLANGCI_LINT_MIN) so local and CI fail the same findings.
