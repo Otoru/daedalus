@@ -2,13 +2,9 @@ package platform
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"sync"
 	"testing"
 )
@@ -890,74 +886,34 @@ func exampleLayout(t *testing.T, name string) PlatformLayout {
 
 func exampleConfig(t *testing.T, name string) Config {
 	t.Helper()
-	path := filepath.Join("..", ".research", "exemplos-plataforma", name+".json")
-	payload, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	var file struct {
-		Config struct {
-			Seed            string `json:"seed"`
-			Width           uint32 `json:"width"`
-			Height          uint32 `json:"height"`
-			MaxRooms        uint32 `json:"max_rooms"`
-			BeatDefinitions []struct {
-				Kind       int    `json:"kind"`
-				MinCells   uint32 `json:"min_cells"`
-				MaxCells   uint32 `json:"max_cells"`
-				Difficulty uint8  `json:"difficulty"`
-				Requires   uint32 `json:"requires"`
-			} `json:"beat_definitions"`
-			Spine    *exampleDistribution `json:"spine"`
-			Branches *exampleDistribution `json:"branches"`
-		} `json:"config"`
-	}
-	if err := json.Unmarshal(payload, &file); err != nil {
-		t.Fatalf("decode %s: %v", name, err)
-	}
-	seed, err := strconv.ParseUint(file.Config.Seed, 10, 64)
-	if err != nil {
-		t.Fatalf("seed %q: %v", file.Config.Seed, err)
-	}
+	// Keep these invariant fixtures in the test: .research is intentionally
+	// ignored and must not be required by a clean checkout or release build.
 	config := Config{
-		Seed:     Seed(seed),
-		Width:    file.Config.Width,
-		Height:   file.Config.Height,
-		MaxRooms: file.Config.MaxRooms,
-		Profile:  DefaultProfile(),
+		Seed:    1,
+		Width:   120,
+		Height:  70,
+		Profile: DefaultProfile(),
+		Beats: BeatConfig{
+			Definitions: []BeatDefinition{{Kind: BeatKindRest}},
+			Spine: &BeatDistribution{
+				Beats:       []BeatWeight{{Kind: BeatKindRest, Weight: 1}},
+				MinRunBeats: 3,
+				MaxRunBeats: 5,
+			},
+		},
 	}
-	for _, definition := range file.Config.BeatDefinitions {
-		config.Beats.Definitions = append(config.Beats.Definitions, BeatDefinition{
-			Kind:       BeatKind(definition.Kind),
-			MinCells:   definition.MinCells,
-			MaxCells:   definition.MaxCells,
-			Difficulty: definition.Difficulty,
-			Requires:   AbilitySet(definition.Requires),
-		})
+	switch name {
+	case "01-minimo":
+		return config
+	case "02-travessia":
+		config.Seed = 2
+		config.Beats.Definitions = append(config.Beats.Definitions, BeatDefinition{Kind: BeatKindTraverse, Difficulty: 40})
+		config.Beats.Spine.Beats = []BeatWeight{{Kind: BeatKindRest, Weight: 2}, {Kind: BeatKindTraverse, Weight: 3}}
+		return config
+	default:
+		t.Fatalf("unknown invariant fixture %q", name)
+		return Config{}
 	}
-	config.Beats.Spine = definitionFromExample(file.Config.Spine)
-	config.Beats.Branches = definitionFromExample(file.Config.Branches)
-	return config
-}
-
-type exampleDistribution struct {
-	MinRunBeats uint32 `json:"min_run_beats"`
-	MaxRunBeats uint32 `json:"max_run_beats"`
-	Beats       []struct {
-		Kind   int    `json:"kind"`
-		Weight uint32 `json:"weight"`
-	} `json:"beats"`
-}
-
-func definitionFromExample(source *exampleDistribution) *BeatDistribution {
-	if source == nil {
-		return nil
-	}
-	out := &BeatDistribution{MinRunBeats: source.MinRunBeats, MaxRunBeats: source.MaxRunBeats}
-	for _, beat := range source.Beats {
-		out.Beats = append(out.Beats, BeatWeight{Kind: BeatKind(beat.Kind), Weight: beat.Weight})
-	}
-	return out
 }
 
 // exampleAnchorError reports spawn or goal cells that are not standing
